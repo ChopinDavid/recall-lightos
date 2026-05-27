@@ -33,9 +33,10 @@ fun LightIcon(
     val resolvedWidth = size ?: width
     val resolvedHeight = size ?: height
     val contentColor = LightThemeTokens.colors.content
-    val drawableId = LightIconAssets.resolve(icon.darkAssetKey)
-        ?: LightIconAssets.resolve(icon.lightAssetKey)
-        ?: return
+    val drawableId = when (LightThemeTokens.surfaceScheme) {
+        LightSurfaceScheme.Dark -> icon.darkModeResource
+        LightSurfaceScheme.Light -> icon.lightModeResource
+    }
 
     Image(
         painter = painterResource(drawableId),
@@ -43,7 +44,7 @@ fun LightIcon(
         contentScale = ContentScale.Fit,
         colorFilter = ColorFilter.tint(contentColor),
         modifier = modifier
-            .size(gridUnitsToDp(resolvedWidth), gridUnitsToDp(resolvedHeight))
+            .size(resolvedWidth.gridUnitsAsDp(), resolvedHeight.gridUnitsAsDp())
             .semantics {
                 if (contentDescription != null) {
                     this.contentDescription = contentDescription

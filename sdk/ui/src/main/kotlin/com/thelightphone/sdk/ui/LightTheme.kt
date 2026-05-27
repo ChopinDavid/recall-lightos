@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import androidx.compose.ui.unit.sp
 
 fun LightColors.inferredSurfaceScheme(): LightSurfaceScheme =
@@ -160,29 +161,30 @@ object LightThemeTokens {
         @Composable get() = LocalLightSurfaceScheme.current
 }
 
-private fun toMaterialColorScheme(colors: LightColors, surfaceScheme: LightSurfaceScheme): ColorScheme {
+private fun LightColors.toMaterialColorScheme(surfaceScheme: LightSurfaceScheme): ColorScheme {
     // Use MaterialTheme as a base so apps can still interop with M3 components,
     // but prefer Light* primitives for consistent visuals.
     return when (surfaceScheme) {
         LightSurfaceScheme.Dark -> darkColorScheme(
-            background = colors.background,
-            surface = colors.background,
-            onBackground = colors.content,
-            onSurface = colors.content,
-            primary = colors.content,
-            onPrimary = colors.background,
-            secondary = colors.contentSecondary,
-            onSecondary = colors.background,
+            background = background,
+            surface = background,
+            onBackground = content,
+            onSurface = content,
+            primary = content,
+            onPrimary = background,
+            secondary = contentSecondary,
+            onSecondary = background,
         )
+
         LightSurfaceScheme.Light -> lightColorScheme(
-            background = colors.background,
-            surface = colors.background,
-            onBackground = colors.content,
-            onSurface = colors.content,
-            primary = colors.content,
-            onPrimary = colors.background,
-            secondary = colors.contentSecondary,
-            onSecondary = colors.background,
+            background = background,
+            surface = background,
+            onBackground = content,
+            onSurface = content,
+            primary = content,
+            onPrimary = background,
+            secondary = contentSecondary,
+            onSecondary = background,
         )
     }
 }
@@ -200,9 +202,16 @@ fun LightTheme(
         LocalLightSurfaceScheme provides surfaceScheme,
     ) {
         MaterialTheme(
-            colorScheme = toMaterialColorScheme(colors, surfaceScheme),
+            colorScheme = colors.toMaterialColorScheme(surfaceScheme),
             content = content,
         )
     }
+}
+
+class LightColorsPreviewProvider : PreviewParameterProvider<LightColors> {
+    override val values: Sequence<LightColors> = sequenceOf(
+        LightThemeColors.Light,
+        LightThemeColors.Dark
+    )
 }
 

@@ -1,540 +1,540 @@
 package com.thelightphone.sdk.ui
 
-data class LightIconConfiguration(
+sealed class LightIconConfiguration(
     val name: String,
-    val darkAssetKey: String,
-    val lightAssetKey: String,
+    val darkModeResource: Int,
+    val lightModeResource: Int,
 )
 
 object LightIcons {
-    val ACCEPT = LightIconConfiguration(
+    object ACCEPT : LightIconConfiguration(
         name = "confirm",
-        darkAssetKey = "AcceptWhite",
-        lightAssetKey = "AcceptBlack",
+        darkModeResource = R.drawable.ic_accept_white,
+        lightModeResource = R.drawable.ic_accept_black
     )
-    val ADD = LightIconConfiguration(
+    object ADD : LightIconConfiguration(
         name = "Add",
-        darkAssetKey = "AddWhite",
-        lightAssetKey = "AddBlack",
+        darkModeResource = R.drawable.ic_add_white,
+        lightModeResource = R.drawable.ic_add_black
     )
-    val AIRPLANE = LightIconConfiguration(
+    object AIRPLANE : LightIconConfiguration(
         name = "airplane",
-        darkAssetKey = "AirplaneWhite",
-        lightAssetKey = "AirplaneBlack",
+        darkModeResource = R.drawable.ic_airplane_white,
+        lightModeResource = R.drawable.ic_airplane_black
     )
-    val ALARM = LightIconConfiguration(
+    object ALARM : LightIconConfiguration(
         name = "alarm",
-        darkAssetKey = "AlarmWhite",
-        lightAssetKey = "AlarmBlack",
+        darkModeResource = R.drawable.ic_alarm_white,
+        lightModeResource = R.drawable.ic_alarm_black
     )
-    val ARROW_DOWN = LightIconConfiguration(
+    object ARROW_DOWN : LightIconConfiguration(
         name = "arrow pointing down",
-        darkAssetKey = "ArrowDownWhite",
-        lightAssetKey = "ArrowDownBlack",
+        darkModeResource = R.drawable.ic_arrow_down_white,
+        lightModeResource = R.drawable.ic_arrow_down_black
     )
-    val AUDIO_MESSAGE = LightIconConfiguration(
+    object AUDIO_MESSAGE : LightIconConfiguration(
         name = "audio message",
-        darkAssetKey = "AudioMessageWhite",
-        lightAssetKey = "AudioMessageBlack",
+        darkModeResource = R.drawable.ic_audio_message_white,
+        lightModeResource = R.drawable.ic_audio_message_black
     )
-    val BACK = LightIconConfiguration(
+    object BACK : LightIconConfiguration(
         name = "back",
-        darkAssetKey = "BackWhite",
-        lightAssetKey = "BackBlack",
+        darkModeResource = R.drawable.ic_back_white,
+        lightModeResource = R.drawable.ic_back_black
     )
-    val BATTERY_ERROR = LightIconConfiguration(
+    object BATTERY_ERROR : LightIconConfiguration(
         name = "battery empty",
-        darkAssetKey = "BatteryErrorWhite",
-        lightAssetKey = "BatteryErrorBlack",
+        darkModeResource = R.drawable.ic_battery_error_white,
+        lightModeResource = R.drawable.ic_battery_error_black
     )
-    val BATTERY_EMPTY = LightIconConfiguration(
+    object BATTERY_EMPTY : LightIconConfiguration(
         name = "battery empty",
-        darkAssetKey = "BatteryEmptyWhite",
-        lightAssetKey = "BatteryEmptyBlack",
+        darkModeResource = R.drawable.ic_battery_empty_white,
+        lightModeResource = R.drawable.ic_battery_empty_black
     )
-    val BATTERY_ONE_QUARTER = LightIconConfiguration(
+    object BATTERY_ONE_QUARTER : LightIconConfiguration(
         name = "battery one quarter full",
-        darkAssetKey = "BatteryOneQuarterWhite",
-        lightAssetKey = "BatteryOneQuarterBlack",
+        darkModeResource = R.drawable.ic_battery_one_quarter_white,
+        lightModeResource = R.drawable.ic_battery_one_quarter_black
     )
-    val BATTERY_HALF = LightIconConfiguration(
+    object BATTERY_HALF : LightIconConfiguration(
         name = "battery half full",
-        darkAssetKey = "BatteryHalfWhite",
-        lightAssetKey = "BatteryHalfBlack",
+        darkModeResource = R.drawable.ic_battery_half_white,
+        lightModeResource = R.drawable.ic_battery_half_black
     )
-    val BATTERY_THREE_QUARTERS = LightIconConfiguration(
+    object BATTERY_THREE_QUARTERS : LightIconConfiguration(
         name = "battery three quarters full",
-        darkAssetKey = "BatteryThreeQuartersWhite",
-        lightAssetKey = "BatteryThreeQuartersBlack",
+        darkModeResource = R.drawable.ic_battery_three_quarters_white,
+        lightModeResource = R.drawable.ic_battery_three_quarters_black
     )
-    val BATTERY_FULL = LightIconConfiguration(
+    object BATTERY_FULL : LightIconConfiguration(
         name = "full battery",
-        darkAssetKey = "BatteryFullWhite",
-        lightAssetKey = "BatteryFullBlack",
+        darkModeResource = R.drawable.ic_battery_full_white,
+        lightModeResource = R.drawable.ic_battery_full_black
     )
-    val BATTERY_ALMOST_FULL = LightIconConfiguration(
+    object BATTERY_ALMOST_FULL : LightIconConfiguration(
         name = "almost full battery",
-        darkAssetKey = "BatteryAlmostFullWhite",
-        lightAssetKey = "BatteryAlmostFullBlack",
+        darkModeResource = R.drawable.ic_battery_almost_full_white,
+        lightModeResource = R.drawable.ic_battery_almost_full_black
     )
-    val BATTERY_CHARGING = LightIconConfiguration(
+    object BATTERY_CHARGING : LightIconConfiguration(
         name = "battery charging",
-        darkAssetKey = "BatteryChargingWhite",
-        lightAssetKey = "BatteryChargingBlack",
+        darkModeResource = R.drawable.ic_battery_charging_white,
+        lightModeResource = R.drawable.ic_battery_charging_black
     )
-    val BLUETOOTH = LightIconConfiguration(
+    object BLUETOOTH : LightIconConfiguration(
         name = "bluetooth",
-        darkAssetKey = "BluetoothWhite",
-        lightAssetKey = "BluetoothBlack",
+        darkModeResource = R.drawable.ic_bluetooth_white,
+        lightModeResource = R.drawable.ic_bluetooth_black
     )
-    val CALL = LightIconConfiguration(
+    object CALL : LightIconConfiguration(
         name = "call",
-        darkAssetKey = "CallWhite",
-        lightAssetKey = "CallBlack",
+        darkModeResource = R.drawable.ic_call_white,
+        lightModeResource = R.drawable.ic_call_black
     )
-    val CALL_MISSED = LightIconConfiguration(
+    object CALL_MISSED : LightIconConfiguration(
         name = "mute",
-        darkAssetKey = "MissedCallWhite",
-        lightAssetKey = "MissedCallBlack",
+        darkModeResource = R.drawable.ic_missed_call_white,
+        lightModeResource = R.drawable.ic_missed_call_black
     )
-    val CAMERA_BRIGHTNESS = LightIconConfiguration(
+    object CAMERA_BRIGHTNESS : LightIconConfiguration(
         name = "camera brightness",
-        darkAssetKey = "CameraBrightness",
-        lightAssetKey = "CameraBrightness",
+        darkModeResource = R.drawable.ic_camera_brightness,
+        lightModeResource = R.drawable.ic_camera_brightness
     )
-    val CAMERA = LightIconConfiguration(
+    object CAMERA : LightIconConfiguration(
         name = "camera",
-        darkAssetKey = "Camera",
-        lightAssetKey = "Camera",
+        darkModeResource = R.drawable.ic_camera,
+        lightModeResource = R.drawable.ic_camera
     )
-    val CAMERA_FLASH_ON = LightIconConfiguration(
+    object CAMERA_FLASH_ON : LightIconConfiguration(
         name = "camera flash on",
-        darkAssetKey = "CameraFlashOn",
-        lightAssetKey = "CameraFlashOn",
+        darkModeResource = R.drawable.ic_camera_flash_on,
+        lightModeResource = R.drawable.ic_camera_flash_on
     )
-    val CAMERA_FLASH_OFF = LightIconConfiguration(
+    object CAMERA_FLASH_OFF : LightIconConfiguration(
         name = "camera flash off",
-        darkAssetKey = "CameraFlashOff",
-        lightAssetKey = "CameraFlashOff",
+        darkModeResource = R.drawable.ic_camera_flash_off,
+        lightModeResource = R.drawable.ic_camera_flash_off
     )
-    val CAMERA_FLASH_AUTO = LightIconConfiguration(
+    object CAMERA_FLASH_AUTO : LightIconConfiguration(
         name = "camera flash auto",
-        darkAssetKey = "CameraFlashAuto",
-        lightAssetKey = "CameraFlashAuto",
+        darkModeResource = R.drawable.ic_camera_flash_auto,
+        lightModeResource = R.drawable.ic_camera_flash_auto
     )
-    val CAMERA_LANDSCAPE = LightIconConfiguration(
+    object CAMERA_LANDSCAPE : LightIconConfiguration(
         name = "camera landscape",
-        darkAssetKey = "CameraLandscape",
-        lightAssetKey = "CameraLandscape",
+        darkModeResource = R.drawable.ic_camera_landscape,
+        lightModeResource = R.drawable.ic_camera_landscape
     )
-    val CAMERA_SETTINGS = LightIconConfiguration(
+    object CAMERA_SETTINGS : LightIconConfiguration(
         name = "camera settings",
-        darkAssetKey = "CameraSettings",
-        lightAssetKey = "CameraSettings",
+        darkModeResource = R.drawable.ic_camera_settings,
+        lightModeResource = R.drawable.ic_camera_settings
     )
-    val CAMERA_RECORDING = LightIconConfiguration(
+    object CAMERA_RECORDING : LightIconConfiguration(
         name = "camera recording",
-        darkAssetKey = "CameraRecording",
-        lightAssetKey = "CameraRecording",
+        darkModeResource = R.drawable.ic_camera_recording,
+        lightModeResource = R.drawable.ic_camera_recording
     )
-    val CAMERA_FOCUS_LOCKING = LightIconConfiguration(
+    object CAMERA_FOCUS_LOCKING : LightIconConfiguration(
         name = "camera focus locking",
-        darkAssetKey = "CameraFocusLocking",
-        lightAssetKey = "CameraFocusLocking",
+        darkModeResource = R.drawable.ic_camera_focus_locking,
+        lightModeResource = R.drawable.ic_camera_focus_locking
     )
-    val CAMERA_FOCUS_LOCKED = LightIconConfiguration(
+    object CAMERA_FOCUS_LOCKED : LightIconConfiguration(
         name = "camera focus locked",
-        darkAssetKey = "CameraFocusLocked",
-        lightAssetKey = "CameraFocusLocked",
+        darkModeResource = R.drawable.ic_camera_focus_locked,
+        lightModeResource = R.drawable.ic_camera_focus_locked
     )
-    val CE_MARK = LightIconConfiguration(
+    object CE_MARK : LightIconConfiguration(
         name = "ce mark",
-        darkAssetKey = "CeMarkWhite",
-        lightAssetKey = "CeMarkBlack",
+        darkModeResource = R.drawable.ic_ce_mark_white,
+        lightModeResource = R.drawable.ic_ce_mark_black
     )
-    val CIRCLE = LightIconConfiguration(
+    object CIRCLE : LightIconConfiguration(
         name = "circle",
-        darkAssetKey = "CircleWhite",
-        lightAssetKey = "CircleBlack",
+        darkModeResource = R.drawable.ic_circle_white,
+        lightModeResource = R.drawable.ic_circle_black
     )
-    val CLOSE = LightIconConfiguration(
+    object CLOSE : LightIconConfiguration(
         name = "close",
-        darkAssetKey = "CloseWhite",
-        lightAssetKey = "CloseBlack",
+        darkModeResource = R.drawable.ic_close_white,
+        lightModeResource = R.drawable.ic_close_black
     )
-    val COMPOSE_MESSAGE = LightIconConfiguration(
+    object COMPOSE_MESSAGE : LightIconConfiguration(
         name = "compose message",
-        darkAssetKey = "ComposeWhite",
-        lightAssetKey = "ComposeBlack",
+        darkModeResource = R.drawable.ic_compose_white,
+        lightModeResource = R.drawable.ic_compose_black
     )
-    val PENCIL = LightIconConfiguration(
+    object PENCIL : LightIconConfiguration(
         name = "pencil",
-        darkAssetKey = "PencilWhite",
-        lightAssetKey = "PencilBlack",
+        darkModeResource = R.drawable.ic_pencil_white,
+        lightModeResource = R.drawable.ic_pencil_black
     )
-    val DELETE = LightIconConfiguration(
+    object DELETE : LightIconConfiguration(
         name = "delete",
-        darkAssetKey = "DeleteWhite",
-        lightAssetKey = "DeleteBlack",
+        darkModeResource = R.drawable.ic_delete_white,
+        lightModeResource = R.drawable.ic_delete_black
     )
-    val DENY = LightIconConfiguration(
+    object DENY : LightIconConfiguration(
         name = "deny",
-        darkAssetKey = "DenyWhite",
-        lightAssetKey = "DenyBlack",
+        darkModeResource = R.drawable.ic_deny_white,
+        lightModeResource = R.drawable.ic_deny_black
     )
-    val DIALPAD = LightIconConfiguration(
+    object DIALPAD : LightIconConfiguration(
         name = "dialpad",
-        darkAssetKey = "DialpadWhite",
-        lightAssetKey = "DialpadBlack",
+        darkModeResource = R.drawable.ic_dialpad_white,
+        lightModeResource = R.drawable.ic_dialpad_black
     )
-    val DIRECTIONS_ARRIVAL = LightIconConfiguration(
+    object DIRECTIONS_ARRIVAL : LightIconConfiguration(
         name = "arrival",
-        darkAssetKey = "DirectionsArrivalWhite",
-        lightAssetKey = "DirectionsArrivalBlack",
+        darkModeResource = R.drawable.ic_directions_arrival_white,
+        lightModeResource = R.drawable.ic_directions_arrival_black
     )
-    val DIRECTIONS_LEFT = LightIconConfiguration(
+    object DIRECTIONS_LEFT : LightIconConfiguration(
         name = "left turn",
-        darkAssetKey = "DirectionsLeftWhite",
-        lightAssetKey = "DirectionsLeftBlack",
+        darkModeResource = R.drawable.ic_directions_left_white,
+        lightModeResource = R.drawable.ic_directions_left_black
     )
-    val DIRECTIONS_RIGHT = LightIconConfiguration(
+    object DIRECTIONS_RIGHT : LightIconConfiguration(
         name = "right turn",
-        darkAssetKey = "DirectionsRightWhite",
-        lightAssetKey = "DirectionsRightBlack",
+        darkModeResource = R.drawable.ic_directions_right_white,
+        lightModeResource = R.drawable.ic_directions_right_black
     )
-    val DIRECTIONS_SLIGHT_LEFT = LightIconConfiguration(
+    object DIRECTIONS_SLIGHT_LEFT : LightIconConfiguration(
         name = "slight left turn",
-        darkAssetKey = "DirectionsSlightLeftWhite",
-        lightAssetKey = "DirectionsSlightLeftBlack",
+        darkModeResource = R.drawable.ic_directions_slight_left_white,
+        lightModeResource = R.drawable.ic_directions_slight_left_black
     )
-    val DIRECTIONS_SLIGHT_RIGHT = LightIconConfiguration(
+    object DIRECTIONS_SLIGHT_RIGHT : LightIconConfiguration(
         name = "slight right turn",
-        darkAssetKey = "DirectionsSlightRightWhite",
-        lightAssetKey = "DirectionsSlightRightBlack",
+        darkModeResource = R.drawable.ic_directions_slight_right_white,
+        lightModeResource = R.drawable.ic_directions_slight_right_black
     )
-    val DIRECTIONS_MIDDLE_FORK = LightIconConfiguration(
+    object DIRECTIONS_MIDDLE_FORK : LightIconConfiguration(
         name = "middle fork",
-        darkAssetKey = "DirectionsMiddleForkWhite",
-        lightAssetKey = "DirectionsMiddleForkBlack",
+        darkModeResource = R.drawable.ic_directions_middle_fork_white,
+        lightModeResource = R.drawable.ic_directions_middle_fork_black
     )
-    val DIRECTIONS_STRAIGHT = LightIconConfiguration(
+    object DIRECTIONS_STRAIGHT : LightIconConfiguration(
         name = "continue straight",
-        darkAssetKey = "DirectionsStraightWhite",
-        lightAssetKey = "DirectionsStraightBlack",
+        darkModeResource = R.drawable.ic_directions_straight_white,
+        lightModeResource = R.drawable.ic_directions_straight_black
     )
-    val DIRECTIONS_BUS = LightIconConfiguration(
+    object DIRECTIONS_BUS : LightIconConfiguration(
         name = "bus",
-        darkAssetKey = "DirectionsBusWhite",
-        lightAssetKey = "DirectionsBusBlack",
+        darkModeResource = R.drawable.ic_directions_bus_white,
+        lightModeResource = R.drawable.ic_directions_bus_black
     )
-    val DIRECTIONS_SUBWAY = LightIconConfiguration(
+    object DIRECTIONS_SUBWAY : LightIconConfiguration(
         name = "subway",
-        darkAssetKey = "DirectionsSubwayWhite",
-        lightAssetKey = "DirectionsSubwayBlack",
+        darkModeResource = R.drawable.ic_directions_subway_white,
+        lightModeResource = R.drawable.ic_directions_subway_black
     )
-    val DIRECTIONS_TRAIN = LightIconConfiguration(
+    object DIRECTIONS_TRAIN : LightIconConfiguration(
         name = "train",
-        darkAssetKey = "DirectionsTrainWhite",
-        lightAssetKey = "DirectionsTrainBlack",
+        darkModeResource = R.drawable.ic_directions_train_white,
+        lightModeResource = R.drawable.ic_directions_train_black
     )
-    val DIRECTIONS_PEDESTRIAN = LightIconConfiguration(
+    object DIRECTIONS_PEDESTRIAN : LightIconConfiguration(
         name = "pedestrian",
-        darkAssetKey = "DirectionsPedestrianWhite",
-        lightAssetKey = "DirectionsPedestrianBlack",
+        darkModeResource = R.drawable.ic_directions_pedestrian_white,
+        lightModeResource = R.drawable.ic_directions_pedestrian_black
     )
-    val DIRECTIONS_ROUNDABOUT = LightIconConfiguration(
+    object DIRECTIONS_ROUNDABOUT : LightIconConfiguration(
         name = "roundabout",
-        darkAssetKey = "DirectionsRoundAboutWhite",
-        lightAssetKey = "DirectionsRoundAboutBlack",
+        darkModeResource = R.drawable.ic_directions_round_about_white,
+        lightModeResource = R.drawable.ic_directions_round_about_black
     )
-    val DIRECTIONS_U_TURN_RIGHT = LightIconConfiguration(
+    object DIRECTIONS_U_TURN_RIGHT : LightIconConfiguration(
         name = "u turn right",
-        darkAssetKey = "DirectionsUTurnRightWhite",
-        lightAssetKey = "DirectionsUTurnRightBlack",
+        darkModeResource = R.drawable.ic_directions_uturn_right_white,
+        lightModeResource = R.drawable.ic_directions_uturn_right_black
     )
-    val DIRECTIONS_U_TURN_LEFT = LightIconConfiguration(
+    object DIRECTIONS_U_TURN_LEFT : LightIconConfiguration(
         name = "u turn left",
-        darkAssetKey = "DirectionsUTurnLeftWhite",
-        lightAssetKey = "DirectionsUTurnLeftBlack",
+        darkModeResource = R.drawable.ic_directions_uturn_left_white,
+        lightModeResource = R.drawable.ic_directions_uturn_left_black
     )
-    val DIRECTIONS_FERRY = LightIconConfiguration(
+    object DIRECTIONS_FERRY : LightIconConfiguration(
         name = "ferry",
-        darkAssetKey = "DirectionsFerryWhite",
-        lightAssetKey = "DirectionsFerryBlack",
+        darkModeResource = R.drawable.ic_directions_ferry_white,
+        lightModeResource = R.drawable.ic_directions_ferry_black
     )
-    val DOWN = LightIconConfiguration(
+    object DOWN : LightIconConfiguration(
         name = "down",
-        darkAssetKey = "DownWhite",
-        lightAssetKey = "DownBlack",
+        darkModeResource = R.drawable.ic_down_white,
+        lightModeResource = R.drawable.ic_down_black
     )
-    val EMERGENCY = LightIconConfiguration(
+    object EMERGENCY : LightIconConfiguration(
         name = "emergency",
-        darkAssetKey = "EmergencyWhite",
-        lightAssetKey = "EmergencyBlack",
+        darkModeResource = R.drawable.ic_emergency_white,
+        lightModeResource = R.drawable.ic_emergency_black
     )
-    val FCC_MARK = LightIconConfiguration(
+    object FCC_MARK : LightIconConfiguration(
         name = "fcc mark",
-        darkAssetKey = "FccMarkWhite",
-        lightAssetKey = "FccMarkBlack",
+        darkModeResource = R.drawable.ic_fcc_mark_white,
+        lightModeResource = R.drawable.ic_fcc_mark_black
     )
-    val LIGHT_LOGO = LightIconConfiguration(
+    object LIGHT_LOGO : LightIconConfiguration(
         name = "light logo",
-        darkAssetKey = "LightLogoWhite",
-        lightAssetKey = "LightLogoBlack",
+        darkModeResource = R.drawable.ic_light_logo_white,
+        lightModeResource = R.drawable.ic_light_logo_black
     )
-    val FAST_FORWARD = LightIconConfiguration(
+    object FAST_FORWARD : LightIconConfiguration(
         name = "fast-forward",
-        darkAssetKey = "FastForwardWhite",
-        lightAssetKey = "FastForwardBlack",
+        darkModeResource = R.drawable.ic_fast_forward_white,
+        lightModeResource = R.drawable.ic_fast_forward_black
     )
-    val LIST = LightIconConfiguration(
+    object LIST : LightIconConfiguration(
         name = "list",
-        darkAssetKey = "ListWhite",
-        lightAssetKey = "ListBlack",
+        darkModeResource = R.drawable.ic_list_white,
+        lightModeResource = R.drawable.ic_list_black
     )
-    val LOOP = LightIconConfiguration(
+    object LOOP : LightIconConfiguration(
         name = "loop",
-        darkAssetKey = "LoopWhite",
-        lightAssetKey = "LoopBlack",
+        darkModeResource = R.drawable.ic_loop_white,
+        lightModeResource = R.drawable.ic_loop_black
     )
-    val MEDIA = LightIconConfiguration(
+    object MEDIA : LightIconConfiguration(
         name = "media",
-        darkAssetKey = "MediaWhite",
-        lightAssetKey = "MediaBlack",
+        darkModeResource = R.drawable.ic_media_white,
+        lightModeResource = R.drawable.ic_media_black
     )
-    val MICROPHONE = LightIconConfiguration(
+    object MICROPHONE : LightIconConfiguration(
         name = "microphone",
-        darkAssetKey = "MicrophoneWhite",
-        lightAssetKey = "MicrophoneBlack",
+        darkModeResource = R.drawable.ic_microphone_white,
+        lightModeResource = R.drawable.ic_microphone_black
     )
-    val MUTE = LightIconConfiguration(
+    object MUTE : LightIconConfiguration(
         name = "mute",
-        darkAssetKey = "MuteWhite",
-        lightAssetKey = "MuteBlack",
+        darkModeResource = R.drawable.ic_mute_white,
+        lightModeResource = R.drawable.ic_mute_black
     )
-    val PAUSE = LightIconConfiguration(
+    object PAUSE : LightIconConfiguration(
         name = "pause",
-        darkAssetKey = "PauseWhite",
-        lightAssetKey = "PauseBlack",
+        darkModeResource = R.drawable.ic_pause_white,
+        lightModeResource = R.drawable.ic_pause_black
     )
-    val PLAY = LightIconConfiguration(
+    object PLAY : LightIconConfiguration(
         name = "play",
-        darkAssetKey = "PlayWhite",
-        lightAssetKey = "PlayBlack",
+        darkModeResource = R.drawable.ic_play_white,
+        lightModeResource = R.drawable.ic_play_black
     )
-    val REWIND = LightIconConfiguration(
+    object REWIND : LightIconConfiguration(
         name = "rewind",
-        darkAssetKey = "RewindWhite",
-        lightAssetKey = "RewindBlack",
+        darkModeResource = R.drawable.ic_rewind_white,
+        lightModeResource = R.drawable.ic_rewind_black
     )
-    val SAVE_TO_ALBUM = LightIconConfiguration(
+    object SAVE_TO_ALBUM : LightIconConfiguration(
         name = "save to album",
-        darkAssetKey = "SaveToAlbum",
-        lightAssetKey = "SaveToAlbum",
+        darkModeResource = R.drawable.ic_save_to_album,
+        lightModeResource = R.drawable.ic_save_to_album
     )
-    val SEARCH = LightIconConfiguration(
+    object SEARCH : LightIconConfiguration(
         name = "search",
-        darkAssetKey = "SearchWhite",
-        lightAssetKey = "SearchBlack",
+        darkModeResource = R.drawable.ic_search_white,
+        lightModeResource = R.drawable.ic_search_black
     )
-    val SELECT_OFF = LightIconConfiguration(
+    object SELECT_OFF : LightIconConfiguration(
         name = "select off",
-        darkAssetKey = "SelectOFFWhite",
-        lightAssetKey = "SelectOFFBlack",
+        darkModeResource = R.drawable.ic_select_off_white,
+        lightModeResource = R.drawable.ic_select_off_black
     )
-    val SELECT_ON = LightIconConfiguration(
+    object SELECT_ON : LightIconConfiguration(
         name = "select on",
-        darkAssetKey = "SelectONWhite",
-        lightAssetKey = "SelectONBlack",
+        darkModeResource = R.drawable.ic_select_on_white,
+        lightModeResource = R.drawable.ic_select_on_black
     )
-    val SEND = LightIconConfiguration(
+    object SEND : LightIconConfiguration(
         name = "send",
-        darkAssetKey = "SendWhite",
-        lightAssetKey = "SendBlack",
+        darkModeResource = R.drawable.ic_send_white,
+        lightModeResource = R.drawable.ic_send_black
     )
-    val SETTINGS = LightIconConfiguration(
+    object SETTINGS : LightIconConfiguration(
         name = "settings",
-        darkAssetKey = "SettingsWhite",
-        lightAssetKey = "SettingsBlack",
+        darkModeResource = R.drawable.ic_settings_white,
+        lightModeResource = R.drawable.ic_settings_black
     )
-    val SHUFFLE = LightIconConfiguration(
+    object SHUFFLE : LightIconConfiguration(
         name = "shuffle",
-        darkAssetKey = "ShuffleWhite",
-        lightAssetKey = "ShuffleBlack",
+        darkModeResource = R.drawable.ic_shuffle_white,
+        lightModeResource = R.drawable.ic_shuffle_black
     )
-    val SIGNAL_1 = LightIconConfiguration(
+    object SIGNAL_1 : LightIconConfiguration(
         name = "signal 1 bar",
-        darkAssetKey = "Signal1White",
-        lightAssetKey = "Signal1Black",
+        darkModeResource = R.drawable.ic_signal1_bar_white,
+        lightModeResource = R.drawable.ic_signal1_bar_black
     )
-    val SIGNAL_2 = LightIconConfiguration(
+    object SIGNAL_2 : LightIconConfiguration(
         name = "signal 2 bars",
-        darkAssetKey = "Signal2White",
-        lightAssetKey = "Signal2Black",
+        darkModeResource = R.drawable.ic_signal2_bars_white,
+        lightModeResource = R.drawable.ic_signal2_bars_black
     )
-    val SIGNAL_3 = LightIconConfiguration(
+    object SIGNAL_3 : LightIconConfiguration(
         name = "signal 3 bars",
-        darkAssetKey = "Signal3White",
-        lightAssetKey = "Signal3Black",
+        darkModeResource = R.drawable.ic_signal3_bars_white,
+        lightModeResource = R.drawable.ic_signal3_bars_black
     )
-    val SIGNAL_4 = LightIconConfiguration(
+    object SIGNAL_4 : LightIconConfiguration(
         name = "signal 4 bars",
-        darkAssetKey = "Signal4White",
-        lightAssetKey = "Signal4Black",
+        darkModeResource = R.drawable.ic_signal4_bars_white,
+        lightModeResource = R.drawable.ic_signal4_bars_black
     )
-    val SIGNAL_NONE = LightIconConfiguration(
+    object SIGNAL_NONE : LightIconConfiguration(
         name = "no signal",
-        darkAssetKey = "SignalNoneWhite",
-        lightAssetKey = "SignalNoneBlack",
+        darkModeResource = R.drawable.ic_signal_none_white,
+        lightModeResource = R.drawable.ic_signal_none_black
     )
-    val SPEAKER = LightIconConfiguration(
+    object SPEAKER : LightIconConfiguration(
         name = "speaker",
-        darkAssetKey = "SpeakerWhite",
-        lightAssetKey = "SpeakerBlack",
+        darkModeResource = R.drawable.ic_speaker_white,
+        lightModeResource = R.drawable.ic_speaker_black
     )
-    val STAR = LightIconConfiguration(
+    object STAR : LightIconConfiguration(
         name = "star",
-        darkAssetKey = "StarWhite",
-        lightAssetKey = "StarBlack",
+        darkModeResource = R.drawable.ic_star_white,
+        lightModeResource = R.drawable.ic_star_black
     )
-    val STAR_OUTLINE = LightIconConfiguration(
+    object STAR_OUTLINE : LightIconConfiguration(
         name = "star outline",
-        darkAssetKey = "StarOutlineWhite",
-        lightAssetKey = "StarOutlineBlack",
+        darkModeResource = R.drawable.ic_star_outline_white,
+        lightModeResource = R.drawable.ic_star_outline_black
     )
-    val TETHERING = LightIconConfiguration(
+    object TETHERING : LightIconConfiguration(
         name = "tethering enabled",
-        darkAssetKey = "TetheringWhite",
-        lightAssetKey = "TetheringBlack",
+        darkModeResource = R.drawable.ic_tethering_white,
+        lightModeResource = R.drawable.ic_tethering_black
     )
-    val TOGGLE_OFF = LightIconConfiguration(
+    object TOGGLE_OFF : LightIconConfiguration(
         name = "toggle off",
-        darkAssetKey = "ToggleOFFWhite",
-        lightAssetKey = "ToggleOFFBlack",
+        darkModeResource = R.drawable.ic_toggle_off_white,
+        lightModeResource = R.drawable.ic_toggle_off_black
     )
-    val TOGGLE_ON = LightIconConfiguration(
+    object TOGGLE_ON : LightIconConfiguration(
         name = "toggle on",
-        darkAssetKey = "ToggleONWhite",
-        lightAssetKey = "ToggleONBlack",
+        darkModeResource = R.drawable.ic_toggle_on_white,
+        lightModeResource = R.drawable.ic_toggle_on_black
     )
-    val UP = LightIconConfiguration(
+    object UP : LightIconConfiguration(
         name = "up",
-        darkAssetKey = "UpWhite",
-        lightAssetKey = "UpBlack",
+        darkModeResource = R.drawable.ic_up_white,
+        lightModeResource = R.drawable.ic_up_black
     )
-    val VOICE_MAIL = LightIconConfiguration(
+    object VOICE_MAIL : LightIconConfiguration(
         name = "voicemail",
-        darkAssetKey = "VoiceMailWhite",
-        lightAssetKey = "VoiceMailBlack",
+        darkModeResource = R.drawable.ic_voice_mail_white,
+        lightModeResource = R.drawable.ic_voice_mail_black
     )
-    val VOICE_MEMO = LightIconConfiguration(
+    object VOICE_MEMO : LightIconConfiguration(
         name = "voicememo",
-        darkAssetKey = "VoiceMemoWhite",
-        lightAssetKey = "VoiceMemoBlack",
+        darkModeResource = R.drawable.ic_voice_memo_white,
+        lightModeResource = R.drawable.ic_voice_memo_black
     )
-    val WEEE_MARK = LightIconConfiguration(
+    object WEEE_MARK : LightIconConfiguration(
         name = "weee mark",
-        darkAssetKey = "WeeeMarkWhite",
-        lightAssetKey = "WeeeMarkBlack",
+        darkModeResource = R.drawable.ic_weee_mark_white,
+        lightModeResource = R.drawable.ic_weee_mark_black
     )
-    val WIFI = LightIconConfiguration(
+    object WIFI : LightIconConfiguration(
         name = "wifi",
-        darkAssetKey = "WifiWhite",
-        lightAssetKey = "WifiBlack",
+        darkModeResource = R.drawable.ic_wifi_white,
+        lightModeResource = R.drawable.ic_wifi_black
     )
-    val WIFI_NO_INTERNET = LightIconConfiguration(
+    object WIFI_NO_INTERNET : LightIconConfiguration(
         name = "wifi no internet",
-        darkAssetKey = "WifiNoInternetWhite",
-        lightAssetKey = "WifiNoInternetBlack",
+        darkModeResource = R.drawable.ic_wifi_no_internet_white,
+        lightModeResource = R.drawable.ic_wifi_no_internet_black
     )
-    val LARGE_LIST = LightIconConfiguration(
+    object LARGE_LIST : LightIconConfiguration(
         name = "large list",
-        darkAssetKey = "LargeListWhite",
-        lightAssetKey = "LargeListBlack",
+        darkModeResource = R.drawable.ic_large_list_white,
+        lightModeResource = R.drawable.ic_large_list_black
     )
-    val DOWNLOADED_ARROW = LightIconConfiguration(
+    object DOWNLOADED_ARROW : LightIconConfiguration(
         name = "downloaded arrow",
-        darkAssetKey = "DownloadedArrowWhite",
-        lightAssetKey = "DownloadedArrowBlack",
+        darkModeResource = R.drawable.ic_downloaded_arrow_white,
+        lightModeResource = R.drawable.ic_downloaded_arrow_black
     )
-    val DOWNLOAD_ARROW = LightIconConfiguration(
+    object DOWNLOAD_ARROW : LightIconConfiguration(
         name = "download arrow",
-        darkAssetKey = "DownloadArrowWhite",
-        lightAssetKey = "DownloadArrowBlack",
+        darkModeResource = R.drawable.ic_download_arrow_white,
+        lightModeResource = R.drawable.ic_download_arrow_black
     )
-    val SKIP_BACKWARD_FIFTEEN = LightIconConfiguration(
+    object SKIP_BACKWARD_FIFTEEN : LightIconConfiguration(
         name = "skip backward fifteen",
-        darkAssetKey = "SkipBackwardFifteenWhite",
-        lightAssetKey = "SkipBackwardFifteenBlack",
+        darkModeResource = R.drawable.ic_skip_backward_fifteen_white,
+        lightModeResource = R.drawable.ic_skip_backward_fifteen_black
     )
-    val SKIP_FORWARD_FIFTEEN = LightIconConfiguration(
+    object SKIP_FORWARD_FIFTEEN : LightIconConfiguration(
         name = "skip forward fifteen",
-        darkAssetKey = "SkipForwardFifteenWhite",
-        lightAssetKey = "SkipForwardFifteenBlack",
+        darkModeResource = R.drawable.ic_skip_forward_fifteen_white,
+        lightModeResource = R.drawable.ic_skip_forward_fifteen_black
     )
-    val REFRESH = LightIconConfiguration(
+    object REFRESH : LightIconConfiguration(
         name = "refresh",
-        darkAssetKey = "RefreshWhite",
-        lightAssetKey = "RefreshBlack",
+        darkModeResource = R.drawable.ic_refresh_white,
+        lightModeResource = R.drawable.ic_refresh_black
     )
-    val MAP = LightIconConfiguration(
+    object MAP : LightIconConfiguration(
         name = "map",
-        darkAssetKey = "MapWhite",
-        lightAssetKey = "MapBlack",
+        darkModeResource = R.drawable.ic_map_white,
+        lightModeResource = R.drawable.ic_map_black
     )
-    val CROSSHAIR = LightIconConfiguration(
+    object CROSSHAIR : LightIconConfiguration(
         name = "crosshair",
-        darkAssetKey = "CrosshairWhite",
-        lightAssetKey = "CrosshairBlack",
+        darkModeResource = R.drawable.ic_crosshair_white,
+        lightModeResource = R.drawable.ic_crosshair_black
     )
-    val ARROW_RIGHT = LightIconConfiguration(
+    object ARROW_RIGHT : LightIconConfiguration(
         name = "arrow right",
-        darkAssetKey = "ArrowRightWhite",
-        lightAssetKey = "ArrowRightBlack",
+        darkModeResource = R.drawable.ic_arrow_right_white,
+        lightModeResource = R.drawable.ic_arrow_right_black
     )
-    val STOP = LightIconConfiguration(
+    object STOP : LightIconConfiguration(
         name = "stop",
-        darkAssetKey = "StopWhite",
-        lightAssetKey = "StopBlack",
+        darkModeResource = R.drawable.ic_stop_white,
+        lightModeResource = R.drawable.ic_stop_black
     )
-    val CONTACTS = LightIconConfiguration(
+    object CONTACTS : LightIconConfiguration(
         name = "contacts",
-        darkAssetKey = "ContactsWhite",
-        lightAssetKey = "ContactsBlack",
+        darkModeResource = R.drawable.ic_contacts_white,
+        lightModeResource = R.drawable.ic_contacts_black
     )
-    val REVERSE_ORDER = LightIconConfiguration(
+    object REVERSE_ORDER : LightIconConfiguration(
         name = "reverse order",
-        darkAssetKey = "ReverseOrderWhite",
-        lightAssetKey = "ReverseOrderBlack",
+        darkModeResource = R.drawable.ic_reverse_order_white,
+        lightModeResource = R.drawable.ic_reverse_order_black
     )
-    val ELLIPSES = LightIconConfiguration(
+    object ELLIPSES : LightIconConfiguration(
         name = "ellipses",
-        darkAssetKey = "EllipseWhite",
-        lightAssetKey = "EllipseBlack",
+        darkModeResource = R.drawable.ic_ellipse_white,
+        lightModeResource = R.drawable.ic_ellipse_black
     )
-    val SPACER = LightIconConfiguration(
+    object SPACER : LightIconConfiguration(
         name = "spacer",
-        darkAssetKey = "Spacer",
-        lightAssetKey = "Spacer",
+        darkModeResource = R.drawable.ic_spacer,
+        lightModeResource = R.drawable.ic_spacer
     )
-    val TRASH = LightIconConfiguration(
+    object TRASH : LightIconConfiguration(
         name = "trash",
-        darkAssetKey = "Trash",
-        lightAssetKey = "Trash",
+        darkModeResource = R.drawable.ic_trash,
+        lightModeResource = R.drawable.ic_trash
     )
-    val SPEAKER_ON = LightIconConfiguration(
+    object SPEAKER_ON : LightIconConfiguration(
         name = "speaker on",
-        darkAssetKey = "SpeakerOn",
-        lightAssetKey = "SpeakerOn",
+        darkModeResource = R.drawable.ic_speaker_on,
+        lightModeResource = R.drawable.ic_speaker_on
     )
-    val SPEAKER_MUTED = LightIconConfiguration(
+    object SPEAKER_MUTED : LightIconConfiguration(
         name = "speaker muted",
-        darkAssetKey = "SpeakerMuted",
-        lightAssetKey = "SpeakerMuted",
+        darkModeResource = R.drawable.ic_speaker_muted,
+        lightModeResource = R.drawable.ic_speaker_muted
     )
-    val ROTATE = LightIconConfiguration(
+    object ROTATE : LightIconConfiguration(
         name = "rotate",
-        darkAssetKey = "RotateWhite",
-        lightAssetKey = "RotateBlack",
+        darkModeResource = R.drawable.ic_rotate_white,
+        lightModeResource = R.drawable.ic_rotate_black
     )
 }

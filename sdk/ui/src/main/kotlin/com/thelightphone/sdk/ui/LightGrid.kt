@@ -14,7 +14,7 @@ object LightGrid {
 }
 
 @Composable
-fun gridUnitsToDp(units: Float): Dp {
+fun Float.gridUnitsAsDp(): Dp {
     val screenWidthDp = LocalConfiguration.current.screenWidthDp
-    return (screenWidthDp.toFloat() / LightGrid.WIDTH * units).dp
+    return (screenWidthDp.toFloat() / LightGrid.WIDTH * this).dp
 }
