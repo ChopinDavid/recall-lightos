@@ -22,24 +22,24 @@ class LightSdkService : Service() {
 
     // TODO something more robust
     private val tokensByUid = mutableMapOf<Int, String>()
+    private val settings by lazy { LightSdkServerSettings(this) }
 
     private fun verifyCallerIsInstalledClient(callingId: Int): Boolean {
         val packages = packageManager.getPackagesForUid(callingId) ?: return false
+        val clientFilterLevel = settings.clientFilterLevel
+        if (clientFilterLevel == ClientFilterLevel.ExcludeAllApks) {
+            Log.w(
+                TAG,
+                "User has disallowed external tools, yet an application is attempting to talk to SDK server"
+            )
+            return false
+        }
         return packages.any { packageName ->
-            try {
-                packageManager.getPackageInfo(
-                    packageName,
-                    PackageManager.GET_SIGNING_CERTIFICATES
-                )
-                val hasMarker = packageManager.queryBroadcastReceivers(
-                    Intent(LightConstants.ACTION_SDK_MARKER).setPackage(packageName),
-                    PackageManager.GET_META_DATA
-                ).isNotEmpty()
-                // TODO: verify signing certificate against known keys
-                hasMarker
-            } catch (e: PackageManager.NameNotFoundException) {
-                false
-            }
+            val hasMarker = packageManager.queryBroadcastReceivers(
+                Intent(LightConstants.ACTION_SDK_MARKER).setPackage(packageName),
+                PackageManager.GET_META_DATA
+            ).isNotEmpty()
+            hasMarker && LightSdkServer.isPackageAllowed(clientFilterLevel, packageName)
         }
     }
 
@@ -115,7 +115,11 @@ class LightSdkService : Service() {
         }
     }
 
-    private fun handleRequest(callingId: Int, methodId: String, payload: String?): LightResult<String> {
+    private fun handleRequest(
+        callingId: Int,
+        methodId: String,
+        payload: String?
+    ): LightResult<String> {
         return when (allMethods[methodId]) {
             LightServiceMethod.GetToken -> {
                 val token = issueToken(Binder.getCallingUid())

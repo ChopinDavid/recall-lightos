@@ -3,6 +3,7 @@ package com.thelightphone.sdk.emulator
 import android.app.Application
 import android.util.Log
 import com.thelightphone.sdk.emulator.http.EmulatorHttpServer
+import com.thelightphone.sdk.server.ClientCertType
 import com.thelightphone.sdk.server.LightSdkServer
 import com.thelightphone.sdk.shared.LightResult
 
@@ -23,6 +24,11 @@ class EmulatorApplication : Application() {
             Log.d("LightEmulator", "getting push endpoint for token: $token, vapid: $vapid")
             "$pushDomain/push/$token"
         }
+
+        LightSdkServer.checkCert = {
+            ClientCertType.LightSdkApproved
+        }
+
         EmulatorHttpServer(this).start()
     }
 }
