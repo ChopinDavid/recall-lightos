@@ -12,12 +12,11 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -26,19 +25,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import com.thelightphone.sdk.server.LightSdkServer
-import com.thelightphone.sdk.server.LightSdkServer.filterVerifiedTools
 import com.thelightphone.sdk.server.LightSdkServer.queryEnabledClients
-import com.thelightphone.sdk.server.LightSdkServer.queryInstalledClients
 import com.thelightphone.sdk.server.LightSdkServer.runningAsSystemApp
 import com.thelightphone.sdk.server.LightSdkServerSettings
-import com.thelightphone.sdk.shared.LightResult
+import com.thelightphone.sdk.ui.LightTheme
+import com.thelightphone.sdk.ui.LightThemeController
 
 class MainActivity : ComponentActivity() {
 
@@ -61,15 +57,9 @@ class MainActivity : ComponentActivity() {
         }
         val serverSettings = LightSdkServerSettings(this)
         setContent {
+            val themeColors by LightThemeController.colors.collectAsState()
             var currentNav by remember { mutableStateOf(Nav.Toolbox) }
-            MaterialTheme(
-                colorScheme = darkColorScheme(
-                    background = Color.Black,
-                    surface = Color.Black,
-                    onBackground = Color.White,
-                    onSurface = Color.White,
-                )
-            ) {
+            LightTheme(colors = themeColors){
                 when(currentNav) {
                     Nav.Toolbox -> {
                         ToolList(

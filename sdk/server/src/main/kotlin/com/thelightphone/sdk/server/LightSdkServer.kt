@@ -43,7 +43,7 @@ object LightSdkServer {
         return true
     }
 
-    fun List<InstalledClient>.filterVerifiedTools(context: Context): List<InstalledClient> {
+    fun List<InstalledClient>.filterAllowedTools(context: Context): List<InstalledClient> {
         val clientFilterLevel = LightSdkServerSettings(context).clientFilterLevel
         return filter { isPackageAllowed(clientFilterLevel, it.packageInfo.packageName) }
     }
@@ -100,7 +100,7 @@ object LightSdkServer {
     fun Context.queryEnabledClients(): List<InstalledClient> {
         return queryInstalledClients()
             .filter { isSdkVersionSupported(it.sdkVersion) }
-            .filterVerifiedTools(this)
+            .filterAllowedTools(this)
     }
 
     /**

@@ -13,6 +13,17 @@ android {
     namespace = appId
     compileSdk = rootProject.ext["compileSdk"] as Int
 
+    signingConfigs {
+        create("lightsdkDev") {
+            storeFile = file("../sdk/keys/lightsdk-dev.jks")
+            storePassword = "android"
+            keyAlias = "lightsdk-dev"
+            keyPassword = "android"
+            enableV3Signing = true
+            enableV4Signing = true
+        }
+    }
+
     defaultConfig {
         applicationId = appId
         minSdk = rootProject.ext["minSdk"] as Int
@@ -21,6 +32,15 @@ android {
         versionName = "1.0"
 
         manifestPlaceholders["sdkVersion"] = property("sdkVersion") as String
+    }
+
+    buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("lightsdkDev")
+        }
+        release {
+            signingConfig = signingConfigs.getByName("lightsdkDev")
+        }
     }
 
     lint {

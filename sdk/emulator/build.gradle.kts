@@ -80,6 +80,7 @@ kotlin {
 
 dependencies {
     implementation(project(":sdk:server"))
+    implementation(project(":sdk:ui"))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.foundation)
