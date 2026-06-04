@@ -50,18 +50,17 @@ fun LightTextInputEditor(
     val textState = remember(editorKey) { mutableStateOf(value) }
     val onValueChangeState = rememberUpdatedState(onValueChange)
 
-    val keyboardCallback = remember(editorKey) {
-        TextInputKeyboardCallback(
-            currentValue = { textState.value },
-            onValueChange = { newValue ->
-                textState.value = newValue
-                onValueChangeState.value(newValue)
-            },
-        )
-    }
-
     val keyboardViewModel: EmbeddedLp3KeyboardViewModel = viewModel(
-        factory = EmbeddedLp3KeyboardViewModel.factory(keyboardCallback),
+        key = "LightTextInputEditor-$editorKey",
+        factory = EmbeddedLp3KeyboardViewModel.factory(
+            TextInputKeyboardCallback(
+                currentValue = { textState.value },
+                onValueChange = { newValue ->
+                    textState.value = newValue
+                    onValueChangeState.value(newValue)
+                },
+            ),
+        ),
     )
 
     LaunchedEffect(Unit) {
