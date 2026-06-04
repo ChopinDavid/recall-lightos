@@ -4,10 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.LightViewModel
@@ -37,15 +34,12 @@ class UiDemoTextInputEditorScreen(sealedActivity: SealedLightActivity) :
         }
 
         val themeColors by LightThemeController.colors.collectAsState()
-        var draft by rememberSaveable(editorRequest.title) { mutableStateOf(editorRequest.initialValue) }
-
         LightTheme(colors = themeColors) {
             LightTextInputEditor(
                 title = editorRequest.title,
-                value = draft,
-                onValueChange = { draft = it },
-                onSubmit = {
-                    UiDemoTextInputNavigation.submitResult(draft)
+                value = editorRequest.initialValue,
+                onSubmit = { result ->
+                    UiDemoTextInputNavigation.submitResult(result)
                     goBack()
                 },
                 onBack = {
