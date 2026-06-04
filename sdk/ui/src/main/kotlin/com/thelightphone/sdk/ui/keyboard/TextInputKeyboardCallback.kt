@@ -1,5 +1,6 @@
 package com.thelightphone.sdk.ui.keyboard
 
+import com.thelightphone.lp3Keyboard.ui.Lp3RepeatableKeyboardCallback
 import com.thelightphone.lp3Keyboard.ui.SpecialKey
 
 internal class TextInputKeyboardCallback(
