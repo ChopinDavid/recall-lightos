@@ -17,6 +17,8 @@ rootProject.name = "light-sdk"
 
 includeBuild("plugin")
 
+include(":lp3keyboard-ui")
+
 include(":lint-rules")
 include(":sdk:shared")
 include(":sdk:ui")

@@ -34,3 +34,9 @@ fun Float.designVerticalPxToSp(): TextUnit {
     val screenHeightDp = LocalConfiguration.current.screenHeightDp.toFloat()
     return (this * screenHeightDp / FONT_VERTICAL_SCALE_BASELINE_PX).sp
 }
+
+@Composable
+fun Float.designVerticalPxToDp(): Dp {
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp.toFloat()
+    return (this * screenHeightDp / FONT_VERTICAL_SCALE_BASELINE_PX).dp
+}

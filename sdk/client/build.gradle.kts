@@ -51,6 +51,7 @@ dependencies {
     api(libs.compose.activity)
     api(libs.kotlinx.coroutines)
     api(libs.androidx.lifecycle.viewmodel)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
     api(libs.androidx.datastore.preferences)
     api(libs.ktor.client.core)
     api(libs.ktor.client.okhttp)

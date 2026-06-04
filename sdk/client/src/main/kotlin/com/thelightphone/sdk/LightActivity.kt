@@ -10,8 +10,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -71,10 +75,20 @@ class LightActivity internal constructor() : ComponentActivity() {
             val screen = currentScreen.value
             if (screen != null) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    Box(modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()) {
-                        screen.Content()
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    ) {
+                        val content: @Composable () -> Unit = { screen.Content() }
+                        if (screen is ViewModelStoreOwner) {
+                            CompositionLocalProvider(
+                                LocalViewModelStoreOwner provides screen,
+                                content = content,
+                            )
+                        } else {
+                            content()
+                        }
                     }
                     if (screen.showBackBar) {
                         LightBackBar(onBack = ::goBack)

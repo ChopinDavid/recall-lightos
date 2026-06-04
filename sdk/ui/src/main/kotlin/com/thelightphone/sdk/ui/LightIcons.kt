@@ -537,4 +537,20 @@ object LightIcons {
         darkModeResource = R.drawable.ic_rotate_white,
         lightModeResource = R.drawable.ic_rotate_black
     )
+
+    val allEntries: List<Pair<String, LightIconConfiguration>> by lazy {
+        LightIcons::class.java.declaredClasses
+            .asSequence()
+            .filter { LightIconConfiguration::class.java.isAssignableFrom(it) }
+            .mapNotNull { iconClass ->
+                val instance = runCatching {
+                    val instanceField = iconClass.getDeclaredField("INSTANCE")
+                    instanceField.isAccessible = true
+                    instanceField.get(null) as LightIconConfiguration
+                }.getOrNull() ?: return@mapNotNull null
+                iconClass.simpleName to instance
+            }
+            .sortedBy { it.first }
+            .toList()
+    }
 }

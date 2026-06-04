@@ -4,15 +4,21 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-group = property("sdkGroup") as String
-version = property("sdkVersion") as String
+val keyboardUiDir = rootProject.file("../light-keyboard/ui")
 
 android {
-    namespace = "com.thelightphone.sdk.ui"
+    namespace = "com.thelightphone.lp3Keyboard.ui"
     compileSdk = rootProject.ext["compileSdk"] as Int
 
     defaultConfig {
         minSdk = rootProject.ext["minSdk"] as Int
+    }
+
+    sourceSets {
+        getByName("main") {
+            java.setSrcDirs(listOf(keyboardUiDir.resolve("src/main/java")))
+            res.setSrcDirs(listOf(keyboardUiDir.resolve("src/main/res")))
+        }
     }
 
     compileOptions {
@@ -28,16 +34,10 @@ kotlin {
 }
 
 dependencies {
-    api(project(":sdk:shared"))
-    implementation(project(":lp3keyboard-ui"))
-    implementation(libs.androidx.lifecycle.viewmodel)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-    api(platform(libs.compose.bom))
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.foundation)
     api(libs.compose.ui)
-    api(libs.compose.ui.graphics)
-    api(libs.compose.foundation)
-    api(libs.compose.material3)
-    api(libs.compose.runtime)
-    debugApi(libs.compose.ui.tooling)
-    api(libs.compose.ui.tooling.preview)
+    implementation(libs.compose.material)
+    debugImplementation(libs.compose.ui.tooling)
+    implementation(libs.androidx.lifecycle.viewmodel)
 }
