@@ -2,6 +2,8 @@ package com.thelightphone.sdk.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.runtime.Composable
@@ -28,30 +30,22 @@ import com.thelightphone.sdk.ui.keyboard.TextInputKeyboardCallback
 @Composable
 fun LightTextInputEditor(
     title: String,
-    value: String,
-    onValueChange: (String) -> Unit = {},
+    state: TextFieldState,
     onSubmit: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     submitLabel: String = "SUBMIT",
     editorKey: Any = title,
 ) {
-    val currentValue = rememberUpdatedState(value)
-    val onValueChangeState = rememberUpdatedState(onValueChange)
 
-    val keyboardCallback = remember {
-        TextInputKeyboardCallback(
-            currentValue = { currentValue.value },
-            onValueChange = { onValueChangeState.value(it) },
-        )
-    }
+    val keyboardCallback = remember(state) { TextInputKeyboardCallback(state) }
 
     val keyboardViewModel: Lp3KeyboardViewModel = viewModel<DefaultLp3KeyboardViewModel>(
         key = "LightTextInputEditor-$editorKey",
         factory = factory(keyboardCallback),
     )
 
-    LightTextInputEditor(title, value, onSubmit, onBack, keyboardViewModel, modifier, submitLabel)
+    LightTextInputEditor(title, state, onSubmit, onBack, keyboardViewModel, modifier, submitLabel)
 }
 
 /**
@@ -64,7 +58,7 @@ fun LightTextInputEditor(
 @Composable
 fun LightTextInputEditor(
     title: String,
-    value: String,
+    state: TextFieldState,
     onSubmit: (String) -> Unit,
     onBack: () -> Unit,
     viewModel: Lp3KeyboardViewModel,
@@ -98,11 +92,9 @@ fun LightTextInputEditor(
                 contentAlignment = Alignment.TopStart,
             ) {
                 BasicTextField(
-                    value = value,
-                    onValueChange = {},
+                    state = state,
                     readOnly = true,
                     textStyle = inputStyle,
-                    singleLine = false,
                     cursorBrush = SolidColor(colors.content),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -155,12 +147,11 @@ private fun lightInputTextStyle(): TextStyle {
 @Preview(widthDp = 1080 / 3, heightDp = 1240 / 3, showBackground = true)
 @Composable
 private fun PreviewLightTextInputEditorDark() {
-    var value by remember { mutableStateOf("hi") }
+    val state = rememberTextFieldState("hi")
     LightTheme(colors = LightThemeColors.Dark) {
         LightTextInputEditor(
             title = "Name",
-            value = value,
-            onValueChange = { value = it },
+            state = state,
             onSubmit = {},
             onBack = {},
         )
