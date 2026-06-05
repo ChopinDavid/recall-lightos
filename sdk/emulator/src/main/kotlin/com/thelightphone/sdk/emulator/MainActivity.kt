@@ -33,6 +33,8 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.thelightphone.sdk.server.LightSdkServer.queryEnabledClients
 import com.thelightphone.sdk.server.LightSdkServer.runningAsSystemApp
 import com.thelightphone.sdk.server.LightSdkServerSettings
+import com.thelightphone.sdk.ui.LightText
+import com.thelightphone.sdk.ui.LightTextVariant
 import com.thelightphone.sdk.ui.LightTheme
 import com.thelightphone.sdk.ui.LightThemeController
 
@@ -141,9 +143,9 @@ private fun ToolList(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             for (tool in currentPage) {
-                Text(
+                LightText(
                     text = tool.label,
-                    fontSize = 35.sp,
+                    variant = LightTextVariant.Subtitle,
                     modifier = Modifier.clickable {
                         when(tool) {
                             is DefaultTool -> launchDefaultTool(tool)
