@@ -111,8 +111,8 @@ class WeatherViewModel(
         refreshForecast(query, locationName, lat, lon, showLoadingScreen = needsRefresh)
     }
 
-    fun submitLocation(rawQuery: String) {
-        val query = rawQuery.trim()
+    fun submitLocation(rawQuery: CharSequence) {
+        val query = rawQuery.toString().trim()
         if (query.isEmpty()) {
             _uiState.update { it.copy(errorModal = "Please enter a location.") }
             return

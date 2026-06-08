@@ -34,13 +34,14 @@ class UiDemoTextInputEditorScreen(sealedActivity: SealedLightActivity) :
             return
         }
 
+        val textState = rememberTextFieldState(editorRequest.initialValue)
         val themeColors by LightThemeController.colors.collectAsState()
         LightTheme(colors = themeColors) {
             LightTextInputEditor(
                 title = editorRequest.title,
-                value = editorRequest.initialValue,
+                state = textState,
                 onSubmit = { result ->
-                    UiDemoTextInputNavigation.submitResult(result)
+                    UiDemoTextInputNavigation.submitResult(result.toString())
                     goBack()
                 },
                 onBack = {

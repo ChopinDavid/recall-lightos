@@ -31,7 +31,7 @@ import com.thelightphone.sdk.ui.keyboard.TextInputKeyboardCallback
 fun LightTextInputEditor(
     title: String,
     state: TextFieldState,
-    onSubmit: (String) -> Unit,
+    onSubmit: (CharSequence) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     submitLabel: String = "SUBMIT",
@@ -59,7 +59,7 @@ fun LightTextInputEditor(
 fun LightTextInputEditor(
     title: String,
     state: TextFieldState,
-    onSubmit: (String) -> Unit,
+    onSubmit: (CharSequence) -> Unit,
     onBack: () -> Unit,
     viewModel: Lp3KeyboardViewModel,
     modifier: Modifier = Modifier,
@@ -104,14 +104,15 @@ fun LightTextInputEditor(
 
             LightEmbeddedLp3Keyboard(viewModel = viewModel)
 
-        LightBottomBar(
-            items = listOf(
-                LightBarButton.Text(
-                    text = submitLabel,
-                    onClick = { onSubmit(value) },
+            LightBottomBar(
+                items = listOf(
+                    LightBarButton.Text(
+                        text = submitLabel,
+                        onClick = { onSubmit(state.text) },
+                    ),
                 ),
-            ),
-        )
+            )
+        }
     }
 }
 
