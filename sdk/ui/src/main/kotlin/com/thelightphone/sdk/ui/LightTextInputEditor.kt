@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
@@ -35,28 +36,31 @@ import com.thelightphone.sdk.ui.keyboard.TextInputKeyboardCallback
 fun LightTextInputEditor(
     title: String,
     value: String,
-    onValueChange: (String) -> Unit,
-    onSubmit: () -> Unit,
+    onValueChange: (String) -> Unit = {},
+    onSubmit: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     submitLabel: String = "SUBMIT",
+    editorKey: Any = title,
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
     val colors = LightThemeTokens.colors
     val inputStyle = lightInputTextStyle()
 
-    val currentValue = rememberUpdatedState(value)
+    val textState = remember(editorKey) { mutableStateOf(value) }
     val onValueChangeState = rememberUpdatedState(onValueChange)
 
-    val keyboardCallback = remember {
-        TextInputKeyboardCallback(
-            currentValue = { currentValue.value },
-            onValueChange = { onValueChangeState.value(it) },
-        )
-    }
-
     val keyboardViewModel: EmbeddedLp3KeyboardViewModel = viewModel(
-        factory = EmbeddedLp3KeyboardViewModel.factory(keyboardCallback),
+        key = "LightTextInputEditor-$editorKey",
+        factory = EmbeddedLp3KeyboardViewModel.factory(
+            TextInputKeyboardCallback(
+                currentValue = { textState.value },
+                onValueChange = { newValue ->
+                    textState.value = newValue
+                    onValueChangeState.value(newValue)
+                },
+            ),
+        ),
     )
 
     LaunchedEffect(Unit) {
@@ -81,7 +85,7 @@ fun LightTextInputEditor(
             contentAlignment = Alignment.TopStart,
         ) {
             BasicTextField(
-                value = value,
+                value = textState.value,
                 onValueChange = {},
                 readOnly = true,
                 textStyle = inputStyle,
@@ -99,7 +103,7 @@ fun LightTextInputEditor(
             items = listOf(
                 LightBarButton.Text(
                     text = submitLabel,
-                    onClick = onSubmit,
+                    onClick = { onSubmit(textState.value) },
                 ),
             ),
         )
@@ -126,7 +130,7 @@ private fun PreviewLightTextInputEditorDark() {
             title = "Name",
             value = "London",
             onValueChange = {},
-            onSubmit = {},
+            onSubmit = { },
             onBack = {},
         )
     }
