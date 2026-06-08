@@ -85,6 +85,13 @@ class UiDemoHomeScreen(sealedActivity: SealedLightActivity) :
                                 .padding(vertical = 0.75f.gridUnitsAsDp()),
                         )
                         LightText(
+                            text = "QR CODE SCANNER",
+                            variant = LightTextVariant.Copy,
+                            modifier = Modifier
+                                .clickable { navigateTo(::UiDemoQrScannerScreen) }
+                                .padding(vertical = 0.75f.gridUnitsAsDp()),
+                        )
+                        LightText(
                             text = "MODAL DEMO",
                             variant = LightTextVariant.Copy,
                             modifier = Modifier
