@@ -1,7 +1,6 @@
 package com.thelightphone.uidemo
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -10,10 +9,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import com.thelightphone.sdk.InitialScreen
 import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SealedLightActivity
+import com.thelightphone.sdk.ui.LightBarButton
+import com.thelightphone.sdk.ui.LightIcons
+import com.thelightphone.sdk.ui.LightScrollView
 import com.thelightphone.sdk.ui.LightText
 import com.thelightphone.sdk.ui.LightTextVariant
 import com.thelightphone.sdk.ui.LightTheme
@@ -23,18 +24,19 @@ import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
 
-class UiDemoHomeViewModel : LightViewModel()
+private const val DEMO_ROW_COUNT = 32
 
-@InitialScreen
-class UiDemoHomeScreen(sealedActivity: SealedLightActivity) :
-    LightScreen<UiDemoHomeViewModel>(sealedActivity) {
+class UiDemoScrollViewModel : LightViewModel()
 
-    override val viewModelClass: Class<UiDemoHomeViewModel>
-        get() = UiDemoHomeViewModel::class.java
+class UiDemoScrollScreen(sealedActivity: SealedLightActivity) :
+    LightScreen<UiDemoScrollViewModel>(sealedActivity) {
+
+    override val viewModelClass: Class<UiDemoScrollViewModel>
+        get() = UiDemoScrollViewModel::class.java
 
     override val showBackBar: Boolean = false
 
-    override fun createViewModel() = UiDemoHomeViewModel()
+    override fun createViewModel() = UiDemoScrollViewModel()
 
     @Composable
     override fun Content() {
@@ -47,22 +49,27 @@ class UiDemoHomeScreen(sealedActivity: SealedLightActivity) :
                     .background(LightThemeTokens.colors.background),
             ) {
                 LightTopBar(
-                    center = LightTopBarCenter.Text("UI Demo"),
+                    leftButton = LightBarButton.LightIcon(
+                        icon = LightIcons.BACK,
+                        onClick = { goBack() },
+                    ),
+                    center = LightTopBarCenter.Text("Scrolling"),
                     modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
                 )
 
-                Column(
+                LightScrollView(
                     modifier = Modifier
+                        .weight(1f)
                         .fillMaxWidth()
-                        .padding(horizontal = 1f.gridUnitsAsDp()),
+                        .padding(start = 1f.gridUnitsAsDp()),
                 ) {
-                    LightText(
-                        text = "OPEN COUNTER",
-                        variant = LightTextVariant.Copy,
-                        modifier = Modifier
-                            .clickable { navigateTo(::UiDemoSecondScreen) }
-                            .padding(vertical = 0.75f.gridUnitsAsDp()),
-                    )
+                    repeat(DEMO_ROW_COUNT) { index ->
+                        LightText(
+                            text = "List item ${index + 1}",
+                            variant = LightTextVariant.Copy,
+                            modifier = Modifier.padding(vertical = 0.75f.gridUnitsAsDp()),
+                        )
+                    }
                 }
             }
         }

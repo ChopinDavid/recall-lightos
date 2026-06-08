@@ -1,11 +1,9 @@
 package com.thelightphone.sdk.ui
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -37,12 +35,10 @@ fun LightIcon(
         LightSurfaceScheme.Dark -> icon.darkModeResource
         LightSurfaceScheme.Light -> icon.lightModeResource
     }
-
-    Image(
+    Icon(
         painter = painterResource(drawableId),
         contentDescription = contentDescription,
-        contentScale = ContentScale.Fit,
-        colorFilter = ColorFilter.tint(contentColor),
+        tint = contentColor,
         modifier = modifier
             .size(resolvedWidth.gridUnitsAsDp(), resolvedHeight.gridUnitsAsDp())
             .semantics {
