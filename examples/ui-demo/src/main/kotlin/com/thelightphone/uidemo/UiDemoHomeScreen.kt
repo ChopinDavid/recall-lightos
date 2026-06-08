@@ -88,7 +88,20 @@ class UiDemoHomeScreen(sealedActivity: SealedLightActivity) :
                             text = "QR CODE SCANNER",
                             variant = LightTextVariant.Copy,
                             modifier = Modifier
-                                .clickable { navigateTo(::UiDemoQrScannerScreen) }
+                                .clickable {
+                                    navigateTo(
+                                        screenFactory = ::UiDemoQrScannerScreen,
+                                        resultCallback = { scannedResult ->
+                                            println("scanned result: $scannedResult")
+                                            navigateTo(screenFactory = {
+                                                UiDemoQrResultScreen(
+                                                    it,
+                                                    scannedResult
+                                                )
+                                            })
+                                        }
+                                    )
+                                }
                                 .padding(vertical = 0.75f.gridUnitsAsDp()),
                         )
                         LightText(

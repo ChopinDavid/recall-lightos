@@ -58,9 +58,9 @@ class LightActivity internal constructor() : ComponentActivity() {
             return
         }
         val previous = backStack.last()
-        current.deliverResult()
         previous.screen.notifyWillShow()
         currentScreen.value = previous
+        current.deliverResult()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
