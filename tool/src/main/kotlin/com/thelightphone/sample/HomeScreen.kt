@@ -4,18 +4,16 @@ import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewModelScope
 import com.thelightphone.sdk.InitialScreen
@@ -25,6 +23,13 @@ import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.SimpleLightScreen
 import com.thelightphone.sdk.callRemoteServiceMethod
+import com.thelightphone.sdk.ui.LightIcon
+import com.thelightphone.sdk.ui.LightIcons
+import com.thelightphone.sdk.ui.LightText
+import com.thelightphone.sdk.ui.LightTextVariant
+import com.thelightphone.sdk.ui.LightTheme
+import com.thelightphone.sdk.ui.LightThemeController
+import com.thelightphone.sdk.ui.LightThemeTokens
 import com.thelightphone.sdk.shared.LightResult
 import com.thelightphone.sdk.shared.LightServiceMethod
 import com.thelightphone.sdk.shared.error
@@ -74,47 +79,60 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<HomeScreenVi
     override fun Content() {
         val ringtones by viewModel.ringtones.collectAsState()
         val status by viewModel.status.collectAsState()
+        val themeColors by LightThemeController.colors.collectAsState()
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black)
-                .padding(32.dp)
-        ) {
-            Text(
-                text = "Ringtones",
-                color = Color.White,
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-
-            status?.let {
-                Text(
-                    text = it,
-                    color = Color.Gray,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(bottom = 16.dp)
+        LightTheme(colors = themeColors) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(LightThemeTokens.colors.background)
+                    .padding(32.dp)
+            ) {
+                LightText(
+                    text = "Ringtones",
+                    variant = LightTextVariant.Heading,
+                    modifier = Modifier.padding(bottom = 16.dp),
                 )
-            }
 
-            if (ringtones.isEmpty()) {
-                Text(
-                    text = "No ringtones found",
-                    color = Color.Gray,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            } else {
-                LazyColumn {
-                    items(ringtones) { filename ->
-                        Text(
-                            text = filename,
-                            color = Color.White,
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { viewModel.selectRingtone(filename) }
-                                .padding(vertical = 12.dp)
-                        )
+                Row(modifier = Modifier.padding(bottom = 24.dp)) {
+                    LightIcon(
+                        icon = LightIcons.SETTINGS,
+                        modifier = Modifier
+                            .padding(end = 16.dp)
+                            .clickable { LightThemeController.toggle() },
+                    )
+                    LightIcon(icon = LightIcons.CALL, modifier = Modifier.padding(end = 16.dp))
+                    LightIcon(icon = LightIcons.SEARCH, modifier = Modifier.padding(end = 16.dp))
+                    LightIcon(icon = LightIcons.TOGGLE_ON)
+                }
+
+                status?.let {
+                    LightText(
+                        text = it,
+                        variant = LightTextVariant.Detail,
+                        lighten = true,
+                        modifier = Modifier.padding(bottom = 16.dp),
+                    )
+                }
+
+                if (ringtones.isEmpty()) {
+                    LightText(
+                        text = "No ringtones found.",
+                        variant = LightTextVariant.Copy,
+                        lighten = true,
+                    )
+                } else {
+                    LazyColumn {
+                        items(ringtones) { filename ->
+                            LightText(
+                                text = filename,
+                                variant = LightTextVariant.Copy,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.selectRingtone(filename) }
+                                    .padding(vertical = 12.dp),
+                            )
+                        }
                     }
                 }
             }

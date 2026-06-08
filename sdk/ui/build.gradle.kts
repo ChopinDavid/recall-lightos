@@ -29,6 +29,9 @@ kotlin {
 
 dependencies {
     api(project(":sdk:shared"))
+    implementation(project(":lp3keyboard-ui"))
+    implementation(libs.androidx.lifecycle.viewmodel)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
     api(platform(libs.compose.bom))
     api(libs.compose.ui)
     api(libs.compose.ui.graphics)
