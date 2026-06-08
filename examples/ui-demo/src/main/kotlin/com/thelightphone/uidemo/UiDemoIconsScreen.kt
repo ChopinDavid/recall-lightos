@@ -35,10 +35,10 @@ import com.thelightphone.sdk.ui.gridUnitsAsDp
 private val GALLERY_EXCLUDED_ICONS = setOf("SPACER")
 private const val ICON_GALLERY_ROW_HEIGHT_GRID = 3.5f
 
-class UiDemoIconsViewModel : LightViewModel()
+class UiDemoIconsViewModel : LightViewModel<Unit>()
 
 class UiDemoIconsScreen(sealedActivity: SealedLightActivity) :
-    LightScreen<UiDemoIconsViewModel>(sealedActivity) {
+    LightScreen<Unit, UiDemoIconsViewModel>(sealedActivity) {
 
     override val viewModelClass: Class<UiDemoIconsViewModel>
         get() = UiDemoIconsViewModel::class.java

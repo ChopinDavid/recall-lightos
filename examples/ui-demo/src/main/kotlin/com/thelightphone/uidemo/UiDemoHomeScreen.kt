@@ -28,11 +28,11 @@ import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
 
-class UiDemoHomeViewModel : LightViewModel()
+class UiDemoHomeViewModel : LightViewModel<Unit>()
 
 @InitialScreen
 class UiDemoHomeScreen(sealedActivity: SealedLightActivity) :
-    LightScreen<UiDemoHomeViewModel>(sealedActivity) {
+    LightScreen<Unit, UiDemoHomeViewModel>(sealedActivity) {
 
     override val viewModelClass: Class<UiDemoHomeViewModel>
         get() = UiDemoHomeViewModel::class.java

@@ -26,10 +26,10 @@ import com.thelightphone.sdk.ui.gridUnitsAsDp
 
 private const val DEMO_ROW_COUNT = 32
 
-class UiDemoScrollViewModel : LightViewModel()
+class UiDemoScrollViewModel : LightViewModel<Unit>()
 
 class UiDemoScrollScreen(sealedActivity: SealedLightActivity) :
-    LightScreen<UiDemoScrollViewModel>(sealedActivity) {
+    LightScreen<Unit, UiDemoScrollViewModel>(sealedActivity) {
 
     override val viewModelClass: Class<UiDemoScrollViewModel>
         get() = UiDemoScrollViewModel::class.java

@@ -22,22 +22,34 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.datastore.preferences.preferencesDataStore
 
+private class BackStackEntry<T>(
+    val screen: SimpleLightScreen<T>,
+    val callback: ((T) -> Unit)? = null,
+) {
+    fun deliverResult() {
+        val result = screen.result ?: return
+        callback?.invoke(result)
+    }
+}
+
 class LightActivity internal constructor() : ComponentActivity() {
 
-    private val backStack = mutableListOf<SimpleLightScreen>()
-    private val currentScreen = mutableStateOf<SimpleLightScreen?>(null)
+    private val backStack = mutableListOf<BackStackEntry<*>>()
+    private val currentScreen = mutableStateOf<BackStackEntry<*>?>(null)
     private var contentReady = false
     private val createdAt = android.os.SystemClock.elapsedRealtime()
 
-    internal fun navigateTo(screen: SimpleLightScreen) {
-        currentScreen.value?.notifyWillHide()
-        backStack.add(screen)
+    internal fun <T> navigateTo(screen: SimpleLightScreen<T>, resultCallback: ((T) -> Unit)? = null) {
+        currentScreen.value?.screen?.notifyWillHide()
+        val entry = BackStackEntry(screen, resultCallback)
+        backStack.add(entry)
         screen.notifyWillShow()
-        currentScreen.value = screen
+        currentScreen.value = entry
     }
 
     internal fun goBack() {
-        val popped = currentScreen.value ?: return
+        val current = currentScreen.value ?: return
+        val popped = current.screen
         popped.notifyWillHide()
         popped.destroy()
         backStack.removeAt(backStack.lastIndex)
@@ -46,7 +58,8 @@ class LightActivity internal constructor() : ComponentActivity() {
             return
         }
         val previous = backStack.last()
-        previous.notifyWillShow()
+        current.deliverResult()
+        previous.screen.notifyWillShow()
         currentScreen.value = previous
     }
 
@@ -65,14 +78,14 @@ class LightActivity internal constructor() : ComponentActivity() {
         val factory = LightSdkRegistry.initialScreenFactory
             ?: throw IllegalStateException("No class annotated with @InitialScreen found")
 
-        val initial = factory(SealedLightActivity(this))
+        val initial = BackStackEntry(factory(SealedLightActivity(this)))
 
         backStack.add(initial)
         currentScreen.value = initial
 
         setContent {
             androidx.compose.runtime.LaunchedEffect(Unit) { contentReady = true }
-            val screen = currentScreen.value
+            val screen = currentScreen.value?.screen
             if (screen != null) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     Box(
@@ -109,12 +122,12 @@ class LightActivity internal constructor() : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
-        currentScreen.value?.notifyAppPause()
+        currentScreen.value?.screen?.notifyAppPause()
     }
 
     override fun onResume() {
         super.onResume()
-        currentScreen.value?.notifyWillShow()
+        currentScreen.value?.screen?.notifyWillShow()
     }
 }
 

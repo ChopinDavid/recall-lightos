@@ -10,8 +10,9 @@ import androidx.lifecycle.ViewModelStoreOwner
 import java.io.File
 import kotlin.text.clear
 
-abstract class SimpleLightScreen(sealedActivity: SealedLightActivity) {
+abstract class SimpleLightScreen<ResultType>(sealedActivity: SealedLightActivity) {
     internal val activity = sealedActivity.activity
+    internal var result: ResultType? = null
 
     protected val dataStore: DataStore<Preferences> = activity.dataStore
     protected val filesDir: File = activity.filesDir
@@ -43,19 +44,20 @@ abstract class SimpleLightScreen(sealedActivity: SealedLightActivity) {
         onScreenDestroy()
     }
 
-    fun navigateTo(screenFactory: (SealedLightActivity) -> SimpleLightScreen) {
+    fun <T> navigateTo(screenFactory: (SealedLightActivity) -> SimpleLightScreen<T>, resultCallback: ((T) -> Unit)? = null) {
         val screen = screenFactory(SealedLightActivity(activity))
-        activity.navigateTo(screen)
+        activity.navigateTo(screen, resultCallback)
     }
 
-    open fun goBack() {
+    open fun goBack(result: ResultType? = null) {
+        this.result = result
         activity.goBack()
     }
 }
 
-abstract class LightScreen<VM : LightViewModel>(
+abstract class LightScreen<ResultType, VM : LightViewModel<ResultType>>(
     sealedActivity: SealedLightActivity
-) : SimpleLightScreen(sealedActivity), ViewModelStoreOwner {
+) : SimpleLightScreen<ResultType>(sealedActivity), ViewModelStoreOwner {
     abstract val viewModelClass: Class<VM>
     abstract fun createViewModel(): VM
 
@@ -91,9 +93,9 @@ abstract class LightScreen<VM : LightViewModel>(
         viewModel.onAppPause()
     }
 
-    override fun goBack() {
+    override fun goBack(result: ResultType?) {
         if (!viewModel.onBackPressed()) {
-            super.goBack()
+            super.goBack(result)
         }
     }
 }

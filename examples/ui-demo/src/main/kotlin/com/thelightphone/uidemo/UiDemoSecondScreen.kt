@@ -28,7 +28,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-class UiDemoSecondViewModel : LightViewModel() {
+class UiDemoSecondViewModel : LightViewModel<Unit>() {
     private val _count = MutableStateFlow(0)
     val count: StateFlow<Int> = _count.asStateFlow()
 
@@ -38,7 +38,7 @@ class UiDemoSecondViewModel : LightViewModel() {
 }
 
 class UiDemoSecondScreen(sealedActivity: SealedLightActivity) :
-    LightScreen<UiDemoSecondViewModel>(sealedActivity) {
+    LightScreen<Unit,UiDemoSecondViewModel>(sealedActivity) {
 
     override val viewModelClass: Class<UiDemoSecondViewModel>
         get() = UiDemoSecondViewModel::class.java
