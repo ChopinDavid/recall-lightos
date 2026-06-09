@@ -1,10 +1,16 @@
+import java.util.Properties
+
 plugins {
     kotlin("jvm") version "2.3.20"
     `java-gradle-plugin`
 }
 
-group = property("sdkGroup") as String
-version = property("sdkVersion") as String
+val rootProps = Properties().apply {
+    rootDir.resolve("../gradle.properties").inputStream().use { load(it) }
+}
+
+group = rootProps.getProperty("sdkGroup")
+version = rootProps.getProperty("sdkVersion")
 
 repositories {
     mavenCentral()
