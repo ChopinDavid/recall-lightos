@@ -1,17 +1,19 @@
 package com.thelightphone.sdk.ui.keyboard
 
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.delete
+import com.thelightphone.lp3Keyboard.ui.Lp3RepeatableKeyboardCallback
 import com.thelightphone.lp3Keyboard.ui.SpecialKey
 
 internal class TextInputKeyboardCallback(
-    private val currentValue: () -> String,
-    private val onValueChange: (String) -> Unit,
+    private val state: TextFieldState,
 ) : Lp3RepeatableKeyboardCallback {
 
     override fun onKeyPressed(code: Int) = Unit
 
     override fun onSpecialKeyPressed(key: SpecialKey) {
         if (key == SpecialKey.Space) {
-            append(" ")
+            state.edit { append(" ") }
         }
     }
 
@@ -21,8 +23,8 @@ internal class TextInputKeyboardCallback(
 
     override fun onSpecialKeyReleased(key: SpecialKey) {
         when (key) {
-            SpecialKey.Backspace -> deleteChars(surrogateAwareDeleteCount(currentValue(), 1))
-            SpecialKey.Return -> append("\n")
+            SpecialKey.Backspace -> deleteLast(surrogateAwareDeleteCount(state.text, 1))
+            SpecialKey.Return -> state.edit { append("\n") }
             else -> Unit
         }
     }
@@ -31,7 +33,7 @@ internal class TextInputKeyboardCallback(
 
     override fun onSpecialKeyLongPressed(key: SpecialKey) {
         if (key == SpecialKey.Backspace) {
-            deleteChars(deleteWordCount(currentValue()))
+            deleteLast(deleteWordCount(state.text))
         }
     }
 
@@ -41,33 +43,31 @@ internal class TextInputKeyboardCallback(
 
     override fun onSpecialKeyRepeated(key: SpecialKey) {
         if (key == SpecialKey.Space) {
-            append(" ")
+            state.edit { append(" ") }
         }
     }
 
-    private fun append(text: String) {
-        onValueChange(currentValue() + text)
-    }
-
     private fun appendCodePoint(code: Int) {
-        append(buildString { appendCodePoint(code) })
+        state.edit { append(buildString { appendCodePoint(code) }) }
     }
 
-    private fun deleteChars(count: Int) {
+    private fun deleteLast(count: Int) {
         if (count <= 0) return
-        val value = currentValue()
-        if (value.isEmpty()) return
-        onValueChange(value.dropLast(count.coerceAtMost(value.length)))
+        state.edit {
+            val end = length
+            val start = (end - count).coerceAtLeast(0)
+            if (start < end) delete(start, end)
+        }
     }
 }
 
-private fun surrogateAwareDeleteCount(value: String, defaultCount: Int): Int {
+private fun surrogateAwareDeleteCount(value: CharSequence, defaultCount: Int): Int {
     if (value.isEmpty()) return 0
     val last = value[value.length - 1]
     return if (Character.isLowSurrogate(last)) 2 else defaultCount
 }
 
-private fun deleteWordCount(value: String): Int {
+private fun deleteWordCount(value: CharSequence): Int {
     val trimmed = value.trimEnd()
     val lastSpace = trimmed.indexOfLast { it.isWhitespace() }
     return value.length - if (lastSpace >= 0) lastSpace + 1 else 0

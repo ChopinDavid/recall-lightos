@@ -29,7 +29,7 @@ kotlin {
 
 dependencies {
     api(project(":sdk:shared"))
-    implementation(project(":lp3keyboard-ui"))
+    implementation(libs.light.keyboard)
     implementation(libs.androidx.lifecycle.viewmodel)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)

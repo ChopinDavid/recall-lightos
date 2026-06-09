@@ -12,10 +12,10 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import com.thelightphone.lp3Keyboard.ui.DarkKeyboardColors
 import com.thelightphone.lp3Keyboard.ui.LightKeyboardColors
-import com.thelightphone.lp3Keyboard.ui.Lp3Keyboard
 import com.thelightphone.lp3Keyboard.ui.Lp3KeyboardTheme
 import com.thelightphone.lp3Keyboard.ui.Lp3KeyboardViewModel
 import com.thelightphone.lp3Keyboard.ui.LocalKeyboardColors
+import com.thelightphone.lp3Keyboard.ui.Lp3KeyboardWrapper
 import com.thelightphone.sdk.ui.LightThemeTokens
 
 @Composable
@@ -36,7 +36,7 @@ fun LightEmbeddedLp3Keyboard(viewModel: Lp3KeyboardViewModel) {
                 .background(colors.background)
                 .padding(top = 10.dp),
         ) {
-            Lp3Keyboard(
+            Lp3KeyboardWrapper(
                 layout = layout,
                 options = options,
                 callback = viewModel,

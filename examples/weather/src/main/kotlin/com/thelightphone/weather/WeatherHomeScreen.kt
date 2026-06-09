@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -46,6 +47,7 @@ class WeatherHomeScreen(sealedActivity: SealedLightActivity) :
     override fun Content() {
         val themeColors by LightThemeController.colors.collectAsState()
         val state by viewModel.uiState.collectAsState()
+        val textFieldState = rememberTextFieldState("")
 
         LightTheme(colors = themeColors) {
             Box(
@@ -58,7 +60,7 @@ class WeatherHomeScreen(sealedActivity: SealedLightActivity) :
                         LightTextInputEditor(
                             title = "Location",
                             editorKey = state.locationInputSession,
-                            value = "",
+                            state = textFieldState,
                             onSubmit = viewModel::submitLocation,
                             onBack = viewModel::cancelLocationInput,
                             modifier = Modifier.fillMaxSize(),
