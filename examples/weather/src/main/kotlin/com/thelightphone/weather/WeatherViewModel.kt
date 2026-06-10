@@ -47,7 +47,7 @@ private enum class LocationInputSource {
 
 class WeatherViewModel(
     private val dataStore: DataStore<Preferences>,
-) : LightViewModel() {
+) : LightViewModel<Unit>() {
     private val api = WeatherApi()
     private val json = Json { ignoreUnknownKeys = true }
 

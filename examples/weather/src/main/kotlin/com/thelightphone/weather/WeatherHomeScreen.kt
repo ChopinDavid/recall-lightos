@@ -34,7 +34,7 @@ import kotlin.math.roundToInt
 
 @InitialScreen
 class WeatherHomeScreen(sealedActivity: SealedLightActivity) :
-    LightScreen<WeatherViewModel>(sealedActivity) {
+    LightScreen<Unit, WeatherViewModel>(sealedActivity) {
 
     override val viewModelClass: Class<WeatherViewModel>
         get() = WeatherViewModel::class.java

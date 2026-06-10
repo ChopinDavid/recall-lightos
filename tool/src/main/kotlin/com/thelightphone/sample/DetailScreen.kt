@@ -38,7 +38,7 @@ data class TimezoneResponse(
     val currentLocalTime: String = "",
 )
 
-class DetailViewModel : LightViewModel() {
+class DetailViewModel : LightViewModel<Unit>() {
     sealed class State {
         object Loading : State()
         data class Time(val timeToDisplay: String) : State()
@@ -54,7 +54,7 @@ class DetailViewModel : LightViewModel() {
     private val _state = MutableStateFlow<State>(State.Loading)
     val state: StateFlow<State> = _state
 
-    override fun onScreenShow(screen: SimpleLightScreen) {
+    override fun onScreenShow(screen: SimpleLightScreen<Unit>) {
         super.onScreenShow(screen)
         _state.value = State.Loading
         viewModelScope.launch(Dispatchers.IO) {
@@ -76,7 +76,8 @@ class DetailViewModel : LightViewModel() {
     }
 }
 
-class DetailScreen(sealedActivity: SealedLightActivity) : LightScreen<DetailViewModel>(sealedActivity) {
+class DetailScreen(sealedActivity: SealedLightActivity) :
+    LightScreen<Unit, DetailViewModel>(sealedActivity) {
 
     override val viewModelClass: Class<DetailViewModel>
         get() = DetailViewModel::class.java

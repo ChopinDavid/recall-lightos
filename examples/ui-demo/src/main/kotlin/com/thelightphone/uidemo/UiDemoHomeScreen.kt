@@ -28,11 +28,11 @@ import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
 
-class UiDemoHomeViewModel : LightViewModel()
+class UiDemoHomeViewModel : LightViewModel<Unit>()
 
 @InitialScreen
 class UiDemoHomeScreen(sealedActivity: SealedLightActivity) :
-    LightScreen<UiDemoHomeViewModel>(sealedActivity) {
+    LightScreen<Unit, UiDemoHomeViewModel>(sealedActivity) {
 
     override val viewModelClass: Class<UiDemoHomeViewModel>
         get() = UiDemoHomeViewModel::class.java
@@ -88,7 +88,20 @@ class UiDemoHomeScreen(sealedActivity: SealedLightActivity) :
                             text = "QR CODE SCANNER",
                             variant = LightTextVariant.Copy,
                             modifier = Modifier
-                                .clickable { navigateTo(::UiDemoQrScannerScreen) }
+                                .clickable {
+                                    navigateTo(
+                                        screenFactory = ::UiDemoQrScannerScreen,
+                                        resultCallback = { scannedResult ->
+                                            println("scanned result: $scannedResult")
+                                            navigateTo(screenFactory = {
+                                                UiDemoQrResultScreen(
+                                                    it,
+                                                    scannedResult
+                                                )
+                                            })
+                                        }
+                                    )
+                                }
                                 .padding(vertical = 0.75f.gridUnitsAsDp()),
                         )
                         LightText(

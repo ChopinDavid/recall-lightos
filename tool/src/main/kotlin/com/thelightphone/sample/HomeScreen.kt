@@ -39,12 +39,12 @@ import kotlinx.coroutines.launch
 
 class HomeScreenViewModel(
     private val fileShare: LightFileShare
-) : LightViewModel() {
+) : LightViewModel<Unit>() {
 
     val ringtones = MutableStateFlow<List<String>>(emptyList())
     val status = MutableStateFlow<String?>(null)
 
-    override fun onScreenShow(screen: SimpleLightScreen) {
+    override fun onScreenShow(screen: SimpleLightScreen<Unit>) {
         super.onScreenShow(screen)
         ringtones.value = fileShare.list("ringtones")
     }
@@ -66,7 +66,7 @@ class HomeScreenViewModel(
 }
 
 @InitialScreen
-class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<HomeScreenViewModel>(sealedActivity) {
+class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeScreenViewModel>(sealedActivity) {
 
     override val viewModelClass: Class<HomeScreenViewModel>
         get() = HomeScreenViewModel::class.java

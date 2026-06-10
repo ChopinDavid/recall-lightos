@@ -10,7 +10,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.LightViewModel
@@ -26,10 +25,13 @@ import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
 
-class UiDemoQrResultViewModel : LightViewModel()
+class UiDemoQrResultViewModel : LightViewModel<Unit>()
 
-class UiDemoQrResultScreen(sealedActivity: SealedLightActivity) :
-    LightScreen<UiDemoQrResultViewModel>(sealedActivity) {
+class UiDemoQrResultScreen(
+    sealedActivity: SealedLightActivity,
+    private val scannedValue: String
+) :
+    LightScreen<Unit, UiDemoQrResultViewModel>(sealedActivity) {
 
     override val viewModelClass: Class<UiDemoQrResultViewModel>
         get() = UiDemoQrResultViewModel::class.java
@@ -41,8 +43,6 @@ class UiDemoQrResultScreen(sealedActivity: SealedLightActivity) :
     @Composable
     override fun Content() {
         val themeColors by LightThemeController.colors.collectAsState()
-        val scannedValue = remember { UiDemoQrNavigation.consumeResult() }
-
         LightTheme(colors = themeColors) {
             Column(
                 modifier = Modifier
@@ -52,10 +52,7 @@ class UiDemoQrResultScreen(sealedActivity: SealedLightActivity) :
                 LightTopBar(
                     leftButton = LightBarButton.LightIcon(
                         icon = LightIcons.BACK,
-                        onClick = {
-                            UiDemoQrNavigation.clear()
-                            goBack()
-                        },
+                        onClick = { goBack() },
                     ),
                     center = LightTopBarCenter.Text("Scanned"),
                     modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),

@@ -2,9 +2,9 @@ package com.thelightphone.sdk
 
 import androidx.lifecycle.ViewModel
 
-abstract class LightViewModel : ViewModel() {
-    open fun onScreenShow(screen: SimpleLightScreen) {}
-    open fun onScreenHide(screen: SimpleLightScreen) {}
+abstract class LightViewModel<T> : ViewModel() {
+    open fun onScreenShow(screen: SimpleLightScreen<T>) {}
+    open fun onScreenHide(screen: SimpleLightScreen<T>) {}
     open fun onAppPause() {}
 
     /**

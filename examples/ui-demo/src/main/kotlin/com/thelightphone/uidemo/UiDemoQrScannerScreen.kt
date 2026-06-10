@@ -17,10 +17,10 @@ import com.thelightphone.sdk.ui.LightTheme
 import com.thelightphone.sdk.ui.LightThemeController
 import com.thelightphone.sdk.ui.LightThemeTokens
 
-class UiDemoQrScannerViewModel : LightViewModel()
+class UiDemoQrScannerViewModel : LightViewModel<String>()
 
 class UiDemoQrScannerScreen(sealedActivity: SealedLightActivity) :
-    LightScreen<UiDemoQrScannerViewModel>(sealedActivity) {
+    LightScreen<String, UiDemoQrScannerViewModel>(sealedActivity) {
 
     override val viewModelClass: Class<UiDemoQrScannerViewModel>
         get() = UiDemoQrScannerViewModel::class.java
@@ -46,9 +46,7 @@ class UiDemoQrScannerScreen(sealedActivity: SealedLightActivity) :
         LaunchedEffect(pendingScan) {
             val value = pendingScan ?: return@LaunchedEffect
             pendingScan = null
-            UiDemoQrNavigation.setResult(value)
-            goBack()
-            navigateTo(::UiDemoQrResultScreen)
+            goBack(value)
         }
     }
 }

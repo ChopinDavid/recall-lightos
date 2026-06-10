@@ -25,7 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-class UiDemoTextInputViewModel : LightViewModel() {
+class UiDemoTextInputViewModel : LightViewModel<Unit>() {
     private val _name = MutableStateFlow("")
     val name: StateFlow<String> = _name.asStateFlow()
 
@@ -35,7 +35,7 @@ class UiDemoTextInputViewModel : LightViewModel() {
 }
 
 class UiDemoTextInputScreen(sealedActivity: SealedLightActivity) :
-    LightScreen<UiDemoTextInputViewModel>(sealedActivity) {
+    LightScreen<Unit, UiDemoTextInputViewModel>(sealedActivity) {
 
     override val viewModelClass: Class<UiDemoTextInputViewModel>
         get() = UiDemoTextInputViewModel::class.java
@@ -58,7 +58,7 @@ class UiDemoTextInputScreen(sealedActivity: SealedLightActivity) :
                 LightTopBar(
                     leftButton = LightBarButton.LightIcon(
                         icon = LightIcons.BACK,
-                        onClick = { goBack() },
+                        onClick = { goBack(null) },
                     ),
                     center = LightTopBarCenter.Text("Text input"),
                     rightButton = null,
@@ -70,14 +70,11 @@ class UiDemoTextInputScreen(sealedActivity: SealedLightActivity) :
                     value = nameValue,
                     placeholder = "Your name",
                     onClick = {
-                        UiDemoTextInputNavigation.openEditor(
-                            handler = viewModel::setName,
-                            request = UiDemoTextInputNavigation.EditorRequest(
-                                title = "Name",
-                                initialValue = nameValue,
-                            ),
+                        val editorRequest = EditorRequest(title = "Name", initialValue = nameValue)
+                        navigateTo(
+                            screenFactory = { UiDemoTextInputEditorScreen(it, editorRequest) },
+                            resultCallback = { viewModel.setName(it) }
                         )
-                        navigateTo(::UiDemoTextInputEditorScreen)
                     },
                     modifier = Modifier
                         .fillMaxWidth()

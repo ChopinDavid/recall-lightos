@@ -8,9 +8,9 @@ internal object LightSdkRegistry {
     }
 
     @Suppress("UNCHECKED_CAST")
-    val initialScreenFactory: ((SealedLightActivity) -> SimpleLightScreen)? by lazy {
+    val initialScreenFactory: ((SealedLightActivity) -> SimpleLightScreen<*>)? by lazy {
         generated::class.java.getMethod("getInitialScreenFactory").invoke(generated)
-            as? (SealedLightActivity) -> SimpleLightScreen
+            as? (SealedLightActivity) -> SimpleLightScreen<*>
     }
 
     val entryPoint: LightEntryPoint? by lazy {
