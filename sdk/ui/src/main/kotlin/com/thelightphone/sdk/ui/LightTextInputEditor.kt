@@ -1,24 +1,30 @@
 package com.thelightphone.sdk.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -65,13 +71,9 @@ fun LightTextInputEditor(
     modifier: Modifier = Modifier,
     submitLabel: String = "SUBMIT",
 ) {
-    val keyboardController = LocalSoftwareKeyboardController.current
     val colors = LightThemeTokens.colors
     val inputStyle = lightInputTextStyle()
-
-    LaunchedEffect(Unit) {
-        keyboardController?.hide()
-    }
+    var textLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
 
     Surface {
         Column(modifier = modifier.fillMaxSize()) {
@@ -88,18 +90,44 @@ fun LightTextInputEditor(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = 2f.gridUnitsAsDp()),
+                    .padding(horizontal = 2f.gridUnitsAsDp())
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            textLayout?.let { layout ->
+                                state.edit {
+                                    selection = TextRange(layout.getOffsetForPosition(down.position))
+                                }
+                            }
+                            drag(down.id) { change ->
+                                textLayout?.let { layout ->
+                                    state.edit {
+                                        selection = TextRange(layout.getOffsetForPosition(change.position))
+                                    }
+                                }
+                                change.consume()
+                            }
+                        }
+                    },
                 contentAlignment = Alignment.TopStart,
             ) {
-                BasicTextField(
-                    state = state,
-                    readOnly = true,
-                    textStyle = inputStyle,
-                    cursorBrush = SolidColor(colors.content),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusProperties { canFocus = false },
+                BasicText(
+                    text = state.text.toString(),
+                    style = inputStyle,
+                    onTextLayout = { textLayout = it },
+                    modifier = Modifier.fillMaxWidth(),
                 )
+                textLayout?.let { layout ->
+                    val cursorPos = state.selection.min.coerceIn(0, layout.layoutInput.text.length)
+                    val rect = layout.getCursorRect(cursorPos)
+                    Box(
+                        modifier = Modifier
+                            .offset { IntOffset(rect.left.toInt(), rect.top.toInt()) }
+                            .width(2.dp)
+                            .height(with(LocalDensity.current) { rect.height.toDp() })
+                            .background(colors.content),
+                    )
+                }
             }
 
             LightEmbeddedLp3Keyboard(viewModel = viewModel)
