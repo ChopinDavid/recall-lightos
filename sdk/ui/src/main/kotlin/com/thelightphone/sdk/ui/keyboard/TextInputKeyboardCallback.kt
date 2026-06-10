@@ -2,6 +2,7 @@ package com.thelightphone.sdk.ui.keyboard
 
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.delete
+import androidx.compose.ui.text.TextRange
 import com.thelightphone.lp3Keyboard.ui.Lp3RepeatableKeyboardCallback
 import com.thelightphone.lp3Keyboard.ui.SpecialKey
 
@@ -12,19 +13,20 @@ internal class TextInputKeyboardCallback(
     override fun onKeyPressed(code: Int) = Unit
 
     override fun onSpecialKeyPressed(key: SpecialKey) {
-        if (key == SpecialKey.Space) {
-            state.edit { append(" ") }
-        }
+        if (key == SpecialKey.Space) insertAtCursor(" ")
     }
 
     override fun onKeyReleased(code: Int) {
-        appendCodePoint(code)
+        insertCodePoint(code)
     }
 
     override fun onSpecialKeyReleased(key: SpecialKey) {
         when (key) {
-            SpecialKey.Backspace -> deleteLast(surrogateAwareDeleteCount(state.text, 1))
-            SpecialKey.Return -> state.edit { append("\n") }
+            SpecialKey.Backspace -> {
+                val before = state.text.subSequence(0, state.selection.min)
+                deleteBeforeCursor(surrogateAwareDeleteCount(before, 1))
+            }
+            SpecialKey.Return -> insertAtCursor("\n")
             else -> Unit
         }
     }
@@ -33,30 +35,40 @@ internal class TextInputKeyboardCallback(
 
     override fun onSpecialKeyLongPressed(key: SpecialKey) {
         if (key == SpecialKey.Backspace) {
-            deleteLast(deleteWordCount(state.text))
+            val before = state.text.subSequence(0, state.selection.min)
+            deleteBeforeCursor(deleteWordCount(before))
         }
     }
 
     override fun onKeyRepeated(code: Int) {
-        appendCodePoint(code)
+        insertCodePoint(code)
     }
 
     override fun onSpecialKeyRepeated(key: SpecialKey) {
-        if (key == SpecialKey.Space) {
-            state.edit { append(" ") }
+        if (key == SpecialKey.Space) insertAtCursor(" ")
+    }
+
+    private fun insertCodePoint(code: Int) {
+        insertAtCursor(buildString { appendCodePoint(code) })
+    }
+
+    private fun insertAtCursor(text: String) {
+        state.edit {
+            val start = selection.min
+            val end = selection.max
+            replace(start, end, text)
+            selection = TextRange(start + text.length)
         }
     }
 
-    private fun appendCodePoint(code: Int) {
-        state.edit { append(buildString { appendCodePoint(code) }) }
-    }
-
-    private fun deleteLast(count: Int) {
+    private fun deleteBeforeCursor(count: Int) {
         if (count <= 0) return
         state.edit {
-            val end = length
+            val end = selection.min
+            if (end == 0) return@edit
             val start = (end - count).coerceAtLeast(0)
-            if (start < end) delete(start, end)
+            delete(start, end)
+            selection = TextRange(start)
         }
     }
 }
