@@ -9,14 +9,22 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import com.thelightphone.sdk.ui.LightText
 import com.thelightphone.sdk.ui.LightTextVariant
 import com.thelightphone.sdk.ui.gridUnitsAsDp
 import kotlinx.coroutines.delay
 
+internal fun formatExpiryCountdown(totalSeconds: Int): String {
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "$minutes:${seconds.toString().padStart(2, '0')}"
+}
+
 @Composable
 fun TotpCodeDisplay(
     issuer: String,
+    label: String,
     secret: String,
     digits: Int,
     period: Int,
@@ -44,9 +52,17 @@ fun TotpCodeDisplay(
 
     Column(modifier = modifier) {
         LightText(
-            text = issuer.ifBlank { "Account" },
-            variant = LightTextVariant.Subtitle,
+            text = issuer.ifBlank { "Unknown" },
+            variant = LightTextVariant.Copy,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 1.5f.gridUnitsAsDp()),
+        )
+        LightText(
+            text = "(${label.ifBlank { "—" }})",
+            variant = LightTextVariant.Copy,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
         LightText(
             text = totp.code,
@@ -54,7 +70,7 @@ fun TotpCodeDisplay(
             modifier = Modifier.padding(top = 0.5f.gridUnitsAsDp()),
         )
         LightText(
-            text = "Expires in: ${totp.remainingSeconds}s",
+            text = "Expires in: ${formatExpiryCountdown(totp.remainingSeconds)}",
             variant = LightTextVariant.Copy,
             modifier = Modifier.padding(top = 0.5f.gridUnitsAsDp()),
         )

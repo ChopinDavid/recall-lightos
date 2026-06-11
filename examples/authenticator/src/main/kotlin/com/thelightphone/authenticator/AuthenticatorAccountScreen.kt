@@ -93,7 +93,8 @@ class AuthenticatorAccountScreen(sealedActivity: SealedLightActivity) :
                             val loadedSecret = secret
                             if (loadedSecret != null) {
                                 TotpCodeDisplay(
-                                    issuer = account.displayName,
+                                    issuer = account.issuer,
+                                    label = account.label,
                                     secret = loadedSecret,
                                     digits = account.digits,
                                     period = account.period,

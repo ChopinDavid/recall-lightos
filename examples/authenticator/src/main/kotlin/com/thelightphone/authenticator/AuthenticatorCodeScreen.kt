@@ -79,7 +79,9 @@ class AuthenticatorCodeScreen(sealedActivity: SealedLightActivity) :
                             goBack()
                         },
                     ),
-                    center = LightTopBarCenter.Text("Authenticator"),
+                    center = LightTopBarCenter.Text(
+                        account?.issuer?.takeIf { it.isNotBlank() } ?: "Authenticator",
+                    ),
                     modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
                 )
 
@@ -101,7 +103,8 @@ class AuthenticatorCodeScreen(sealedActivity: SealedLightActivity) :
                         }
                         else -> {
                             TotpCodeDisplay(
-                                issuer = loadedAccount.displayName,
+                                issuer = loadedAccount.issuer,
+                                label = loadedAccount.label,
                                 secret = loadedSecret,
                                 digits = loadedAccount.digits,
                                 period = loadedAccount.period,
