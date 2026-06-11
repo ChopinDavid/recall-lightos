@@ -13,7 +13,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import com.thelightphone.sdk.InitialScreen
 import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.SealedLightActivity
@@ -83,13 +82,9 @@ class AuthenticatorHomeScreen(sealedActivity: SealedLightActivity) :
                             .padding(start = 1f.gridUnitsAsDp()),
                     ) {
                         accounts.forEach { account ->
-                            LightText(
-                                text = account.displayName,
-                                variant = LightTextVariant.Copy,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
+                            AccountListRow(
+                                account = account,
                                 modifier = Modifier
-                                    .fillMaxWidth()
                                     .clickable {
                                         AuthenticatorCodeNavigation.open(account.id)
                                         navigateTo(::AuthenticatorCodeScreen)
