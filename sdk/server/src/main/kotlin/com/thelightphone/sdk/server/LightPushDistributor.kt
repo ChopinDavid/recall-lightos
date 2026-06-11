@@ -37,7 +37,7 @@ class LightPushDistributor : BroadcastReceiver() {
         fun sendLocalMessage(context: Context, packageName: String, message: ByteArray) {
             scope.launch {
                 val registration = LightPushRegistry.findLocal(context, packageName) ?: run {
-                    Log.w(TAG, "No local channel registration for $packageName")
+                    Log.w(TAG, "No local channel registration for given package")
                     return@launch
                 }
                 sendMessage(context, packageName, registration.token, message)
@@ -87,18 +87,32 @@ class LightPushDistributor : BroadcastReceiver() {
         val channel = intent.getStringExtra("message")
         val vapid = intent.getStringExtra("vapid")
 
-        val endpoint = runCatching {
+        val existing = LightPushRegistry.getByToken(context, token)
+        if (existing != null && existing.packageName != callerPackage) {
+            Log.w(
+                TAG,
+                "Token $token already registered to another package; refusing re-registration from",
+            )
+            sendRegistrationFailed(context, callerPackage, token)
+            return
+        }
+
+        val endpoint = existing?.endpoint ?: runCatching {
             LightSdkServer.pushEndpointFetcher.invoke(callerPackage, token, vapid)
         }.getOrNull()
 
         if (endpoint == null) {
-            Log.e(TAG, "Failed to fetch endpoint for $callerPackage token=$token")
+            Log.e(TAG, "Failed to fetch endpoint for token=$token")
             sendRegistrationFailed(context, callerPackage, token)
             return
         }
 
         LightPushRegistry.register(context, token, callerPackage, endpoint, channel, vapid)
-        Log.i(TAG, "Registered $callerPackage with token $token (channel=$channel)")
+        if (existing == null) {
+            Log.i(TAG, "Registered with token $token (channel=$channel)")
+        } else {
+            Log.i(TAG, "Re-registered with token $token (channel=$channel)")
+        }
 
         val response = Intent(ACTION_NEW_ENDPOINT).apply {
             setPackage(callerPackage)
