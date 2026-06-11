@@ -37,7 +37,7 @@ class EmulatorHttpServer(private val context: Context) {
                     call.respondText("Missing token", status = HttpStatusCode.BadRequest)
                     return@post
                 }
-                val registration = LightPushRegistry.get(token)
+                val registration = LightPushRegistry.getByToken(context, token)
                 if (registration == null) {
                     call.respondText("Unknown token", status = HttpStatusCode.NotFound)
                     return@post

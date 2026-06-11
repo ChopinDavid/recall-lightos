@@ -4,7 +4,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import com.thelightphone.sdk.shared.LightConstants
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class LightPushDistributor : BroadcastReceiver() {
 
@@ -20,6 +23,8 @@ class LightPushDistributor : BroadcastReceiver() {
         private const val ACTION_UNREGISTERED = "org.unifiedpush.android.connector.UNREGISTERED"
         private const val ACTION_MESSAGE = "org.unifiedpush.android.connector.MESSAGE"
 
+        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
         fun sendMessage(context: Context, packageName: String, token: String, message: ByteArray) {
             val intent = Intent(ACTION_MESSAGE).apply {
                 setPackage(packageName)
@@ -30,13 +35,13 @@ class LightPushDistributor : BroadcastReceiver() {
         }
 
         fun sendLocalMessage(context: Context, packageName: String, message: ByteArray) {
-            val registration = LightPushRegistry.getAll().entries
-                .find { it.value.packageName == packageName && it.value.channel == LightConstants.PUSH_CHANNEL_LOCAL }
-                ?: run {
+            scope.launch {
+                val registration = LightPushRegistry.findLocal(context, packageName) ?: run {
                     Log.w(TAG, "No local channel registration for $packageName")
-                    return
+                    return@launch
                 }
-            sendMessage(context, packageName, registration.key, message)
+                sendMessage(context, packageName, registration.token, message)
+            }
         }
     }
 
@@ -44,14 +49,27 @@ class LightPushDistributor : BroadcastReceiver() {
         intent ?: return
 
         when (intent.action) {
-            ACTION_REGISTER -> handleRegister(context, intent)
-            ACTION_UNREGISTER -> handleUnregister(context, intent)
+            ACTION_REGISTER -> runAsync { handleRegister(context, intent) }
+            ACTION_UNREGISTER -> runAsync { handleUnregister(context, intent) }
             ACTION_MESSAGE_ACK -> { /* no-op for now */ }
             else -> Log.w(TAG, "Unknown action: ${intent.action}")
         }
     }
 
-    private fun handleRegister(context: Context, intent: Intent) {
+    private fun runAsync(block: suspend () -> Unit) {
+        val pendingResult = goAsync()
+        scope.launch {
+            try {
+                block()
+            } catch (t: Throwable) {
+                Log.e(TAG, "Async receiver work failed", t)
+            } finally {
+                pendingResult.finish()
+            }
+        }
+    }
+
+    private suspend fun handleRegister(context: Context, intent: Intent) {
         val token = intent.getStringExtra("token")
         val callerPackage = getCallerPackage(intent)
 
@@ -79,7 +97,7 @@ class LightPushDistributor : BroadcastReceiver() {
             return
         }
 
-        LightPushRegistry.register(token, callerPackage, endpoint, channel, vapid)
+        LightPushRegistry.register(context, token, callerPackage, endpoint, channel, vapid)
         Log.i(TAG, "Registered $callerPackage with token $token (channel=$channel)")
 
         val response = Intent(ACTION_NEW_ENDPOINT).apply {
@@ -99,14 +117,14 @@ class LightPushDistributor : BroadcastReceiver() {
         context.sendBroadcast(response)
     }
 
-    private fun handleUnregister(context: Context, intent: Intent) {
+    private suspend fun handleUnregister(context: Context, intent: Intent) {
         val token = intent.getStringExtra("token")
         if (token == null) {
             Log.e(TAG, "Unregistration missing token")
             return
         }
 
-        val registration = LightPushRegistry.remove(token)
+        val registration = LightPushRegistry.remove(context, token)
         val callerPackage = registration?.packageName ?: getCallerPackage(intent) ?: return
 
         Log.i(TAG, "Unregistered $callerPackage with token $token")
