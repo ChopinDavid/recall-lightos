@@ -15,9 +15,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import com.thelightphone.sdk.LightScreen
-import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SealedLightActivity
+import com.thelightphone.sdk.SimpleLightScreen
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightIcons
 import com.thelightphone.sdk.ui.LightText
@@ -32,27 +31,22 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
-class AuthenticatorAccountViewModel : LightViewModel()
-
-class AuthenticatorAccountScreen(sealedActivity: SealedLightActivity) :
-    LightScreen<AuthenticatorAccountViewModel>(sealedActivity) {
+class AuthenticatorAccountScreen(
+    sealedActivity: SealedLightActivity,
+    private val accountResult: Result<StoredAccount>
+) : SimpleLightScreen<Unit>(sealedActivity) {
 
     private val repository = TotpAccountRepository.getInstance(
         databaseFile = File(filesDir, TotpAccountRepository.DATABASE_FILE_NAME),
     )
 
-    override val viewModelClass: Class<AuthenticatorAccountViewModel>
-        get() = AuthenticatorAccountViewModel::class.java
-
     override val showBackBar: Boolean = false
-
-    override fun createViewModel() = AuthenticatorAccountViewModel()
 
     @Composable
     override fun Content() {
         val themeColors by LightThemeController.colors.collectAsState()
-        val account = remember { AuthenticatorQrNavigation.consumeAccount() }
-        val parseError = remember { AuthenticatorQrNavigation.consumeError() }
+        val account = remember { accountResult.getOrNull() }
+        val parseError = remember { accountResult.exceptionOrNull() }
 
         var secret by remember(account?.id) { mutableStateOf<String?>(null) }
 
@@ -72,10 +66,7 @@ class AuthenticatorAccountScreen(sealedActivity: SealedLightActivity) :
                 LightTopBar(
                     leftButton = LightBarButton.LightIcon(
                         icon = LightIcons.BACK,
-                        onClick = {
-                            AuthenticatorQrNavigation.clear()
-                            goBack()
-                        },
+                        onClick = { goBack() },
                     ),
                     center = LightTopBarCenter.Text("Account"),
                     modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
@@ -102,13 +93,15 @@ class AuthenticatorAccountScreen(sealedActivity: SealedLightActivity) :
                                 )
                             }
                         }
+
                         parseError != null -> {
                             LightText(
-                                text = parseError,
+                                text = parseError.message ?: "Invalid QR Code",
                                 variant = LightTextVariant.Copy,
                                 modifier = Modifier.padding(vertical = 0.75f.gridUnitsAsDp()),
                             )
                         }
+
                         else -> {
                             LightText(
                                 text = "(no account data)",

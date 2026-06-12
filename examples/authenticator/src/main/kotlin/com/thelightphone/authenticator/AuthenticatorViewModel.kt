@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
 
 class AuthenticatorViewModel(
     private val repository: TotpAccountRepository,
-) : LightViewModel() {
+) : LightViewModel<Unit>() {
     private val _accounts = MutableStateFlow<List<StoredAccount>>(emptyList())
     val accounts: StateFlow<List<StoredAccount>> = _accounts.asStateFlow()
 
@@ -19,7 +19,7 @@ class AuthenticatorViewModel(
         reloadAccounts()
     }
 
-    override fun onScreenShow(screen: SimpleLightScreen) {
+    override fun onScreenShow(screen: SimpleLightScreen<Unit>) {
         reloadAccounts()
     }
 

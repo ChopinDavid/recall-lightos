@@ -14,9 +14,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import com.thelightphone.sdk.LightScreen
-import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SealedLightActivity
+import com.thelightphone.sdk.SimpleLightScreen
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightIcons
@@ -33,27 +32,20 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-class AuthenticatorCodeViewModel : LightViewModel()
 
-class AuthenticatorCodeScreen(sealedActivity: SealedLightActivity) :
-    LightScreen<AuthenticatorCodeViewModel>(sealedActivity) {
+class AuthenticatorCodeScreen(sealedActivity: SealedLightActivity, private val accountId: Long?) :
+    SimpleLightScreen<Unit>(sealedActivity) {
 
     private val repository = TotpAccountRepository.getInstance(
         databaseFile = File(filesDir, TotpAccountRepository.DATABASE_FILE_NAME),
     )
 
-    override val viewModelClass: Class<AuthenticatorCodeViewModel>
-        get() = AuthenticatorCodeViewModel::class.java
-
     override val showBackBar: Boolean = false
-
-    override fun createViewModel() = AuthenticatorCodeViewModel()
 
     @Composable
     override fun Content() {
         val themeColors by LightThemeController.colors.collectAsState()
         val scope = rememberCoroutineScope()
-        val accountId = remember { AuthenticatorCodeNavigation.consumeAccountId() }
         var account by remember { mutableStateOf<StoredAccount?>(null) }
         var secret by remember { mutableStateOf<String?>(null) }
 
@@ -74,10 +66,7 @@ class AuthenticatorCodeScreen(sealedActivity: SealedLightActivity) :
                 LightTopBar(
                     leftButton = LightBarButton.LightIcon(
                         icon = LightIcons.BACK,
-                        onClick = {
-                            AuthenticatorCodeNavigation.clear()
-                            goBack()
-                        },
+                        onClick = { goBack() },
                     ),
                     center = LightTopBarCenter.Text(
                         account?.issuer?.takeIf { it.isNotBlank() } ?: "Authenticator",
@@ -101,6 +90,7 @@ class AuthenticatorCodeScreen(sealedActivity: SealedLightActivity) :
                                 modifier = Modifier.padding(vertical = 0.75f.gridUnitsAsDp()),
                             )
                         }
+
                         else -> {
                             TotpCodeDisplay(
                                 issuer = loadedAccount.issuer,
@@ -125,7 +115,6 @@ class AuthenticatorCodeScreen(sealedActivity: SealedLightActivity) :
                                         withContext(Dispatchers.IO) {
                                             repository.deleteAccount(loadedAccount.id)
                                         }
-                                        AuthenticatorCodeNavigation.clear()
                                         goBack()
                                     }
                                 },

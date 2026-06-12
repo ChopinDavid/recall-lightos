@@ -31,7 +31,7 @@ import java.io.File
 
 @InitialScreen
 class AuthenticatorHomeScreen(sealedActivity: SealedLightActivity) :
-    LightScreen<AuthenticatorViewModel>(sealedActivity) {
+    LightScreen<Unit, AuthenticatorViewModel>(sealedActivity) {
 
     private val repository = TotpAccountRepository.getInstance(
         databaseFile = File(filesDir, TotpAccountRepository.DATABASE_FILE_NAME),
@@ -86,8 +86,12 @@ class AuthenticatorHomeScreen(sealedActivity: SealedLightActivity) :
                                 account = account,
                                 modifier = Modifier
                                     .clickable {
-                                        AuthenticatorCodeNavigation.open(account.id)
-                                        navigateTo(::AuthenticatorCodeScreen)
+                                        navigateTo(screenFactory = {
+                                            AuthenticatorCodeScreen(
+                                                it,
+                                                account.id
+                                            )
+                                        })
                                     }
                                     .padding(vertical = 0.75f.gridUnitsAsDp()),
                             )
@@ -95,12 +99,23 @@ class AuthenticatorHomeScreen(sealedActivity: SealedLightActivity) :
                     }
                 }
 
+                fun goToAddNew() {
+                    navigateTo(screenFactory = ::AuthenticatorQrScannerScreen) { scanResult ->
+                        navigateTo(screenFactory = {
+                            AuthenticatorAccountScreen(
+                                it,
+                                scanResult
+                            )
+                        })
+                    }
+                }
+
                 LightBottomBar(
-                    items = listOf(
+                    listOf(
                         LightBarButton.Text(
                             text = "ADD NEW",
-                            onClick = { navigateTo(::AuthenticatorQrScannerScreen) },
-                        ),
+                            onClick = ::goToAddNew
+                        )
                     ),
                 )
             }
