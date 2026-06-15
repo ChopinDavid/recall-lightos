@@ -111,6 +111,7 @@ class LightPushDistributor : BroadcastReceiver() {
             return
         }
 
+        // TODO move everything here into a worker?
         val endpoint = existing?.endpoint ?: runCatching {
             LightSdkServer.pushEndpointFetcher.invoke(callerPackage, token, vapid)
         }.getOrNull()
