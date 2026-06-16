@@ -3,6 +3,15 @@ package com.thelightphone.weather
 import kotlinx.serialization.Serializable
 
 @Serializable
+data class CurrentConditions(
+    val tempC: Double,
+    val apparentTempC: Double? = null,
+    val weatherCode: Int,
+) {
+    val weatherDescription: String get() = wmoWeatherDescription(weatherCode)
+}
+
+@Serializable
 data class DayForecast(
     val date: String,
     val tempMaxC: Double,
@@ -23,19 +32,37 @@ data class DayForecast(
 }
 
 @Serializable
+data class HourlyForecast(
+    val time: String,
+    val tempC: Double,
+    val apparentTempC: Double,
+    val precipitationMm: Double,
+    val precipitationProbability: Int? = null,
+)
+
+@Serializable
 data class WeeklyDay(
     val date: String,
     val tempMaxC: Double,
     val tempMinC: Double,
     val precipitationMm: Double,
-)
+    val precipitationProbabilityMax: Int? = null,
+    val weatherCode: Int = 0,
+) {
+    val weatherDescription: String get() = wmoWeatherDescription(weatherCode)
+}
 
 @Serializable
 data class StoredForecast(
     val today: DayForecast,
     val tomorrow: DayForecast,
     val weekly: List<WeeklyDay> = emptyList(),
-)
+    val hourly: List<HourlyForecast> = emptyList(),
+    val current: CurrentConditions? = null,
+) {
+    fun hoursForToday(): List<HourlyForecast> =
+        hourly.filter { it.time.substringBefore('T') == today.date }
+}
 
 enum class WeatherDay {
     Today,

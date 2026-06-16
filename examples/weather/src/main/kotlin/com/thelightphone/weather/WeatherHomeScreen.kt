@@ -14,6 +14,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.material3.Text
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import com.thelightphone.sdk.ui.designVerticalPxToSp
 import com.thelightphone.sdk.InitialScreen
 import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.SealedLightActivity
@@ -22,6 +29,7 @@ import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightFullscreenModal
 import com.thelightphone.sdk.ui.LightIcons
+import com.thelightphone.sdk.ui.LightScrollView
 import com.thelightphone.sdk.ui.LightText
 import com.thelightphone.sdk.ui.LightTextInputEditor
 import com.thelightphone.sdk.ui.LightTextVariant
@@ -31,7 +39,6 @@ import com.thelightphone.sdk.ui.LightThemeTokens
 import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
-import kotlin.math.roundToInt
 
 @InitialScreen
 class WeatherHomeScreen(sealedActivity: SealedLightActivity) :
@@ -59,12 +66,14 @@ class WeatherHomeScreen(sealedActivity: SealedLightActivity) :
                 when (val mode = state.mode) {
                     is WeatherScreenMode.LocationInput -> {
                         LightTextInputEditor(
-                            title = "Location",
+                            title = "Search Location",
                             editorKey = state.locationInputSession,
                             keyboardOptionsFlow = keyboardOptionsFlow,
                             state = textFieldState,
                             onSubmit = viewModel::submitLocation,
                             onBack = viewModel::cancelLocationInput,
+                            submitIcon = LightIcons.SEARCH,
+                            showBackButton = state.canCancelLocationInput,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
@@ -85,10 +94,12 @@ class WeatherHomeScreen(sealedActivity: SealedLightActivity) :
 
                     is WeatherScreenMode.Settings -> {
                         SettingsContent(
+                            locationName = mode.locationName,
                             temperatureUnit = state.temperatureUnit,
                             onBack = viewModel::closeSettings,
                             onChangeLocation = viewModel::openLocationFromSettings,
                             onToggleUnit = viewModel::toggleTemperatureUnit,
+                            onClearLocation = viewModel::clearLocation,
                         )
                     }
 
@@ -97,26 +108,30 @@ class WeatherHomeScreen(sealedActivity: SealedLightActivity) :
                             locationName = mode.locationName,
                             days = mode.days,
                             temperatureUnit = state.temperatureUnit,
-                            onBack = viewModel::closeWeekly,
+                            onGoToToday = viewModel::goToToday,
+                            onOpenSettings = viewModel::openSettings,
+                        )
+                    }
+
+                    is WeatherScreenMode.Hourly -> {
+                        HourlyForecastContent(
+                            date = mode.forecast.today.date,
+                            hours = mode.forecast.hoursForToday(),
+                            temperatureUnit = state.temperatureUnit,
+                            onClose = viewModel::closeHourly,
+                            onOpenWeekly = viewModel::openWeekly,
                             onOpenSettings = viewModel::openSettings,
                         )
                     }
 
                     is WeatherScreenMode.Weather -> {
+                        val day = mode.forecast.today
                         WeatherContent(
-                            locationName = mode.locationName,
-                            day = when (mode.selectedDay) {
-                                WeatherDay.Today -> mode.forecast.today
-                                WeatherDay.Tomorrow -> mode.forecast.tomorrow
-                            },
-                            dayLabel = when (mode.selectedDay) {
-                                WeatherDay.Today -> "Today"
-                                WeatherDay.Tomorrow -> "Tomorrow"
-                            },
-                            selectedDay = mode.selectedDay,
+                            day = day,
+                            currentConditions = mode.forecast.current,
                             temperatureUnit = state.temperatureUnit,
-                            onToggleDay = viewModel::toggleDay,
                             onOpenWeekly = viewModel::openWeekly,
+                            onOpenHourly = viewModel::openHourly,
                             onOpenSettings = viewModel::openSettings,
                         )
                     }
@@ -135,20 +150,19 @@ class WeatherHomeScreen(sealedActivity: SealedLightActivity) :
 
 @Composable
 private fun WeatherContent(
-    locationName: String,
     day: DayForecast,
-    dayLabel: String,
-    selectedDay: WeatherDay,
+    currentConditions: CurrentConditions?,
     temperatureUnit: TemperatureUnit,
-    onToggleDay: () -> Unit,
     onOpenWeekly: () -> Unit,
+    onOpenHourly: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
+    val sectionPadding = Modifier.padding(bottom = 1f.gridUnitsAsDp())
+
     Column(modifier = Modifier.fillMaxSize()) {
         LightTopBar(
-            center = LightTopBarCenter.Text(locationName),
-            rightButton = settingsButton(onOpenSettings),
-            modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
+            center = LightTopBarCenter.Text(formatDailyTitle(day.date)),
+            modifier = Modifier.padding(bottom = 0.25f.gridUnitsAsDp()),
         )
 
         Column(
@@ -158,36 +172,151 @@ private fun WeatherContent(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 1f.gridUnitsAsDp()),
         ) {
-            WeatherLine("$dayLabel — ${day.date}")
-            WeatherLine(day.weatherDescription)
-            WeatherLine("High ${formatTemperature(day.tempMaxC, temperatureUnit)}")
-            WeatherLine("Low ${formatTemperature(day.tempMinC, temperatureUnit)}")
-            WeatherLine(
-                "Feels like ${formatTemperature(day.apparentTempMaxC, temperatureUnit)}" +
-                    " / ${formatTemperature(day.apparentTempMinC, temperatureUnit)}",
+            HeroTemperatureText(
+                text = displayTemperatureC(day, currentConditions, temperatureUnit),
             )
-            WeatherLine("Rain ${formatRain(day.precipitationMm, temperatureUnit)}")
-            day.precipitationProbabilityMax?.let { probability ->
-                WeatherLine("Precip chance $probability%")
+
+            Column(modifier = sectionPadding) {
+                WeatherBodyText(displayWeatherDescription(day, currentConditions))
+                WeatherBodyText(formatHighLowLine(day, temperatureUnit))
             }
-            WeatherLine("Wind ${day.windSpeedMaxKmh.round1()} km/h ${day.windCompass}")
-            WeatherLine("UV index ${day.uvIndexMax.round1()}")
-            WeatherLine("Sunrise ${formatTime(day.sunrise)}")
-            WeatherLine("Sunset ${formatTime(day.sunset)}")
+
+            Column {
+                WeatherDetailLine(
+                    label = "Precipitation",
+                    value = formatPrecipitationDetail(day, temperatureUnit),
+                )
+                WeatherDetailLine(
+                    label = "Wind",
+                    value = formatWindSpeed(day.windSpeedMaxKmh, day.windCompass, temperatureUnit),
+                )
+                WeatherDetailLine(
+                    label = "UV Index",
+                    value = formatUvIndex(day.uvIndexMax),
+                )
+                WeatherDetailLine(
+                    label = "Sunrise",
+                    value = formatTimeAmPm(day.sunrise),
+                )
+                WeatherDetailLine(
+                    label = "Sunset",
+                    value = formatTimeAmPm(day.sunset),
+                )
+            }
         }
 
         LightBottomBar(
             items = listOf(
+                settingsButton(onOpenSettings),
                 LightBarButton.Text(
-                    text = when (selectedDay) {
-                        WeatherDay.Today -> "TOMORROW"
-                        WeatherDay.Tomorrow -> "TODAY"
-                    },
-                    onClick = onToggleDay,
-                ),
-                LightBarButton.Text(
-                    text = "WEEK",
+                    text = "THIS WEEK",
                     onClick = onOpenWeekly,
+                ),
+                menuButton(onClick = onOpenHourly),
+            ),
+        )
+    }
+}
+
+@Composable
+private fun WeatherDetailLine(label: String, value: String) {
+    val colors = LightThemeTokens.colors
+    val style = compactCopyStyle()
+
+    Text(
+        text = buildAnnotatedString {
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                append("$label: ")
+            }
+            append(value)
+        },
+        style = style,
+        color = colors.content,
+    )
+}
+
+@Composable
+private fun compactCopyStyle(): TextStyle {
+    val base = LightThemeTokens.typography.copy
+    return base.copy(
+        fontSize = base.fontSize.value.designVerticalPxToSp(),
+        lineHeight = (base.fontSize.value * 1.2f).designVerticalPxToSp(),
+    )
+}
+
+@Composable
+private fun HeroTemperatureText(text: String) {
+    val colors = LightThemeTokens.colors
+    val base = LightThemeTokens.typography.title
+    val scale = 0.8f
+    val style = base.copy(
+        fontSize = (base.fontSize.value * scale).designVerticalPxToSp(),
+        lineHeight = (base.fontSize.value * scale * 1.05f).designVerticalPxToSp(),
+    )
+    Text(text = text, style = style, color = colors.content)
+}
+
+@Composable
+private fun WeatherBodyText(text: String) {
+    Text(
+        text = text,
+        style = compactCopyStyle(),
+        color = LightThemeTokens.colors.content,
+    )
+}
+
+@Composable
+private fun WeatherBoldLine(text: String) {
+    Text(
+        text = text,
+        style = compactCopyStyle().copy(fontWeight = FontWeight.Bold),
+        color = LightThemeTokens.colors.content,
+    )
+}
+
+@Composable
+private fun HourlyForecastContent(
+    date: String,
+    hours: List<HourlyForecast>,
+    temperatureUnit: TemperatureUnit,
+    onClose: () -> Unit,
+    onOpenWeekly: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        LightTopBar(
+            center = LightTopBarCenter.Text(formatDailyTitle(date)),
+            modifier = Modifier.padding(bottom = 0.25f.gridUnitsAsDp()),
+        )
+
+        LightScrollView(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(start = 1f.gridUnitsAsDp()),
+        ) {
+            hours.forEach { hour ->
+                Column(
+                    modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
+                ) {
+                    WeatherBoldLine(formatHourLabel(hour.time))
+                    WeatherLine(formatHourlyTempLine(hour, temperatureUnit))
+                    WeatherLine(formatHourlyRainLine(hour, temperatureUnit))
+                }
+            }
+        }
+
+        LightBottomBar(
+            items = listOf(
+                settingsButton(onOpenSettings),
+                LightBarButton.Text(
+                    text = "THIS WEEK",
+                    onClick = onOpenWeekly,
+                ),
+                LightBarButton.LightIcon(
+                    icon = LightIcons.CLOSE,
+                    onClick = onClose,
+                    contentDescription = "Close",
                 ),
             ),
         )
@@ -199,49 +328,53 @@ private fun WeeklyForecastContent(
     locationName: String,
     days: List<WeeklyDay>,
     temperatureUnit: TemperatureUnit,
-    onBack: () -> Unit,
+    onGoToToday: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         LightTopBar(
-            leftButton = LightBarButton.LightIcon(
-                icon = LightIcons.BACK,
-                onClick = onBack,
-            ),
-            center = LightTopBarCenter.Text("Week — $locationName"),
-            rightButton = settingsButton(onOpenSettings),
-            modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
+            center = LightTopBarCenter.Text(shortLocationName(locationName)),
+            modifier = Modifier.padding(bottom = 0.25f.gridUnitsAsDp()),
         )
 
-        Column(
+        LightScrollView(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 1f.gridUnitsAsDp()),
+                .padding(start = 1f.gridUnitsAsDp()),
         ) {
             days.forEach { day ->
                 Column(
-                    modifier = Modifier.padding(bottom = 1.5f.gridUnitsAsDp()),
+                    modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
                 ) {
-                    WeatherLine(formatWeeklyDayLabel(day.date))
-                    WeatherLine(
-                        "High ${formatTemperature(day.tempMaxC, temperatureUnit)}" +
-                            " · Low ${formatTemperature(day.tempMinC, temperatureUnit)}",
-                    )
-                    WeatherLine("Rain ${formatRain(day.precipitationMm, temperatureUnit)}")
+                    WeatherBoldLine(formatDailyTitle(day.date))
+                    WeatherLine(formatWeeklySummaryLine(day, temperatureUnit))
+                    WeatherLine(day.weatherDescription)
                 }
             }
         }
+
+        LightBottomBar(
+            items = listOf(
+                settingsButton(onOpenSettings),
+                LightBarButton.Text(
+                    text = "TODAY",
+                    onClick = onGoToToday,
+                ),
+                null,
+            ),
+        )
     }
 }
 
 @Composable
 private fun SettingsContent(
+    locationName: String,
     temperatureUnit: TemperatureUnit,
     onBack: () -> Unit,
     onChangeLocation: () -> Unit,
     onToggleUnit: () -> Unit,
+    onClearLocation: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         LightTopBar(
@@ -258,24 +391,48 @@ private fun SettingsContent(
                 .fillMaxWidth()
                 .padding(horizontal = 1f.gridUnitsAsDp()),
         ) {
-            LightText(
-                text = "LOCATION",
-                variant = LightTextVariant.Copy,
-                modifier = Modifier
-                    .clickable(onClick = onChangeLocation)
-                    .padding(vertical = 0.75f.gridUnitsAsDp()),
+            SelectSettingRow(
+                label = "Units",
+                value = temperatureUnit.displayLabel(),
+                onClick = onToggleUnit,
+            )
+            SelectSettingRow(
+                label = "Location",
+                value = shortLocationName(locationName),
+                onClick = onChangeLocation,
             )
             LightText(
-                text = when (temperatureUnit) {
-                    TemperatureUnit.Celsius -> "UNITS: CELSIUS"
-                    TemperatureUnit.Fahrenheit -> "UNITS: FAHRENHEIT"
-                },
-                variant = LightTextVariant.Copy,
+                text = "Clear Location",
+                variant = LightTextVariant.Heading,
                 modifier = Modifier
-                    .clickable(onClick = onToggleUnit)
+                    .clickable(onClick = onClearLocation)
                     .padding(vertical = 0.75f.gridUnitsAsDp()),
             )
         }
+    }
+}
+
+@Composable
+private fun SelectSettingRow(
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 0.75f.gridUnitsAsDp()),
+    ) {
+        LightText(
+            text = label,
+            variant = LightTextVariant.Detail,
+            lighten = true,
+        )
+        LightText(
+            text = value,
+            variant = LightTextVariant.Heading,
+        )
     }
 }
 
@@ -287,24 +444,13 @@ private fun settingsButton(onClick: () -> Unit) = LightBarButton.LightIcon(
 )
 
 @Composable
+private fun menuButton(onClick: () -> Unit) = LightBarButton.LightIcon(
+    icon = LightIcons.LIST,
+    onClick = onClick,
+    contentDescription = "Hourly forecast",
+)
+
+@Composable
 private fun WeatherLine(text: String) {
-    LightText(
-        text = text,
-        variant = LightTextVariant.Copy,
-        modifier = Modifier.padding(vertical = 0.5f.gridUnitsAsDp()),
-    )
-}
-
-private fun Double.round1(): String {
-    val rounded = (this * 10).roundToInt() / 10.0
-    return if (rounded == rounded.toLong().toDouble()) {
-        rounded.toLong().toString()
-    } else {
-        rounded.toString()
-    }
-}
-
-private fun formatTime(iso: String): String {
-    val timePart = iso.substringAfter('T', iso)
-    return timePart.take(5)
+    WeatherBodyText(text)
 }

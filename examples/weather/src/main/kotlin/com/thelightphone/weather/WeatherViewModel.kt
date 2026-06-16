@@ -18,11 +18,16 @@ import kotlinx.serialization.json.Json
 sealed class WeatherScreenMode {
     data object LocationInput : WeatherScreenMode()
     data object Loading : WeatherScreenMode()
-    data object Settings : WeatherScreenMode()
+    data class Settings(val locationName: String) : WeatherScreenMode()
     data class Weekly(
         val locationName: String,
         val days: List<WeeklyDay>,
         val selectedDay: WeatherDay,
+    ) : WeatherScreenMode()
+
+    data class Hourly(
+        val locationName: String,
+        val forecast: StoredForecast,
     ) : WeatherScreenMode()
 
     data class Weather(
@@ -56,8 +61,12 @@ class WeatherViewModel(
 
     private var lastSelectedDay: WeatherDay = WeatherDay.Today
     private var savedLocationQuery: String = ""
+    private var cachedLocationName: String = ""
     private var locationInputSource: LocationInputSource = LocationInputSource.Initial
     private var screenBeforeSettings: WeatherScreenMode? = null
+
+    private fun settingsMode(): WeatherScreenMode.Settings =
+        WeatherScreenMode.Settings(cachedLocationName)
 
     private fun WeatherUiState.openLocationInput(
         canCancel: Boolean = canCancelLocationInput,
@@ -92,6 +101,7 @@ class WeatherViewModel(
 
         val cachedForecast = forecastJson?.let { runCatching { json.decodeFromString<StoredForecast>(it) }.getOrNull() }
         savedLocationQuery = query
+        cachedLocationName = locationName
         if (cachedForecast != null && cachedForecast.weekly.isNotEmpty()) {
             _uiState.value = WeatherUiState(
                 mode = WeatherScreenMode.Weather(
@@ -107,7 +117,9 @@ class WeatherViewModel(
             }
         }
 
-        val needsRefresh = cachedForecast == null || cachedForecast.weekly.isEmpty()
+        val needsRefresh = cachedForecast == null ||
+            cachedForecast.weekly.isEmpty() ||
+            cachedForecast.hourly.isEmpty()
         refreshForecast(query, locationName, lat, lon, showLoadingScreen = needsRefresh)
     }
 
@@ -146,7 +158,7 @@ class WeatherViewModel(
                     when {
                         locationInputSource == LocationInputSource.Settings -> {
                             _uiState.update {
-                                it.copy(mode = WeatherScreenMode.Settings, errorModal = message)
+                                it.copy(mode = settingsMode(), errorModal = message)
                             }
                         }
                         _uiState.value.canCancelLocationInput -> restoreSavedWeather(message)
@@ -183,6 +195,7 @@ class WeatherViewModel(
                     prefs[WeatherPreferences.FORECAST_JSON] = json.encodeToString(forecast)
                 }
                 savedLocationQuery = query
+                cachedLocationName = locationName
                 locationInputSource = LocationInputSource.Initial
                 _uiState.update { state ->
                     state.copy(
@@ -201,7 +214,7 @@ class WeatherViewModel(
                     restoreSavedWeather(message)
                 } else if (locationInputSource == LocationInputSource.Settings) {
                     _uiState.update {
-                        it.copy(mode = WeatherScreenMode.Settings, errorModal = message)
+                        it.copy(mode = settingsMode(), errorModal = message)
                     }
                 } else {
                     _uiState.update {
@@ -229,7 +242,16 @@ class WeatherViewModel(
         if (current !is WeatherScreenMode.Settings) {
             screenBeforeSettings = current
         }
-        _uiState.update { it.copy(mode = WeatherScreenMode.Settings, errorModal = null) }
+        val locationName = when (current) {
+            is WeatherScreenMode.Weather -> current.locationName
+            is WeatherScreenMode.Weekly -> current.locationName
+            is WeatherScreenMode.Hourly -> current.locationName
+            is WeatherScreenMode.Settings -> current.locationName
+            else -> cachedLocationName
+        }
+        _uiState.update {
+            it.copy(mode = WeatherScreenMode.Settings(locationName), errorModal = null)
+        }
     }
 
     fun closeSettings() {
@@ -244,20 +266,49 @@ class WeatherViewModel(
 
     fun openWeekly() {
         _uiState.update { state ->
-            val weather = state.mode as? WeatherScreenMode.Weather ?: return@update state
-            if (weather.forecast.weekly.isEmpty()) return@update state
+            val (locationName, weekly) = when (val mode = state.mode) {
+                is WeatherScreenMode.Weather -> mode.locationName to mode.forecast.weekly
+                is WeatherScreenMode.Hourly -> mode.locationName to mode.forecast.weekly
+                else -> return@update state
+            }
+            if (weekly.isEmpty()) return@update state
             state.copy(
                 mode = WeatherScreenMode.Weekly(
-                    locationName = weather.locationName,
-                    days = weather.forecast.weekly,
-                    selectedDay = weather.selectedDay,
+                    locationName = locationName,
+                    days = weekly,
+                    selectedDay = lastSelectedDay,
                 ),
             )
         }
     }
 
+    fun openHourly() {
+        _uiState.update { state ->
+            val weather = state.mode as? WeatherScreenMode.Weather ?: return@update state
+            if (weather.forecast.hoursForToday().isEmpty()) return@update state
+            state.copy(
+                mode = WeatherScreenMode.Hourly(
+                    locationName = weather.locationName,
+                    forecast = weather.forecast,
+                ),
+            )
+        }
+    }
+
+    fun closeHourly() {
+        restoreWeatherScreen()
+    }
+
     fun closeWeekly() {
         restoreWeatherScreen()
+    }
+
+    fun goToToday() {
+        lastSelectedDay = WeatherDay.Today
+        when (_uiState.value.mode) {
+            is WeatherScreenMode.Hourly -> closeHourly()
+            else -> closeWeekly()
+        }
     }
 
     fun openLocationFromSettings() {
@@ -275,12 +326,32 @@ class WeatherViewModel(
         }
     }
 
+    fun clearLocation() {
+        viewModelScope.launch(Dispatchers.IO) {
+            dataStore.edit { prefs ->
+                prefs.remove(WeatherPreferences.LOCATION_QUERY)
+                prefs.remove(WeatherPreferences.LOCATION_NAME)
+                prefs.remove(WeatherPreferences.LATITUDE)
+                prefs.remove(WeatherPreferences.LONGITUDE)
+                prefs.remove(WeatherPreferences.FORECAST_JSON)
+            }
+            savedLocationQuery = ""
+            cachedLocationName = ""
+            locationInputSource = LocationInputSource.Initial
+            screenBeforeSettings = null
+            lastSelectedDay = WeatherDay.Today
+            _uiState.update {
+                it.openLocationInput(canCancel = false)
+            }
+        }
+    }
+
     fun cancelLocationInput() {
         if (!_uiState.value.canCancelLocationInput) return
         when (locationInputSource) {
             LocationInputSource.Settings -> {
                 locationInputSource = LocationInputSource.Initial
-                _uiState.update { it.copy(mode = WeatherScreenMode.Settings) }
+                _uiState.update { it.copy(mode = settingsMode()) }
             }
             LocationInputSource.Initial -> {
                 viewModelScope.launch(Dispatchers.IO) { restoreSavedWeather() }
@@ -293,6 +364,7 @@ class WeatherViewModel(
         val weather = state.mode as? WeatherScreenMode.Weather
         if (weather != null) return
         val weekly = state.mode as? WeatherScreenMode.Weekly
+        val hourly = state.mode as? WeatherScreenMode.Hourly
         viewModelScope.launch(Dispatchers.IO) {
             val prefs = dataStore.data.first()
             val locationName = prefs[WeatherPreferences.LOCATION_NAME] ?: return@launch
@@ -304,7 +376,7 @@ class WeatherViewModel(
                     mode = WeatherScreenMode.Weather(
                         locationName = locationName,
                         forecast = forecast,
-                        selectedDay = weekly?.selectedDay ?: lastSelectedDay,
+                        selectedDay = weekly?.selectedDay ?: hourly?.let { WeatherDay.Today } ?: lastSelectedDay,
                     ),
                 )
             }
@@ -330,6 +402,7 @@ class WeatherViewModel(
             return
         }
         savedLocationQuery = query
+        cachedLocationName = locationName
         locationInputSource = LocationInputSource.Initial
         _uiState.value = WeatherUiState(
             mode = WeatherScreenMode.Weather(
