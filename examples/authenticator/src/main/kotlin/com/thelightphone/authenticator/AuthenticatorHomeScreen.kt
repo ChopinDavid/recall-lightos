@@ -14,7 +14,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import com.thelightphone.sdk.InitialScreen
-import com.thelightphone.sdk.LightRoomDbConfig
 import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.buildDatabase
@@ -36,10 +35,8 @@ class AuthenticatorHomeScreen(sealedActivity: SealedLightActivity) :
 
     private val repository = TotpAccountRepository.getInstance {
         buildDatabase(
-            LightRoomDbConfig(
-                TotpDatabase::class.java,
-                TotpAccountRepository.DATABASE_NAME
-            )
+            TotpDatabase::class.java,
+            TotpAccountRepository.DATABASE_NAME
         )
     }
 
