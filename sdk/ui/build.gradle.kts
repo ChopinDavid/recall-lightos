@@ -28,7 +28,6 @@ kotlin {
 }
 
 dependencies {
-    api(project(":sdk:shared"))
     api(libs.light.keyboard)
     implementation(libs.androidx.lifecycle.viewmodel)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
