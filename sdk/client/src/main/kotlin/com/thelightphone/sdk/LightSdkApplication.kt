@@ -2,6 +2,7 @@ package com.thelightphone.sdk
 
 import android.app.Application
 import android.util.Log
+import androidx.room.Room
 import com.thelightphone.sdk.shared.LightConstants
 import com.thelightphone.sdk.shared.LightServerData
 import kotlinx.coroutines.CoroutineScope

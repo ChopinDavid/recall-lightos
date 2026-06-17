@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.light.sdk)
+    alias(libs.plugins.ksp)
 }
 
 group = property("sdkGroup") as String
@@ -59,6 +60,8 @@ dependencies {
     api(libs.ktor.serialization.json)
     implementation(libs.unifiedpush.connector)
     implementation(libs.androidx.splashscreen)
+    api(libs.androidx.room.runtime)
+    api(libs.androidx.room.ktx)
     lintChecks(project(":lint-rules"))
 
     testImplementation(libs.kotlin.test)

@@ -14,8 +14,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import com.thelightphone.sdk.InitialScreen
+import com.thelightphone.sdk.LightRoomDbConfig
 import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.SealedLightActivity
+import com.thelightphone.sdk.buildDatabase
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightScrollView
@@ -27,20 +29,22 @@ import com.thelightphone.sdk.ui.LightThemeTokens
 import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
-import java.io.File
 
 @InitialScreen
 class AuthenticatorHomeScreen(sealedActivity: SealedLightActivity) :
     LightScreen<Unit, AuthenticatorViewModel>(sealedActivity) {
 
-    private val repository = TotpAccountRepository.getInstance(
-        databaseFile = File(filesDir, TotpAccountRepository.DATABASE_FILE_NAME),
-    )
+    private val repository = TotpAccountRepository.getInstance {
+        buildDatabase(
+            LightRoomDbConfig(
+                TotpDatabase::class.java,
+                TotpAccountRepository.DATABASE_NAME
+            )
+        )
+    }
 
     override val viewModelClass: Class<AuthenticatorViewModel>
         get() = AuthenticatorViewModel::class.java
-
-    override val showBackBar: Boolean = false
 
     override fun createViewModel() = AuthenticatorViewModel(repository)
 
@@ -100,7 +104,12 @@ class AuthenticatorHomeScreen(sealedActivity: SealedLightActivity) :
                 }
 
                 fun goToAddNew() {
-                    navigateTo(screenFactory = ::AuthenticatorQrScannerScreen) { scanResult ->
+                    navigateTo(screenFactory = {
+                        AuthenticatorQrScannerScreen(
+                            it,
+                            repository
+                        )
+                    }) { scanResult ->
                         navigateTo(screenFactory = {
                             AuthenticatorAccountScreen(
                                 it,

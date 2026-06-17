@@ -30,8 +30,6 @@ class UiDemoTextInputEditorScreen(
     override val viewModelClass: Class<UiDemoTextInputEditorViewModel>
         get() = UiDemoTextInputEditorViewModel::class.java
 
-    override val showBackBar: Boolean = false
-
     override fun createViewModel() = UiDemoTextInputEditorViewModel()
 
     @Composable

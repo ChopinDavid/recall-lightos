@@ -25,8 +25,6 @@ class UiDemoQrScannerScreen(sealedActivity: SealedLightActivity) :
     override val viewModelClass: Class<UiDemoQrScannerViewModel>
         get() = UiDemoQrScannerViewModel::class.java
 
-    override val showBackBar: Boolean = false
-
     override fun createViewModel() = UiDemoQrScannerViewModel()
 
     @Composable

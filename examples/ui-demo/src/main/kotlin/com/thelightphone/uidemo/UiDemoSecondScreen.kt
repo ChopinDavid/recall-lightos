@@ -43,8 +43,6 @@ class UiDemoSecondScreen(sealedActivity: SealedLightActivity) :
     override val viewModelClass: Class<UiDemoSecondViewModel>
         get() = UiDemoSecondViewModel::class.java
 
-    override val showBackBar: Boolean = false
-
     override fun createViewModel() = UiDemoSecondViewModel()
 
     @Composable

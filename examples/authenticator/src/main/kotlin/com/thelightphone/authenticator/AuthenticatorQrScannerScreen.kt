@@ -9,26 +9,23 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.thelightphone.sdk.LightRoomDbConfig
 import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.SimpleLightScreen
+import com.thelightphone.sdk.buildDatabase
 import com.thelightphone.sdk.ui.LightQrCodeScanner
 import com.thelightphone.sdk.ui.LightTheme
 import com.thelightphone.sdk.ui.LightThemeController
 import com.thelightphone.sdk.ui.LightThemeTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
 
-class AuthenticatorQrScannerScreen(sealedActivity: SealedLightActivity) :
-    SimpleLightScreen<Result<StoredAccount>>(sealedActivity) {
-
-    private val repository = TotpAccountRepository.getInstance(
-        databaseFile = File(filesDir, TotpAccountRepository.DATABASE_FILE_NAME),
-    )
-
-    override val showBackBar: Boolean = false
+class AuthenticatorQrScannerScreen(
+    sealedActivity: SealedLightActivity,
+    private val repository: TotpAccountRepository
+) : SimpleLightScreen<Result<StoredAccount>>(sealedActivity) {
 
     @Composable
     override fun Content() {

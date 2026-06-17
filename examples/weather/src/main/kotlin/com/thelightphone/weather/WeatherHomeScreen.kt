@@ -47,8 +47,6 @@ class WeatherHomeScreen(sealedActivity: SealedLightActivity) :
     override val viewModelClass: Class<WeatherViewModel>
         get() = WeatherViewModel::class.java
 
-    override val showBackBar: Boolean = false
-
     override fun createViewModel(): WeatherViewModel = WeatherViewModel(dataStore)
 
     @Composable

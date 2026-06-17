@@ -36,8 +36,6 @@ class UiDemoQrResultScreen(
     override val viewModelClass: Class<UiDemoQrResultViewModel>
         get() = UiDemoQrResultViewModel::class.java
 
-    override val showBackBar: Boolean = false
-
     override fun createViewModel() = UiDemoQrResultViewModel()
 
     @Composable

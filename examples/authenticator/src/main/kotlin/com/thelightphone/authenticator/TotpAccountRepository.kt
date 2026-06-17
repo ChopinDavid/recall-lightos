@@ -1,23 +1,42 @@
 package com.thelightphone.authenticator
 
-import java.io.File
-
 class TotpAccountRepository private constructor(
-    databaseFile: File,
+    database: TotpDatabase,
     private val cipher: TotpSecretCipher,
 ) {
-    private val database = TotpDatabase(databaseFile)
+    private val dao = database.accountDao()
 
     fun addAccount(account: Account): StoredAccount {
         val encryptedSecret = cipher.encrypt(account.secret)
-        val id = database.upsertAccount(
-            issuer = account.issuer,
-            label = account.label,
-            digits = account.digits,
-            period = account.period,
-            algorithm = account.algorithm,
-            encryptedSecret = encryptedSecret,
-        )
+        val existingId = dao.findAccountId(account.issuer, account.label)
+        val id = if (existingId != null) {
+            val updated = dao.update(
+                TotpAccountEntity(
+                    id = existingId,
+                    issuer = account.issuer,
+                    label = account.label,
+                    digits = account.digits,
+                    period = account.period,
+                    algorithm = account.algorithm,
+                    encryptedSecret = encryptedSecret,
+                ),
+            )
+            if (updated == 0) error("Failed to update TOTP account")
+            existingId
+        } else {
+            val inserted = dao.insert(
+                TotpAccountEntity(
+                    issuer = account.issuer,
+                    label = account.label,
+                    digits = account.digits,
+                    period = account.period,
+                    algorithm = account.algorithm,
+                    encryptedSecret = encryptedSecret,
+                ),
+            )
+            if (inserted == -1L) error("Failed to insert TOTP account")
+            inserted
+        }
         return StoredAccount(
             id = id,
             issuer = account.issuer,
@@ -28,27 +47,27 @@ class TotpAccountRepository private constructor(
         )
     }
 
-    fun getAccount(id: Long): StoredAccount? = database.getAccount(id)
+    fun getAccount(id: Long): StoredAccount? = dao.getAccount(id)
 
-    fun listAccounts(): List<StoredAccount> = database.listAccounts()
+    fun listAccounts(): List<StoredAccount> = dao.listAccounts()
 
-    fun deleteAccount(id: Long): Boolean = database.deleteAccount(id)
+    fun deleteAccount(id: Long): Boolean = dao.deleteAccount(id) > 0
 
     fun decryptSecret(id: Long): String? {
-        val encrypted = database.getEncryptedSecret(id) ?: return null
+        val encrypted = dao.getEncryptedSecret(id) ?: return null
         return cipher.decrypt(encrypted)
     }
 
     companion object {
-        const val DATABASE_FILE_NAME = "totp_accounts.db"
+        const val DATABASE_NAME = "totp_accounts.db"
 
         @Volatile
         private var instance: TotpAccountRepository? = null
 
-        fun getInstance(databaseFile: File): TotpAccountRepository {
+        fun getInstance(databaseProvider: () -> TotpDatabase): TotpAccountRepository {
             return instance ?: synchronized(this) {
                 instance ?: TotpAccountRepository(
-                    databaseFile = databaseFile,
+                    database = databaseProvider(),
                     cipher = TotpSecretCipher(),
                 ).also { instance = it }
             }

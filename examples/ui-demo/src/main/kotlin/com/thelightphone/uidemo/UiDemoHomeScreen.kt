@@ -37,8 +37,6 @@ class UiDemoHomeScreen(sealedActivity: SealedLightActivity) :
     override val viewModelClass: Class<UiDemoHomeViewModel>
         get() = UiDemoHomeViewModel::class.java
 
-    override val showBackBar: Boolean = false
-
     override fun createViewModel() = UiDemoHomeViewModel()
 
     @Composable
