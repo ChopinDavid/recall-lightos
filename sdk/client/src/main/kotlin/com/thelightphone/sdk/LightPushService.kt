@@ -4,7 +4,6 @@ import com.thelightphone.sdk.shared.LightConstants
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import org.unifiedpush.android.connector.FailedReason
 import org.unifiedpush.android.connector.PushService
@@ -13,11 +12,11 @@ import org.unifiedpush.android.connector.data.PushMessage
 
 class LightPushService : PushService() {
     private val pushManager by lazy { LightPushManager(applicationContext) }
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-    override fun onDestroy() {
-        super.onDestroy()
-        serviceScope.cancel()
+    companion object {
+        // keep scope alive, UnifiedPush does not treat this like a normal service.
+        private val serviceScope by lazy {
+            CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        }
     }
 
     override fun onNewEndpoint(
@@ -40,7 +39,6 @@ class LightPushService : PushService() {
                 LightSdkRegistry.entryPoint?.onPushNotification(message.content)
             }
         }
-        // TODO handle local messages directly from LightOS/emulator
     }
 
     override fun onRegistrationFailed(
