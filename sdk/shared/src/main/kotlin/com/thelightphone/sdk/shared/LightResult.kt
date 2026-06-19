@@ -14,6 +14,11 @@ fun <T> LightResult<T>.getOrNull() = when(this) {
     is LightResult.Success<T> -> this.data
 }
 
+inline fun <T> LightResult<T>.getOrElse(block: (LightResult.Error) -> T) = when(this) {
+    is LightResult.Error -> block(this)
+    is LightResult.Success<T> -> this.data
+}
+
 val LightResult<*>.error: LightResult.Error?
 get() = when(this) {
     is LightResult.Error -> this

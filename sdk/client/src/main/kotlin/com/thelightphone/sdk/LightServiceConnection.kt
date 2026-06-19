@@ -1,5 +1,6 @@
 package com.thelightphone.sdk
 
+import android.app.Activity
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -7,14 +8,25 @@ import android.content.ServiceConnection
 import android.os.IBinder
 import android.os.Parcel
 import android.util.Log
+import androidx.activity.compose.LocalActivity
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
 import com.thelightphone.sdk.shared.LightConstants
 import com.thelightphone.sdk.shared.LightResult
 import com.thelightphone.sdk.shared.LightServiceMethod
+import com.thelightphone.sdk.shared.LightServiceMethod.RequestPermissionComponent.PERMISSION_NAME_KEY
+import com.thelightphone.sdk.shared.getOrElse
+import com.thelightphone.sdk.shared.getOrNull
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration.Companion.seconds
 
 private const val TAG = "LightServiceConnection"
+
 internal object LightServiceConnection : ServiceConnection {
 
     private var serviceBinder: IBinder? = null
@@ -127,5 +139,47 @@ suspend fun <TRequest, TResponse> callRemoteServiceMethod(
     when (val result = LightServiceConnection.request(method.id, method.encodeRequest(body))) {
         is LightResult.Success -> LightResult.Success(method.decodeResponse(result.data))
         is LightResult.Error -> result
+    }
+}
+
+suspend fun checkPermission(permission: String): LightServiceMethod.GetPermission.Result {
+    return callRemoteServiceMethod(
+        LightServiceMethod.GetPermission,
+        LightServiceMethod.GetPermission.Request(permission)
+    ).getOrNull()?.permissionResult ?: LightServiceMethod.GetPermission.Result.Unknown
+}
+
+class PermissionRequestLauncher internal constructor(
+    private val activity: Activity,
+    private val scope: CoroutineScope,
+    private val permission: String
+) {
+    fun launch() {
+        scope.launch {
+            val result = callRemoteServiceMethod(
+                LightServiceMethod.RequestPermissionComponent,
+                Unit
+            ).getOrElse {
+                Log.e(TAG, "Error fetching permission request component: $it")
+                return@launch
+            }
+            val componentName = ComponentName.unflattenFromString(result.componentName)
+            // we don't actually care about result, going to recheck through the server anyways
+            activity.startActivityForResult(
+                Intent().setComponent(componentName).putExtra(PERMISSION_NAME_KEY, permission),
+                10101
+            )
+        }
+    }
+}
+
+@Composable
+fun rememberPermissionRequestLauncher(
+    permission: String,
+): PermissionRequestLauncher? {
+    val context = LocalActivity.current
+    val scope = rememberCoroutineScope()
+    return remember(context, permission) {
+        context?.let { PermissionRequestLauncher(it, scope, permission) }
     }
 }

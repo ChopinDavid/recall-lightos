@@ -1,5 +1,6 @@
 package com.thelightphone.sdk.server
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -132,4 +133,15 @@ object LightSdkServer {
      * Settable from enclosing application!! May be run on any thread
      */
     var checkCert: (callingPackage: String) -> ClientCertType = { ClientCertType.Unknown }
+
+    /**
+     * Given an android permission id (android.manifest.CAMERA, for example), return whether
+     * this server instance is allowed to grant that permission to the calling package
+     *
+     * Settable from enclosing application!! May be run on any thread
+     */
+    var androidPermissionAllowed: (callingUid: Int, permissionName: String) -> Boolean = { _, permissionName ->
+        // default, only allow camera for now
+        setOf(Manifest.permission.CAMERA).contains(permissionName)
+    }
 }
