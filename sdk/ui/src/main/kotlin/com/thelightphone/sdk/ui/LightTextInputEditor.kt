@@ -45,6 +45,8 @@ fun LightTextInputEditor(
     keyboardOptionsFlow: StateFlow<KeyboardOptions>,
     modifier: Modifier = Modifier,
     submitLabel: String = "SUBMIT",
+    submitIcon: LightIconConfiguration? = null,
+    showBackButton: Boolean = true,
     editorKey: Any = title,
 ) {
     val keyboardCallback = remember(state) { TextInputKeyboardCallback(state) }
@@ -54,7 +56,17 @@ fun LightTextInputEditor(
         factory = factory(keyboardCallback, keyboardOptionsFlow),
     )
 
-    LightTextInputEditor(title, state, onSubmit, onBack, keyboardViewModel, modifier, submitLabel)
+    LightTextInputEditor(
+        title,
+        state,
+        onSubmit,
+        onBack,
+        keyboardViewModel,
+        modifier,
+        submitLabel,
+        submitIcon,
+        showBackButton,
+    )
 }
 
 /**
@@ -73,6 +85,8 @@ fun LightTextInputEditor(
     viewModel: Lp3KeyboardViewModel,
     modifier: Modifier = Modifier,
     submitLabel: String = "SUBMIT",
+    submitIcon: LightIconConfiguration? = null,
+    showBackButton: Boolean = true,
 ) {
     val colors = LightThemeTokens.colors
     val inputStyle = lightInputTextStyle()
@@ -81,10 +95,14 @@ fun LightTextInputEditor(
     Surface {
         Column(modifier = modifier.fillMaxSize()) {
             LightTopBar(
-                leftButton = LightBarButton.LightIcon(
-                    icon = LightIcons.BACK,
-                    onClick = onBack,
-                ),
+                leftButton = if (showBackButton) {
+                    LightBarButton.LightIcon(
+                        icon = LightIcons.BACK,
+                        onClick = onBack,
+                    )
+                } else {
+                    null
+                },
                 center = LightTopBarCenter.Text(title),
                 modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
             )
@@ -139,10 +157,17 @@ fun LightTextInputEditor(
 
             LightBottomBar(
                 items = listOf(
-                    LightBarButton.Text(
-                        text = submitLabel,
-                        onClick = { onSubmit(state.text) },
-                    ),
+                    when (val icon = submitIcon) {
+                        null -> LightBarButton.Text(
+                            text = submitLabel,
+                            onClick = { onSubmit(state.text) },
+                        )
+                        else -> LightBarButton.LightIcon(
+                            icon = icon,
+                            onClick = { onSubmit(state.text) },
+                            contentDescription = submitLabel,
+                        )
+                    },
                 ),
             )
         }
