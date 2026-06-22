@@ -1,4 +1,4 @@
-package com.thelightphone.sdk.server
+package com.thelightphone.sdk.emulator
 
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -23,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.thelightphone.sdk.server.LightSdkServer
+import com.thelightphone.sdk.server.LightSdkServerSettings
 import com.thelightphone.sdk.shared.LightServiceMethod
 import com.thelightphone.sdk.ui.*
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +32,7 @@ import kotlinx.coroutines.withContext
 
 const val TAG = "LightSdkPermissionActivity"
 
+// TODO - eventually we should bring this down to the server module and make it the default for servers
 class LightSdkPermissionActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -83,7 +86,8 @@ class LightSdkPermissionActivity : ComponentActivity() {
                         }
                     } else if (packageAllowed) {
                         RequestPermission(toolName, permission, onDenied = { finish() }) {
-                            acceptPermission(requester, permission)
+                            LightSdkServer.grantPermission(this, requester, permission)
+                                .onFailure { Log.e(TAG, "Error granting permission", it) }
                             finish()
                         }
                     } else {
@@ -94,29 +98,6 @@ class LightSdkPermissionActivity : ComponentActivity() {
             }
         }
     }
-
-    private fun acceptPermission(requester: String, permission: String) {
-        // TODO probably fine to use reflection for now but may want to make this overridable by server so LightOS can access directly
-        try {
-            val grant = PackageManager::class.java.getMethod(
-                "grantRuntimePermission",
-                String::class.java,
-                String::class.java,
-                UserHandle::class.java
-            )
-            grant.invoke(
-                packageManager,
-                requester,
-                permission,
-                Process.myUserHandle()
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Error granting permission", e)
-        }
-        finish()
-    }
-
-
 }
 
 @Composable
@@ -149,8 +130,8 @@ private fun RequestPermission(
         }
         LightBottomBar(
             listOf(
-                LightBarButton.Text("Deny") { onDenied() },
-                LightBarButton.Text("Accept") { onGranted() },
+                LightBarButton.Text("DENY") { onDenied() },
+                LightBarButton.Text("ACCEPT") { onGranted() },
             )
         )
     }

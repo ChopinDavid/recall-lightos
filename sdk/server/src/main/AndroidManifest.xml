@@ -7,11 +7,6 @@
     <protected-broadcast android:name="org.unifiedpush.android.connector.MESSAGE" />
 
     <application>
-        <activity
-            android:name=".LightSdkPermissionActivity"
-            android:exported="true"
-            android:label="Light SDK Permission" />
-
         <receiver
             android:name=".LightPushDistributor"
             android:exported="true" >

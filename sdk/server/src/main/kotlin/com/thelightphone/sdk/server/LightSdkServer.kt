@@ -1,12 +1,14 @@
 package com.thelightphone.sdk.server
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Process
+import android.os.UserHandle
 import android.util.Log
 import com.thelightphone.sdk.shared.LightConstants
 import com.thelightphone.sdk.shared.LightResult
@@ -143,5 +145,26 @@ object LightSdkServer {
     var androidPermissionAllowed: (callingUid: Int, permissionName: String) -> Boolean = { _, permissionName ->
         // default, only allow camera for now
         setOf(Manifest.permission.CAMERA).contains(permissionName)
+    }
+
+    var permissionActivity: Class<out Activity>? = null
+
+
+    var grantPermission: (context: Context, packageName: String, permission: String) -> Result<Unit> = { context, packageName, permission ->
+        runCatching {
+            // Fine for emulator, can avoid reflection on real system apps
+            val grant = PackageManager::class.java.getMethod(
+                "grantRuntimePermission",
+                String::class.java,
+                String::class.java,
+                UserHandle::class.java
+            )
+            grant.invoke(
+                context.packageManager,
+                packageName,
+                permission,
+                Process.myUserHandle()
+            )
+        }
     }
 }

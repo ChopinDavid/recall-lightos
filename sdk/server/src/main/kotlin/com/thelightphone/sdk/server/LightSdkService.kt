@@ -162,10 +162,11 @@ class LightSdkService : Service() {
                 val request = LightServiceMethod.GetPermission.decodeRequest(payload!!)
                 val permissionName = request.permissionName
                 val permissionResult = runCatching {
-                    if (LightSdkServer.androidPermissionAllowed(callingUid, permissionName)) {
+                    if (!LightSdkServer.androidPermissionAllowed(callingUid, permissionName)) {
                         return@runCatching LightServiceMethod.GetPermission.Result.BlockedByServer
                     }
-                    val androidResult = checkPermission(permissionName, Binder.getCallingPid(), callingUid)
+                    val androidResult =
+                        checkPermission(permissionName, Binder.getCallingPid(), callingUid)
                     when (androidResult) {
                         PERMISSION_GRANTED -> LightServiceMethod.GetPermission.Result.Granted
                         PERMISSION_DENIED -> LightServiceMethod.GetPermission.Result.Denied
@@ -186,16 +187,35 @@ class LightSdkService : Service() {
             }
 
             LightServiceMethod.RequestPermissionComponent -> {
-                println("requesting permission?")
-                startActivity(
-                    Intent(this@LightSdkService, LightSdkPermissionActivity::class.java).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                )
-                val componentName =
-                    ComponentName(this@LightSdkService, LightSdkPermissionActivity::class.java).flattenToString()
-                val response = LightServiceMethod.RequestPermissionComponent.Response(componentName)
-                LightResult.Success(LightServiceMethod.RequestPermissionComponent.encodeResponse(response))
+                val component = LightSdkServer.permissionActivity
+                if (component == null) {
+                    Log.e(
+                        TAG,
+                        "No permissions activity defined by server! Set LightSdkServer.permissionActivity"
+                    )
+                    LightResult.Error(
+                        LightResult.ErrorCode.Unknown,
+                        "Server has not defined a component to allow permission acceptance."
+                    )
+                } else {
+                    startActivity(
+                        Intent(this@LightSdkService, component).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                    )
+                    val componentName =
+                        ComponentName(
+                            this@LightSdkService,
+                            component
+                        ).flattenToString()
+                    val response =
+                        LightServiceMethod.RequestPermissionComponent.Response(componentName)
+                    LightResult.Success(
+                        LightServiceMethod.RequestPermissionComponent.encodeResponse(
+                            response
+                        )
+                    )
+                }
             }
 
             null -> {

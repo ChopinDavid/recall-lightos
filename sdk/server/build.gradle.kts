@@ -2,7 +2,6 @@ plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.kotlin.compose)
     `maven-publish`
 }
 
@@ -20,8 +19,8 @@ android {
 
     buildFeatures {
         buildConfig = true
-        compose = true
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.toVersion(rootProject.ext["jvmTarget"] as String)
         targetCompatibility = JavaVersion.toVersion(rootProject.ext["jvmTarget"] as String)
@@ -53,8 +52,6 @@ afterEvaluate {
 
 dependencies {
     api(project(":sdk:shared"))
-    api(project(":sdk:ui"))
-    implementation(libs.compose.activity)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
