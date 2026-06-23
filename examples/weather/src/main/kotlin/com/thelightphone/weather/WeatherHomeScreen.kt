@@ -4,17 +4,27 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.material3.Text
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -28,6 +38,8 @@ import com.thelightphone.sdk.rememberKeyboardOptions
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightFullscreenModal
+import com.thelightphone.sdk.ui.LightGrid
+import com.thelightphone.sdk.ui.LightIcon
 import com.thelightphone.sdk.ui.LightIcons
 import com.thelightphone.sdk.ui.LightScrollView
 import com.thelightphone.sdk.ui.LightText
@@ -39,6 +51,7 @@ import com.thelightphone.sdk.ui.LightThemeTokens
 import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
+import com.thelightphone.sdk.ui.verticalGridUnitsAsDp
 
 @InitialScreen
 class WeatherHomeScreen(sealedActivity: SealedLightActivity) :
@@ -124,14 +137,22 @@ class WeatherHomeScreen(sealedActivity: SealedLightActivity) :
                     }
 
                     is WeatherScreenMode.Weather -> {
-                        val day = mode.forecast.today
+                        val dayIndex = mode.selectedDayIndex
+                        val day = mode.forecast.dayAt(dayIndex) ?: mode.forecast.today
+                        val isToday = dayIndex == 0
                         WeatherContent(
                             day = day,
-                            currentConditions = mode.forecast.current,
+                            isToday = isToday,
+                            currentConditions = if (isToday) mode.forecast.current else null,
                             temperatureUnit = state.temperatureUnit,
+                            showPreviousDay = dayIndex > 0,
+                            showNextDay = dayIndex < mode.forecast.dayCount() - 1,
+                            onPreviousDay = viewModel::showPreviousDay,
+                            onNextDay = viewModel::showNextDay,
                             onOpenWeekly = viewModel::openWeekly,
                             onOpenHourly = viewModel::openHourly,
                             onOpenSettings = viewModel::openSettings,
+                            showHourly = isToday,
                         )
                     }
                 }
@@ -150,17 +171,41 @@ class WeatherHomeScreen(sealedActivity: SealedLightActivity) :
 @Composable
 private fun WeatherContent(
     day: DayForecast,
+    isToday: Boolean,
     currentConditions: CurrentConditions?,
     temperatureUnit: TemperatureUnit,
+    showPreviousDay: Boolean,
+    showNextDay: Boolean,
+    onPreviousDay: () -> Unit,
+    onNextDay: () -> Unit,
     onOpenWeekly: () -> Unit,
     onOpenHourly: () -> Unit,
     onOpenSettings: () -> Unit,
+    showHourly: Boolean = true,
 ) {
     val sectionPadding = Modifier.padding(bottom = 1f.gridUnitsAsDp())
 
     Column(modifier = Modifier.fillMaxSize()) {
         LightTopBar(
+            leftButton = if (showPreviousDay) {
+                LightBarButton.LightIcon(
+                    icon = LightIcons.BACK,
+                    onClick = onPreviousDay,
+                    contentDescription = "Previous day",
+                )
+            } else {
+                null
+            },
             center = LightTopBarCenter.Text(formatDailyTitle(day.date)),
+            rightButton = if (showNextDay) {
+                LightBarButton.LightIcon(
+                    icon = LightIcons.ARROW_RIGHT,
+                    onClick = onNextDay,
+                    contentDescription = "Next day",
+                )
+            } else {
+                null
+            },
             modifier = Modifier.padding(bottom = 0.25f.gridUnitsAsDp()),
         )
 
@@ -171,13 +216,15 @@ private fun WeatherContent(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 1f.gridUnitsAsDp()),
         ) {
-            HeroTemperatureText(
-                text = displayTemperatureC(day, currentConditions, temperatureUnit),
-            )
+            if (isToday) {
+                HeroTemperatureText(
+                    text = displayTemperatureC(day, currentConditions, temperatureUnit),
+                )
+            }
 
             Column(modifier = sectionPadding) {
                 WeatherBodyText(displayWeatherDescription(day, currentConditions))
-                WeatherBodyText(formatHighLowLine(day, temperatureUnit))
+                HighLowTemperatureLine(day = day, unit = temperatureUnit)
             }
 
             Column {
@@ -211,10 +258,76 @@ private fun WeatherContent(
                     text = "THIS WEEK",
                     onClick = onOpenWeekly,
                 ),
-                menuButton(onClick = onOpenHourly),
+                if (showHourly) menuButton(onClick = onOpenHourly) else null,
             ),
         )
     }
+}
+
+@Composable
+private fun HighLowTemperatureLine(day: DayForecast, unit: TemperatureUnit) {
+    val style = compactCopyStyle()
+    val color = LightThemeTokens.colors.content
+    val high = formatTemperature(day.tempMaxC, unit)
+    val low = formatTemperature(day.tempMinC, unit)
+    val feelsHigh = formatTemperature(day.apparentTempMaxC, unit)
+    val feelsLow = formatTemperature(day.apparentTempMinC, unit)
+    val iconSize = iconGridSizeForText(style)
+    val iconBoxSize = with(LocalDensity.current) { style.fontSize.toDp() }
+    val iconPlaceholder = Placeholder(
+        width = style.fontSize,
+        height = style.fontSize,
+        placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter,
+    )
+    val inlineContent = mapOf(
+        "up" to InlineTextContent(iconPlaceholder) {
+            Box(
+                modifier = Modifier.size(iconBoxSize),
+                contentAlignment = Alignment.Center,
+            ) {
+                LightIcon(
+                    icon = LightIcons.UP,
+                    modifier = Modifier.offset(y = 0.35f.verticalGridUnitsAsDp()),
+                    size = iconSize,
+                    contentDescription = "High",
+                )
+            }
+        },
+        "down" to InlineTextContent(iconPlaceholder) {
+            Box(
+                modifier = Modifier.size(iconBoxSize),
+                contentAlignment = Alignment.Center,
+            ) {
+                LightIcon(
+                    icon = LightIcons.DOWN,
+                    modifier = Modifier.offset(y = (-0.15f).verticalGridUnitsAsDp()),
+                    size = iconSize,
+                    contentDescription = "Low",
+                )
+            }
+        },
+    )
+
+    Text(
+        text = buildAnnotatedString {
+            appendInlineContent("up", "[up]")
+            append(high)
+            append(" / ")
+            appendInlineContent("down", "[down]")
+            append(low)
+            append(" (feels like $feelsHigh / $feelsLow)")
+        },
+        style = style,
+        color = color,
+        inlineContent = inlineContent,
+    )
+}
+
+@Composable
+private fun iconGridSizeForText(textStyle: TextStyle): Float {
+    val fontSizeDp = with(LocalDensity.current) { textStyle.fontSize.toDp().value }
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp.toFloat()
+    return fontSizeDp / (screenHeightDp / LightGrid.HEIGHT)
 }
 
 @Composable

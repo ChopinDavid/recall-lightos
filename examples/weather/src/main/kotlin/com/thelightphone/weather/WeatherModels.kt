@@ -7,9 +7,7 @@ data class CurrentConditions(
     val tempC: Double,
     val apparentTempC: Double? = null,
     val weatherCode: Int,
-) {
-    val weatherDescription: String get() = wmoWeatherDescription(weatherCode)
-}
+)
 
 @Serializable
 data class DayForecast(
@@ -26,10 +24,7 @@ data class DayForecast(
     val uvIndexMax: Double,
     val sunrise: String,
     val sunset: String,
-) {
-    val weatherDescription: String get() = wmoWeatherDescription(weatherCode)
-    val windCompass: String get() = degreesToCompass(windDirectionDominant)
-}
+)
 
 @Serializable
 data class HourlyForecast(
@@ -48,9 +43,7 @@ data class WeeklyDay(
     val precipitationMm: Double,
     val precipitationProbabilityMax: Int? = null,
     val weatherCode: Int = 0,
-) {
-    val weatherDescription: String get() = wmoWeatherDescription(weatherCode)
-}
+)
 
 @Serializable
 data class StoredForecast(
@@ -59,15 +52,39 @@ data class StoredForecast(
     val weekly: List<WeeklyDay> = emptyList(),
     val hourly: List<HourlyForecast> = emptyList(),
     val current: CurrentConditions? = null,
+    val daily: List<DayForecast> = emptyList(),
 ) {
+    fun dayCount(): Int = weekly.size.takeIf { it > 0 } ?: daily.size.takeIf { it > 0 } ?: 2
+
+    fun dayAt(index: Int): DayForecast? {
+        if (index < 0 || index >= dayCount()) return null
+        if (daily.isNotEmpty()) return daily.getOrNull(index)
+        return when (index) {
+            0 -> today
+            1 -> tomorrow
+            else -> weekly.getOrNull(index)?.toDayForecast()
+        }
+    }
+
     fun hoursForToday(): List<HourlyForecast> =
         hourly.filter { it.time.substringBefore('T') == today.date }
 }
 
-enum class WeatherDay {
-    Today,
-    Tomorrow,
-}
+private fun WeeklyDay.toDayForecast(): DayForecast = DayForecast(
+    date = date,
+    tempMaxC = tempMaxC,
+    tempMinC = tempMinC,
+    apparentTempMaxC = tempMaxC,
+    apparentTempMinC = tempMinC,
+    precipitationMm = precipitationMm,
+    precipitationProbabilityMax = precipitationProbabilityMax,
+    weatherCode = weatherCode,
+    windSpeedMaxKmh = 0.0,
+    windDirectionDominant = 0,
+    uvIndexMax = 0.0,
+    sunrise = "",
+    sunset = "",
+)
 
 internal fun wmoWeatherDescription(code: Int): String = when (code) {
     0 -> "Clear sky"
@@ -91,3 +108,10 @@ internal fun degreesToCompass(degrees: Int): String {
     val index = ((degrees.toDouble() + 22.5) / 45.0).toInt() % 8
     return directions[index]
 }
+
+val CurrentConditions.weatherDescription: String get() = wmoWeatherDescription(weatherCode)
+
+val DayForecast.weatherDescription: String get() = wmoWeatherDescription(weatherCode)
+val DayForecast.windCompass: String get() = degreesToCompass(windDirectionDominant)
+
+val WeeklyDay.weatherDescription: String get() = wmoWeatherDescription(weatherCode)
