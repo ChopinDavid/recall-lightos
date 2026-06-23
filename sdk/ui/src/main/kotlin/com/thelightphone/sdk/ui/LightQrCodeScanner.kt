@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -33,11 +34,13 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -58,27 +61,28 @@ fun LightQrCodeScanner(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     title: String = "Scan QR Code",
+    checkCameraPermission: suspend () -> Boolean,
+    launchCameraPermissionRequest: suspend () -> Unit,
 ) {
-    val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val colors = LightThemeTokens.colors
+    var launchedPermissionRequest by remember { mutableStateOf(false) }
+    var hasCameraPermission by remember { mutableStateOf(false) }
+    var loading by remember { mutableStateOf(true) }
 
-    var hasCameraPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
-                PackageManager.PERMISSION_GRANTED,
-        )
-    }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        hasCameraPermission = granted
-    }
-
-    LaunchedEffect(Unit) {
-        if (!hasCameraPermission) {
-            permissionLauncher.launch(Manifest.permission.CAMERA)
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            if (!checkCameraPermission()) {
+                if (!launchedPermissionRequest) {
+                    launchCameraPermissionRequest()
+                    launchedPermissionRequest = true
+                } else {
+                    loading = false
+                }
+            } else {
+                hasCameraPermission = true
+                loading = false
+            }
         }
     }
 
@@ -131,12 +135,16 @@ fun LightQrCodeScanner(
                         .fillMaxWidth(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    LightText(
-                        text = "Camera permission is required to scan QR codes.",
-                        variant = LightTextVariant.Copy,
-                        align = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 2f.gridUnitsAsDp()),
-                    )
+                    if (loading) {
+                        CircularProgressIndicator()
+                    } else {
+                        LightText(
+                            text = "Camera permission is required to scan QR codes.",
+                            variant = LightTextVariant.Copy,
+                            align = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 2f.gridUnitsAsDp()),
+                        )
+                    }
                 }
             }
         }

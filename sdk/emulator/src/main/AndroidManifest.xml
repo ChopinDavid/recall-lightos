@@ -20,5 +20,9 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".LightSdkPermissionActivity"
+            android:exported="true"
+            android:label="Light SDK Permission" />
     </application>
 </manifest>

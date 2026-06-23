@@ -18,8 +18,8 @@ sealed interface LightBarButton {
 
     data class Text(
         val text: String,
-        override val onClick: (() -> Unit)?,
         override val contentDescription: String? = null,
+        override val onClick: (() -> Unit)?,
     ) : LightBarButton
 
     /**).

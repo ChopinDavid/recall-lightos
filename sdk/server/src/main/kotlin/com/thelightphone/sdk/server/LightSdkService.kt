@@ -1,8 +1,11 @@
 package com.thelightphone.sdk.server
 
 import android.app.Service
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.PackageManager.PERMISSION_DENIED
+import android.content.pm.PackageManager.PERMISSION_GRANTED
 import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Binder
@@ -50,7 +53,7 @@ class LightSdkService : Service() {
     }
 
     private fun validateToken(uid: Int, token: String?): Boolean {
-        return synchronized(tokensByUid) { tokensByUid[uid] } == token
+        return token != null && synchronized(tokensByUid) { tokensByUid[uid] } == token
     }
 
     private val binder = object : Binder() {
@@ -61,11 +64,11 @@ class LightSdkService : Service() {
                     val methodId = data.readString()
                     val payload = data.readString()
                     val token = data.readString()
-                    val callingId = getCallingUid()
+                    val callingUid = getCallingUid()
                     val isGetToken = methodId == LightServiceMethod.GetToken.id
                     if (isGetToken) {
-                        if (!verifyCallerIsInstalledClient(callingId)) {
-                            Log.w(TAG, "Rejected GetToken from unverified caller uid=$callingId")
+                        if (!verifyCallerIsInstalledClient(callingUid)) {
+                            Log.w(TAG, "Rejected GetToken from unverified caller uid=$callingUid")
                             reply?.apply {
                                 writeNoException()
                                 writeInt(LightResult.ErrorCode.NoPermission.ordinal)
@@ -74,8 +77,8 @@ class LightSdkService : Service() {
                             return true
                         }
                     } else {
-                        if (!validateToken(callingId, token)) {
-                            Log.w(TAG, "Rejected request with invalid token from uid=$callingId")
+                        if (!validateToken(callingUid, token)) {
+                            Log.w(TAG, "Rejected request with invalid token from uid=$callingUid")
                             reply?.apply {
                                 writeNoException()
                                 writeInt(LightResult.ErrorCode.NoPermission.ordinal)
@@ -86,7 +89,7 @@ class LightSdkService : Service() {
                     }
 
                     val result = if (methodId != null) {
-                        runCatching { handleRequest(callingId, methodId, payload) }
+                        runCatching { handleRequest(callingUid, methodId, payload) }
                             .getOrElse {
                                 Log.e(TAG, "Error handling request: $methodId", it)
                                 LightResult.Error(LightResult.ErrorCode.Unknown)
@@ -116,13 +119,13 @@ class LightSdkService : Service() {
     }
 
     private fun handleRequest(
-        callingId: Int,
+        callingUid: Int,
         methodId: String,
         payload: String?
-    ): LightResult<String> {
-        return when (allMethods[methodId]) {
+    ): LightResult<String> = runCatching {
+        when (allMethods[methodId]) {
             LightServiceMethod.GetToken -> {
-                val token = issueToken(Binder.getCallingUid())
+                val token = issueToken(callingUid)
                 LightResult.Success(
                     LightServiceMethod.GetToken.encodeResponse(
                         LightServiceMethod.GetToken.Response(token = token)
@@ -155,12 +158,76 @@ class LightSdkService : Service() {
                 )
             }
 
+            LightServiceMethod.GetPermission -> {
+                val request = LightServiceMethod.GetPermission.decodeRequest(payload!!)
+                val permissionName = request.permissionName
+                val permissionResult = runCatching {
+                    if (!LightSdkServer.androidPermissionAllowed(callingUid, permissionName)) {
+                        return@runCatching LightServiceMethod.GetPermission.Result.BlockedByServer
+                    }
+                    val androidResult =
+                        checkPermission(permissionName, Binder.getCallingPid(), callingUid)
+                    when (androidResult) {
+                        PERMISSION_GRANTED -> LightServiceMethod.GetPermission.Result.Granted
+                        PERMISSION_DENIED -> LightServiceMethod.GetPermission.Result.Denied
+                        else -> LightServiceMethod.GetPermission.Result.Unknown
+                    }
+                }.getOrElse {
+                    Log.e(TAG, "GetPermission error", it)
+                    LightServiceMethod.GetPermission.Result.Unknown
+                }
+
+                LightResult.Success(
+                    LightServiceMethod.GetPermission.encodeResponse(
+                        LightServiceMethod.GetPermission.Response(
+                            permissionResult = permissionResult
+                        )
+                    )
+                )
+            }
+
+            LightServiceMethod.RequestPermissionComponent -> {
+                val component = LightSdkServer.permissionActivity
+                if (component == null) {
+                    Log.e(
+                        TAG,
+                        "No permissions activity defined by server! Set LightSdkServer.permissionActivity"
+                    )
+                    LightResult.Error(
+                        LightResult.ErrorCode.Unknown,
+                        "Server has not defined a component to allow permission acceptance."
+                    )
+                } else {
+                    startActivity(
+                        Intent(this@LightSdkService, component).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                    )
+                    val componentName =
+                        ComponentName(
+                            this@LightSdkService,
+                            component
+                        ).flattenToString()
+                    val response =
+                        LightServiceMethod.RequestPermissionComponent.Response(componentName)
+                    LightResult.Success(
+                        LightServiceMethod.RequestPermissionComponent.encodeResponse(
+                            response
+                        )
+                    )
+                }
+            }
+
             null -> {
                 // The app that wraps this server may be able to handle custom methods
-                LightSdkServer.customServiceMethodResolver.invoke(callingId, methodId, payload)
+                LightSdkServer.customServiceMethodResolver.invoke(callingUid, methodId, payload)
             }
         }
+    }.getOrElse {
+        Log.e(TAG, "Error handling client request:", it)
+        LightResult.Error(LightResult.ErrorCode.Unknown)
     }
+
 
     override fun onBind(intent: Intent?): IBinder = binder
 }

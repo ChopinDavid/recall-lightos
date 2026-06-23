@@ -72,11 +72,41 @@ sealed interface LightServiceMethod<TRequest, TResponse> {
             val enableKeyAnimation: Boolean
         )
     }
+
+    object GetPermission : LightServiceMethod<GetPermission.Request, GetPermission.Response> {
+        enum class Result {
+            Unknown, BlockedByServer, Granted, Denied
+        }
+        override val id = "GetPermission"
+        override val requestSerializer = serializer<Request>()
+        override val responseSerializer = serializer<Response>()
+
+        @Serializable
+        data class Request(val permissionName: String)
+
+        @Serializable
+        data class Response(
+            val permissionResult: Result
+        )
+    }
+
+    object RequestPermissionComponent : LightServiceMethod<Unit, RequestPermissionComponent.Response> {
+        const val PERMISSION_NAME_KEY = "PermissionName"
+        override val id = "RequestPermissionComponent"
+        override val requestSerializer = serializer<Unit>()
+        override val responseSerializer = serializer<Response>()
+
+        @Serializable
+        data class Response(val componentName: String)
+    }
 }
 
+// TODO we're gonna forget to add manually, maybe use reflection?
 val allMethods: Map<String, LightServiceMethod<*, *>> = listOf(
     LightServiceMethod.GetToken,
     LightServiceMethod.GetVersion,
     LightServiceMethod.SetRingtone,
-    LightServiceMethod.GetKeyboardOptions
+    LightServiceMethod.GetKeyboardOptions,
+    LightServiceMethod.GetPermission,
+    LightServiceMethod.RequestPermissionComponent,
 ).associateBy { it.id }

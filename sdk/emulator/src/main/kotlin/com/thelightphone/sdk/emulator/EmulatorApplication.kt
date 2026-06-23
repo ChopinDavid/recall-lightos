@@ -37,6 +37,8 @@ class EmulatorApplication : Application() {
             checkLightSdkCert(callingPackage)
         }
 
+        LightSdkServer.permissionActivity = LightSdkPermissionActivity::class.java
+
         EmulatorHttpServer(this).start()
     }
 }
