@@ -30,17 +30,14 @@ import com.thelightphone.sdk.ui.gridUnitsAsDp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 
 
-class AuthenticatorCodeScreen(sealedActivity: SealedLightActivity, private val accountId: Long?) :
+class AuthenticatorCodeScreen(
+    sealedActivity: SealedLightActivity,
+    private val accountId: Long?,
+    private val repository: TotpAccountRepository
+) :
     SimpleLightScreen<Unit>(sealedActivity) {
-
-    private val repository = TotpAccountRepository.getInstance(
-        databaseFile = File(filesDir, TotpAccountRepository.DATABASE_FILE_NAME),
-    )
-
-    override val showBackBar: Boolean = false
 
     @Composable
     override fun Content() {

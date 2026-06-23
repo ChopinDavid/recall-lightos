@@ -34,8 +34,6 @@ class UiDemoScrollScreen(sealedActivity: SealedLightActivity) :
     override val viewModelClass: Class<UiDemoScrollViewModel>
         get() = UiDemoScrollViewModel::class.java
 
-    override val showBackBar: Boolean = false
-
     override fun createViewModel() = UiDemoScrollViewModel()
 
     @Composable

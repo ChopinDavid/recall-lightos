@@ -25,7 +25,8 @@ class LightSdkPlugin : Plugin<Project> {
             "org.jetbrains.kotlinx:kotlinx-io",
             "org.unifiedpush.android:connector",
             "androidx.core:core-splashscreen",
-            "com.thelightphone.lp3keyboard"
+            "com.thelightphone.lp3keyboard",
+            "androidx.room"
         )
 
         val ALLOWED_PLUGINS = setOf(

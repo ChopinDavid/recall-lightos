@@ -13,4 +13,7 @@ interface LightEntryPoint {
     suspend fun onToolCreate(serverData: StateFlow<LightServerData?>)
 
     suspend fun onPushNotification(data: ByteArray): Unit = Unit
+
+    val enablePushNotifications: Boolean
+        get() = false
 }

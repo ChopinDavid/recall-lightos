@@ -103,9 +103,6 @@ class LightActivity internal constructor() : ComponentActivity() {
                             content()
                         }
                     }
-                    if (screen.showBackBar) {
-                        LightBackBar(onBack = ::goBack)
-                    }
                 }
             }
         }

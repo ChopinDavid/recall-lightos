@@ -29,18 +29,12 @@ import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
 
 class AuthenticatorAccountScreen(
     sealedActivity: SealedLightActivity,
-    private val accountResult: Result<StoredAccount>
+    private val accountResult: Result<StoredAccount>,
+    private val repository: TotpAccountRepository
 ) : SimpleLightScreen<Unit>(sealedActivity) {
-
-    private val repository = TotpAccountRepository.getInstance(
-        databaseFile = File(filesDir, TotpAccountRepository.DATABASE_FILE_NAME),
-    )
-
-    override val showBackBar: Boolean = false
 
     @Composable
     override fun Content() {

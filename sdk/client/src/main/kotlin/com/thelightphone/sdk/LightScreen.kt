@@ -20,9 +20,6 @@ abstract class SimpleLightScreen<ResultType>(sealedActivity: SealedLightActivity
 
     @Composable
     abstract fun Content()
-
-    open val showBackBar: Boolean = true
-
     open fun willShow() {}
     open fun willHide() {}
     open fun onAppPause() {}

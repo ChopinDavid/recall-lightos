@@ -43,8 +43,6 @@ class UiDemoIconsScreen(sealedActivity: SealedLightActivity) :
     override val viewModelClass: Class<UiDemoIconsViewModel>
         get() = UiDemoIconsViewModel::class.java
 
-    override val showBackBar: Boolean = false
-
     override fun createViewModel() = UiDemoIconsViewModel()
 
     @Composable

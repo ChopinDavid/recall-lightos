@@ -2,6 +2,7 @@ package com.thelightphone.sdk
 
 import android.app.Application
 import android.util.Log
+import androidx.room.Room
 import com.thelightphone.sdk.shared.LightConstants
 import com.thelightphone.sdk.shared.LightServerData
 import kotlinx.coroutines.CoroutineScope
@@ -57,12 +58,14 @@ open class LightSdkApplication : Application() {
             messageForDistributor = LightConstants.PUSH_CHANNEL_LOCAL,
         )
 
-        // Remote channel — real push notifications from the tool's backend
-        UnifiedPush.register(
-            this,
-            instance = LightConstants.PUSH_INSTANCE_REMOTE,
-            vapid = BuildConfig.LIGHT_VAPID_KEY.ifEmpty { null },
-            messageForDistributor = LightConstants.PUSH_CHANNEL_REMOTE,
-        )
+        if (LightSdkRegistry.entryPoint?.enablePushNotifications == true) {
+            // Remote channel — real push notifications from the tool's backend
+            UnifiedPush.register(
+                this,
+                instance = LightConstants.PUSH_INSTANCE_REMOTE,
+                vapid = BuildConfig.LIGHT_VAPID_KEY.ifEmpty { null },
+                messageForDistributor = LightConstants.PUSH_CHANNEL_REMOTE,
+            )
+        }
     }
 }

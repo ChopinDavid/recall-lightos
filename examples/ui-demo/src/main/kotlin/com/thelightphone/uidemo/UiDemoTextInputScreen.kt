@@ -40,8 +40,6 @@ class UiDemoTextInputScreen(sealedActivity: SealedLightActivity) :
     override val viewModelClass: Class<UiDemoTextInputViewModel>
         get() = UiDemoTextInputViewModel::class.java
 
-    override val showBackBar: Boolean = false
-
     override fun createViewModel() = UiDemoTextInputViewModel()
 
     @Composable
