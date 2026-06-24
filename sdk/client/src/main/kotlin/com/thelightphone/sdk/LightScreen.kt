@@ -13,10 +13,7 @@ import kotlin.text.clear
 abstract class SimpleLightScreen<ResultType>(sealedActivity: SealedLightActivity) {
     internal val activity = sealedActivity.activity
     internal var result: ResultType? = null
-
-    protected val dataStore: DataStore<Preferences> = activity.dataStore
-    protected val filesDir: File = activity.filesDir
-    protected val fileShare: LightFileShare by lazy { LightFileShare(activity) }
+    protected val lightContext = SealedLightContext(sealedActivity.activity)
 
     @Composable
     abstract fun Content()

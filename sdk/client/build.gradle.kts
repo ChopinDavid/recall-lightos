@@ -62,6 +62,7 @@ dependencies {
     implementation(libs.androidx.splashscreen)
     api(libs.androidx.room.runtime)
     api(libs.androidx.room.ktx)
+    implementation(libs.androidx.work.runtime)
     lintChecks(project(":lint-rules"))
 
     testImplementation(libs.kotlin.test)

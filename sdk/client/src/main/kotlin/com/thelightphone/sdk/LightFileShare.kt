@@ -1,5 +1,6 @@
 package com.thelightphone.sdk
 
+import android.content.Context
 import android.net.Uri
 import androidx.core.net.toUri
 import java.io.File
@@ -10,9 +11,9 @@ import java.nio.charset.Charset
 /**
  * Tools for managing files in a "shared" directory that LightOS can access via a content provider
  */
-class LightFileShare internal constructor(private val activity: LightActivity) {
+class LightFileShare internal constructor(private val androidContext: Context) {
 
-    private val root = File(activity.filesDir, LightFileProvider.SHARED_DIR).also { it.mkdirs() }
+    private val root = File(androidContext.filesDir, LightFileProvider.SHARED_DIR).also { it.mkdirs() }
 
     fun <T> read(relativePath: String, charset: Charset = Charsets.UTF_8, block: (InputStreamReader) -> T): T? {
         val file = resolve(relativePath)
@@ -34,7 +35,7 @@ class LightFileShare internal constructor(private val activity: LightActivity) {
     }
 
     fun getUri(relativePath: String): Uri {
-        val authority = "${activity.packageName}.lightfiles"
+        val authority = "${androidContext.packageName}.lightfiles"
         return "content://$authority/$relativePath".toUri()
     }
 
