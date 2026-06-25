@@ -37,38 +37,38 @@ fun shortLocationName(fullName: String): String = fullName.substringBefore(',').
 
 fun displayTemperatureC(day: DayForecast, current: CurrentConditions?, unit: TemperatureUnit): String {
     val celsius = current?.tempC ?: day.tempMaxC
-    return formatDegrees(celsius, unit)
+    return formatTemperature(celsius, unit)
 }
 
 fun displayWeatherDescription(day: DayForecast, current: CurrentConditions?): String {
     return current?.weatherDescription ?: day.weatherDescription
 }
 
-fun formatTemperature(celsius: Double, unit: TemperatureUnit): String {
+fun formatTemperature(
+    celsius: Double,
+    unit: TemperatureUnit,
+    displayUnit: Boolean = false,
+): String {
     val value = when (unit) {
         TemperatureUnit.Celsius -> celsius
         TemperatureUnit.Fahrenheit -> celsius * 9.0 / 5.0 + 32.0
     }
-    val suffix = when (unit) {
-        TemperatureUnit.Celsius -> "°C"
-        TemperatureUnit.Fahrenheit -> "°F"
+    val suffix = when (displayUnit) {
+        false -> "°"
+        true -> when (unit) {
+            TemperatureUnit.Celsius -> "°C"
+            TemperatureUnit.Fahrenheit -> "°F"
+        }
     }
-    return "${value.round1()}$suffix"
-}
-
-fun formatDegrees(celsius: Double, unit: TemperatureUnit): String {
-    val value = when (unit) {
-        TemperatureUnit.Celsius -> celsius
-        TemperatureUnit.Fahrenheit -> celsius * 9.0 / 5.0 + 32.0
-    }
-    return "${value.roundToInt()}°"
+    val formatted = if (displayUnit) value.round1() else value.roundToInt().toString()
+    return "$formatted$suffix"
 }
 
 fun formatHighLowLine(day: DayForecast, unit: TemperatureUnit): String {
-    val high = formatDegrees(day.tempMaxC, unit)
-    val low = formatDegrees(day.tempMinC, unit)
-    val feelsHigh = formatDegrees(day.apparentTempMaxC, unit)
-    val feelsLow = formatDegrees(day.apparentTempMinC, unit)
+    val high = formatTemperature(day.tempMaxC, unit)
+    val low = formatTemperature(day.tempMinC, unit)
+    val feelsHigh = formatTemperature(day.apparentTempMaxC, unit)
+    val feelsLow = formatTemperature(day.apparentTempMinC, unit)
     return "$high / $low (feels like $feelsHigh / $feelsLow)"
 }
 
@@ -83,14 +83,12 @@ fun formatWindSpeed(kmh: Double, compass: String, unit: TemperatureUnit): String
     TemperatureUnit.Celsius -> "${kmh.roundToInt()} km/h $compass"
 }
 
-fun formatTimeAmPm(iso: String): String {
-    return try {
-        val timePart = iso.substringAfter('T')
-        val localTime = LocalTime.parse(timePart.take(5))
-        localTime.format(DateTimeFormatter.ofPattern("h:mm a", Locale.US))
-    } catch (_: Exception) {
-        iso.substringAfter('T', iso).take(5)
-    }
+fun formatTimeAmPm(iso: String): String = runCatching {
+    val timePart = iso.substringAfter('T')
+    val localTime = LocalTime.parse(timePart.take(5))
+    localTime.format(DateTimeFormatter.ofPattern("h:mm a", Locale.US))
+}.getOrElse {
+    iso.substringAfter('T', iso).take(5)
 }
 
 fun formatUvIndex(value: Double): String = value.round1()
@@ -101,7 +99,7 @@ fun formatRain(mm: Double, unit: TemperatureUnit): String = when (unit) {
 }
 
 fun formatWeeklySummaryLine(day: WeeklyDay, unit: TemperatureUnit): String {
-    val temps = "${formatDegrees(day.tempMaxC, unit)} / ${formatDegrees(day.tempMinC, unit)}"
+    val temps = "${formatTemperature(day.tempMaxC, unit)} / ${formatTemperature(day.tempMinC, unit)}"
     val rain = formatRain(day.precipitationMm, unit)
     val probability = day.precipitationProbabilityMax
     val rainPart = if (probability != null) "Rain: $rain ($probability%)" else "Rain: $rain"
@@ -118,8 +116,8 @@ fun formatHourLabel(isoDateTime: String): String {
 }
 
 fun formatHourlyTempLine(hour: HourlyForecast, unit: TemperatureUnit): String {
-    val temp = formatDegrees(hour.tempC, unit)
-    val feels = formatDegrees(hour.apparentTempC, unit)
+    val temp = formatTemperature(hour.tempC, unit)
+    val feels = formatTemperature(hour.apparentTempC, unit)
     return "$temp (feels like $feels)"
 }
 
