@@ -101,10 +101,9 @@ class LightSdkPlugin : Plugin<Project> {
 
     override fun apply(project: Project) {
         project.pluginManager.withPlugin("com.google.devtools.ksp") {
-            // SDK modules have no @InitialScreen/@EntryPoint/@LightJob to register, and
-            // running the processor there would emit an empty LightSdkRegistry that
-            // ships in the SDK jar and collides with the consumer app's generated one
-            // at class-load time.
+            // SDK modules have nothing to register, and running the processor there
+            // emits an empty LightSdkRegistry that ships in the SDK jar and collides
+            // with the consumer app's generated one at class-load time.
             if (project.name !in SDK_MODULES) {
                 val pluginJar = this@LightSdkPlugin::class.java.protectionDomain.codeSource.location
                 project.dependencies.add("ksp", project.files(pluginJar))

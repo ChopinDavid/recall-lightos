@@ -23,6 +23,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 private const val TAG = "LightServiceConnection"
@@ -127,8 +128,9 @@ internal object LightServiceConnection : ServiceConnection {
 suspend fun <TRequest, TResponse> callRemoteServiceMethod(
     method: LightServiceMethod<TRequest, TResponse>,
     body: TRequest,
+    timeout: Duration = 5.seconds
 ): LightResult<TResponse> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-    val bound = withTimeoutOrNull(5.seconds) {
+    val bound = withTimeoutOrNull(timeout) {
         LightServiceConnection.awaitBinder()
         LightServiceConnection.ensureToken()
         true
@@ -142,11 +144,11 @@ suspend fun <TRequest, TResponse> callRemoteServiceMethod(
     }
 }
 
-suspend fun checkPermission(permission: String): LightServiceMethod.GetPermission.Result {
+suspend fun checkPermission(permission: String): LightResult<LightServiceMethod.GetPermission.Response> {
     return callRemoteServiceMethod(
         LightServiceMethod.GetPermission,
         LightServiceMethod.GetPermission.Request(permission)
-    ).getOrNull()?.permissionResult ?: LightServiceMethod.GetPermission.Result.Unknown
+    )
 }
 
 class PermissionRequestLauncher internal constructor(

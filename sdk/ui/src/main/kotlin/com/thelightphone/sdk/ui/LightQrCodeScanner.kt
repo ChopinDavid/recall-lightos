@@ -61,27 +61,28 @@ fun LightQrCodeScanner(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     title: String = "Scan QR Code",
-    checkCameraPermission: suspend () -> Boolean,
+    checkCameraPermission: suspend () -> Result<Boolean>,
     launchCameraPermissionRequest: suspend () -> Unit,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val colors = LightThemeTokens.colors
     var launchedPermissionRequest by remember { mutableStateOf(false) }
-    var hasCameraPermission by remember { mutableStateOf(false) }
-    var loading by remember { mutableStateOf(true) }
+    var uiState by remember { mutableStateOf(LightQrUiState.Loading) }
 
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            if (!checkCameraPermission()) {
+            val permissionCheck = checkCameraPermission()
+            if (permissionCheck.isFailure) {
+                uiState = LightQrUiState.PermissionError
+            } else if (permissionCheck.getOrNull() == false) {
                 if (!launchedPermissionRequest) {
                     launchCameraPermissionRequest()
                     launchedPermissionRequest = true
                 } else {
-                    loading = false
+                    uiState = LightQrUiState.PermissionDenied
                 }
             } else {
-                hasCameraPermission = true
-                loading = false
+                uiState = LightQrUiState.Active
             }
         }
     }
@@ -95,7 +96,7 @@ fun LightQrCodeScanner(
             .fillMaxSize()
             .background(colors.background),
     ) {
-        if (hasCameraPermission) {
+        if (uiState == LightQrUiState.Active) {
             QrCameraPreview(
                 onQrCode = { value ->
                     if (scannedOnce.compareAndSet(false, true)) {
@@ -128,18 +129,23 @@ fun LightQrCodeScanner(
                 )
             }
 
-            if (!hasCameraPermission) {
+            if (uiState != LightQrUiState.Active) {
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (loading) {
+                    if (uiState == LightQrUiState.Loading) {
                         CircularProgressIndicator()
                     } else {
+                        val message = if (uiState == LightQrUiState.PermissionDenied) {
+                            "Camera permission is required to scan QR codes."
+                        } else {
+                            "Error: unable to request camera permission!"
+                        }
                         LightText(
-                            text = "Camera permission is required to scan QR codes.",
+                            text = message,
                             variant = LightTextVariant.Copy,
                             align = TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 2f.gridUnitsAsDp()),
@@ -275,4 +281,8 @@ private fun QrViewfinderOverlay(
             style = Stroke(width = 3f),
         )
     }
+}
+
+private enum class LightQrUiState {
+    Loading, PermissionError, PermissionDenied, Active
 }

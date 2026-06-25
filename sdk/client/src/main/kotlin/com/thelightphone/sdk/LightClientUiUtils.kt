@@ -4,6 +4,7 @@ import android.Manifest
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.thelightphone.sdk.shared.LightServiceMethod
+import com.thelightphone.sdk.shared.asKotlinResult
 import com.thelightphone.sdk.ui.LightQrCodeScanner
 
 /**
@@ -24,7 +25,8 @@ fun LightQrCodeScanner(
         onBack = onBack,
         modifier = modifier,
         checkCameraPermission = {
-            checkPermission(Manifest.permission.CAMERA) == LightServiceMethod.GetPermission.Result.Granted
+            checkPermission(Manifest.permission.CAMERA).asKotlinResult
+                .map { it.permissionResult == LightServiceMethod.GetPermission.Result.Granted }
         },
         launchCameraPermissionRequest = {
             permissionLauncher?.launch()
