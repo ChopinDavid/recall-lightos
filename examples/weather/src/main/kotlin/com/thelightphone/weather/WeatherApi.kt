@@ -77,7 +77,7 @@ internal class WeatherApi {
         }
     }
 
-    suspend fun resolveLocation(query: String): Result<GeocodingResult> = try {
+    suspend fun resolveLocation(query: String): Result<GeocodingResult> = runCatching {
         val encoded = URLEncoder.encode(query.trim(), UTF_8.name())
         val response = client.get(
             "https://geocoding-api.open-meteo.com/v1/search?name=$encoded&count=1",
@@ -85,21 +85,14 @@ internal class WeatherApi {
 
         if (!response.status.isSuccess()) {
             val body = response.bodyAsText().take(500)
-            return Result.failure(
-                IllegalStateException("Geocoding HTTP ${response.status.value}: $body"),
-            )
+            throw IllegalStateException("Geocoding HTTP ${response.status.value}: $body")
         }
 
         val geo: GeocodingResponse = response.body()
-        val first = geo.results.firstOrNull()
-            ?: return Result.failure(LocationNotFoundException())
-
-        Result.success(first)
-    } catch (e: Throwable) {
-        Result.failure(e)
+        geo.results.firstOrNull() ?: throw LocationNotFoundException()
     }
 
-    suspend fun fetchForecast(latitude: Double, longitude: Double): Result<StoredForecast> = try {
+    suspend fun fetchForecast(latitude: Double, longitude: Double): Result<StoredForecast> = runCatching {
         val response = client.get(
             "https://api.open-meteo.com/v1/forecast" +
                 "?latitude=$latitude&longitude=$longitude" +
@@ -115,19 +108,15 @@ internal class WeatherApi {
 
         if (!response.status.isSuccess()) {
             val body = response.bodyAsText().take(500)
-            return Result.failure(
-                IllegalStateException("Forecast HTTP ${response.status.value}: $body"),
-            )
+            throw IllegalStateException("Forecast HTTP ${response.status.value}: $body")
         }
 
         val forecastResponse: OpenMeteoForecastResponse = response.body()
         val daily = forecastResponse.daily
-            ?: return Result.failure(IllegalStateException("No forecast data available."))
+            ?: throw IllegalStateException("No forecast data available.")
 
         if (daily.time.size < 2) {
-            return Result.failure(
-                IllegalStateException("Forecast did not include today and tomorrow."),
-            )
+            throw IllegalStateException("Forecast did not include today and tomorrow.")
         }
 
         val current = forecastResponse.current?.let {
@@ -151,18 +140,14 @@ internal class WeatherApi {
             )
         }
         val hourly = forecastResponse.hourly?.toHourlyForecasts().orEmpty()
-        Result.success(
-            StoredForecast(
-                today = today,
-                tomorrow = tomorrow,
-                weekly = weekly,
-                hourly = hourly,
-                current = current,
-                daily = dailyForecasts,
-            ),
+        StoredForecast(
+            today = today,
+            tomorrow = tomorrow,
+            weekly = weekly,
+            hourly = hourly,
+            current = current,
+            daily = dailyForecasts,
         )
-    } catch (e: Throwable) {
-        Result.failure(e)
     }
 
     fun close() {
