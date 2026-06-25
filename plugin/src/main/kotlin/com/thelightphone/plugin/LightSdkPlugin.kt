@@ -10,6 +10,8 @@ import org.gradle.api.artifacts.ResolvedDependency
 class LightSdkPlugin : Plugin<Project> {
 
     companion object {
+        val SDK_MODULES = setOf("client", "shared", "ui", "server", "emulator")
+
         val ALLOWED_DEPENDENCIES = setOf(
             "org.jetbrains.kotlin:kotlin-stdlib",
             "org.jetbrains.kotlin:kotlin-test",
@@ -99,8 +101,14 @@ class LightSdkPlugin : Plugin<Project> {
 
     override fun apply(project: Project) {
         project.pluginManager.withPlugin("com.google.devtools.ksp") {
-            val pluginJar = this@LightSdkPlugin::class.java.protectionDomain.codeSource.location
-            project.dependencies.add("ksp", project.files(pluginJar))
+            // SDK modules have no @InitialScreen/@EntryPoint/@LightJob to register, and
+            // running the processor there would emit an empty LightSdkRegistry that
+            // ships in the SDK jar and collides with the consumer app's generated one
+            // at class-load time.
+            if (project.name !in SDK_MODULES) {
+                val pluginJar = this@LightSdkPlugin::class.java.protectionDomain.codeSource.location
+                project.dependencies.add("ksp", project.files(pluginJar))
+            }
         }
         project.afterEvaluate(::validate)
     }
@@ -171,8 +179,7 @@ class LightSdkPlugin : Plugin<Project> {
      */
     private fun validateSourceFiles(project: Project, violations: MutableList<String>) {
         // Only scan consumer projects, not the SDK itself
-        val sdkModules = setOf("client", "shared", "ui", "server", "emulator")
-        if (project.name in sdkModules) return
+        if (project.name in SDK_MODULES) return
 
         val srcDirs = project.projectDir.resolve("src")
         if (!srcDirs.exists()) return
