@@ -101,6 +101,63 @@ object ToolEntryPoint : LightEntryPoint {
 
 `onToolCreate` is called once from the SDK `Application`. `onPushNotification` is dispatched when UnifiedPush delivers a message via `LightPushService`.
 
+### Background jobs
+
+`LightWork` lets you run code in the background. These jobs can run even when your tool isn't on screen, and across reboots. The system decides when to run them (it may wait until the device is idle, charging, or on Wi-Fi), so they aren't great for anything time-sensitive.
+
+Declare a job as a top-level `val` annotated with `@LightJob`. The key you pass is the string you'll use to refer to the job elsewhere — it must be unique within your tool:
+
+```kotlin
+@LightJob("sync-contacts")
+val syncContacts: LightJobHandler = { ctx, input ->
+    // ...do the work...
+    LightJobResult.Success()
+}
+```
+
+The handler receives a `SealedLightContext` (use it for DataStore, files, etc.) and an input bundle. Return one of:
+
+- `LightJobResult.Success(outputData)` — finished cleanly. `outputData` is optional and made available to any code watching the job.
+- `LightJobResult.Retry` — something transient went wrong (a flaky network, etc.); the system will try again later, waiting longer between each attempt.
+- `LightJobResult.Error(outputData)` — failed permanently; don't run again.
+
+Schedule it from any screen:
+
+```kotlin
+LightWork.enqueue(lightContext, "sync-contacts", mapOf("force" to "true"))
+```
+
+The `inputData` map is forwarded straight to the handler. Values must be strings — encode richer types yourself.
+
+For repeating work, use `enqueuePeriodic` with an interval. The minimum is 15 minutes; shorter intervals are rounded up:
+
+```kotlin
+LightWork.enqueuePeriodic(lightContext, "sync-contacts", repeatInterval = 30.minutes)
+```
+
+Cancel a scheduled or running job by key:
+
+```kotlin
+LightWork.cancel(lightContext, "sync-contacts")
+```
+
+Watch state changes (great inside a `LaunchedEffect` or view model):
+
+```kotlin
+LightWork.observe(lightContext, "sync-contacts").collect { state ->
+    when (state) {
+        LightJobState.Running -> // show a spinner
+        is LightJobState.Succeeded -> // state.outputData is what the handler returned
+        is LightJobState.Failed -> // ditto
+        else -> Unit
+    }
+}
+```
+
+For a one-shot read use `LightWork.getState(...)`; to suspend until the job reaches a terminal state use `LightWork.awaitCompletion(...)`.
+
+If you need multiple concurrent runs of the same job, pass a `tag` to `enqueue` / `enqueuePeriodic` and use that same `tag` with `cancel` / `observe`.
+
 ### Push notifications
 
 // TODO

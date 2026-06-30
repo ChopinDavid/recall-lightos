@@ -70,7 +70,7 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeSc
         get() = HomeScreenViewModel::class.java
 
     override fun createViewModel(): HomeScreenViewModel {
-        return HomeScreenViewModel(fileShare)
+        return HomeScreenViewModel(lightContext.fileShare)
     }
 
     @Composable

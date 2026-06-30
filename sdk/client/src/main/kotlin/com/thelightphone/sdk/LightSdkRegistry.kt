@@ -16,4 +16,10 @@ internal object LightSdkRegistry {
     val entryPoint: LightEntryPoint? by lazy {
         generated::class.java.getMethod("getEntryPoint").invoke(generated) as? LightEntryPoint
     }
+
+    @Suppress("UNCHECKED_CAST")
+    val jobs: Map<String, LightJobHandler> by lazy {
+        (generated::class.java.getMethod("getJobs").invoke(generated)
+            as? Map<String, LightJobHandler>) ?: emptyMap()
+    }
 }

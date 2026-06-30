@@ -34,7 +34,7 @@ class AuthenticatorHomeScreen(sealedActivity: SealedLightActivity) :
     LightScreen<Unit, AuthenticatorViewModel>(sealedActivity) {
 
     private val repository = TotpAccountRepository.getInstance {
-        buildDatabase(
+        lightContext.buildDatabase(
             TotpDatabase::class.java,
             TotpAccountRepository.DATABASE_NAME
         )

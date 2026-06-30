@@ -20,7 +20,10 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
+import java.io.File
 
 private class BackStackEntry<T>(
     val screen: SimpleLightScreen<T>,
@@ -128,6 +131,11 @@ class LightActivity internal constructor() : ComponentActivity() {
     }
 }
 
+class SealedLightContext(internal val androidContext: Context) {
+    val dataStore: DataStore<Preferences> by lazy{ androidContext.dataStore }
+    val filesDir: File by lazy{ androidContext.filesDir }
+    val fileShare: LightFileShare by lazy { LightFileShare(androidContext) }
+}
 /**
  * Wrapper class to pass around an instance of LightActivity without exposing it to
  * user code. Sorry! :)

@@ -7,9 +7,10 @@ import com.google.devtools.ksp.processing.Resolver
 import com.google.devtools.ksp.processing.SymbolProcessor
 import com.google.devtools.ksp.processing.SymbolProcessorEnvironment
 import com.google.devtools.ksp.processing.SymbolProcessorProvider
+import com.google.devtools.ksp.symbol.ClassKind
 import com.google.devtools.ksp.symbol.KSAnnotated
 import com.google.devtools.ksp.symbol.KSClassDeclaration
-import com.google.devtools.ksp.symbol.ClassKind
+import com.google.devtools.ksp.symbol.KSPropertyDeclaration
 
 class LightSdkProcessor(
     private val codeGenerator: CodeGenerator,
@@ -30,6 +31,11 @@ class LightSdkProcessor(
         val entryPoints = resolver
             .getSymbolsWithAnnotation("com.thelightphone.sdk.EntryPoint")
             .filterIsInstance<KSClassDeclaration>()
+            .toList()
+
+        val jobs = resolver
+            .getSymbolsWithAnnotation("com.thelightphone.sdk.LightJob")
+            .filterIsInstance<KSPropertyDeclaration>()
             .toList()
 
         // Validate @InitialScreen
@@ -57,11 +63,47 @@ class LightSdkProcessor(
             }
         }
 
+        val jobEntries = mutableListOf<Pair<String, String>>()
+        val seenKeys = mutableSetOf<String>()
+        for (job in jobs) {
+            val fqn = job.qualifiedName?.asString() ?: "unknown"
+            if (job.parentDeclaration != null) {
+                logger.error("@LightJob must be applied to a top-level property: $fqn")
+                return emptyList()
+            }
+
+            val typeFqn = job.type.resolve().declaration.qualifiedName?.asString()
+            if (typeFqn != "com.thelightphone.sdk.LightJobHandler") {
+                logger.error("@LightJob property $fqn must be of type LightJobHandler (got $typeFqn)")
+                return emptyList()
+            }
+
+            val annotation = job.annotations.first {
+                it.shortName.asString() == "LightJob" &&
+                    it.annotationType.resolve().declaration.qualifiedName?.asString() ==
+                    "com.thelightphone.sdk.LightJob"
+            }
+            val key = annotation.arguments
+                .firstOrNull { it.name?.asString() == "key" }?.value as? String
+                ?: (annotation.arguments.firstOrNull()?.value as? String)
+
+            if (key.isNullOrEmpty()) {
+                logger.error("@LightJob $fqn is missing a key")
+                return emptyList()
+            }
+            if (!seenKeys.add(key)) {
+                logger.error("Duplicate @LightJob key '$key' on $fqn")
+                return emptyList()
+            }
+
+            jobEntries += key to fqn
+        }
+
         val initialScreenFqcn = initialScreens.firstOrNull()?.qualifiedName?.asString()
         val entryPointFqcn = entryPoints.firstOrNull()?.qualifiedName?.asString()
 
         // Collect all source files that contributed
-        val allFiles = (initialScreens + entryPoints).mapNotNull { it.containingFile }
+        val allFiles = (initialScreens + entryPoints + jobs).mapNotNull { it.containingFile }
 
         val file = codeGenerator.createNewFile(
             dependencies = Dependencies(aggregating = true, *allFiles.toTypedArray()),
@@ -85,6 +127,11 @@ class LightSdkProcessor(
                 } else {
                     appendLine("    val entryPoint: com.thelightphone.sdk.LightEntryPoint? = null")
                 }
+                appendLine("    val jobs: Map<String, com.thelightphone.sdk.LightJobHandler> = mapOf(")
+                for ((key, fqn) in jobEntries) {
+                    appendLine("        \"${key.replace("\"", "\\\"")}\" to $fqn,")
+                }
+                appendLine("    )")
                 appendLine("}")
             })
         }

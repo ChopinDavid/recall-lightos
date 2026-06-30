@@ -18,6 +18,7 @@ import com.thelightphone.sdk.InitialScreen
 import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SealedLightActivity
+import com.thelightphone.sdk.SimpleLightScreen
 import com.thelightphone.sdk.ui.LightFullscreenModal
 import com.thelightphone.sdk.ui.LightText
 import com.thelightphone.sdk.ui.LightTextVariant
@@ -28,22 +29,14 @@ import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
 
-class UiDemoHomeViewModel : LightViewModel<Unit>()
-
 @InitialScreen
 class UiDemoHomeScreen(sealedActivity: SealedLightActivity) :
-    LightScreen<Unit, UiDemoHomeViewModel>(sealedActivity) {
-
-    override val viewModelClass: Class<UiDemoHomeViewModel>
-        get() = UiDemoHomeViewModel::class.java
-
-    override fun createViewModel() = UiDemoHomeViewModel()
+    SimpleLightScreen<Unit>(sealedActivity) {
 
     @Composable
     override fun Content() {
         val themeColors by LightThemeController.colors.collectAsState()
         var showModal by rememberSaveable { mutableStateOf(false) }
-
         LightTheme(colors = themeColors) {
             Box(
                 modifier = Modifier

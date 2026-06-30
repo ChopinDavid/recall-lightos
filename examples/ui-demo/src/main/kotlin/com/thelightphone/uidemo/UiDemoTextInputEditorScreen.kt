@@ -6,16 +6,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import com.thelightphone.sdk.LightScreen
-import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SealedLightActivity
+import com.thelightphone.sdk.SimpleLightScreen
 import com.thelightphone.sdk.rememberKeyboardOptions
 import com.thelightphone.sdk.ui.LightTextInputEditor
 import com.thelightphone.sdk.ui.LightTheme
 import com.thelightphone.sdk.ui.LightThemeController
 import com.thelightphone.sdk.ui.LightThemeTokens
-
-class UiDemoTextInputEditorViewModel : LightViewModel<String>()
 
 data class EditorRequest(
     val title: String,
@@ -25,12 +22,7 @@ data class EditorRequest(
 class UiDemoTextInputEditorScreen(
     sealedActivity: SealedLightActivity,
     private val editorRequest: EditorRequest
-) : LightScreen<String, UiDemoTextInputEditorViewModel>(sealedActivity) {
-
-    override val viewModelClass: Class<UiDemoTextInputEditorViewModel>
-        get() = UiDemoTextInputEditorViewModel::class.java
-
-    override fun createViewModel() = UiDemoTextInputEditorViewModel()
+) : SimpleLightScreen<String>(sealedActivity) {
 
     @Composable
     override fun Content() {
