@@ -24,3 +24,9 @@ get() = when(this) {
     is LightResult.Error -> this
     is LightResult.Success<*> -> null
 }
+
+val <T> LightResult<T>.asKotlinResult: Result<T>
+    get() = when(this) {
+        is LightResult.Error -> Result.failure(Exception(this.toString()))
+        is LightResult.Success<T> -> Result.success(this.data)
+    }
