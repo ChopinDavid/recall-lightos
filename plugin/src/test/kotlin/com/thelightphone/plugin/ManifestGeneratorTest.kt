@@ -9,6 +9,7 @@ class ManifestGeneratorTest {
     private fun render(
         label: String = "My App",
         permissions: List<String> = emptyList(),
+        serverPackage: String = "com.lightos",
     ): String = ManifestGenerator.render(
         LightToolMetadata(
             toolId = "com.example.mytool",
@@ -16,6 +17,7 @@ class ManifestGeneratorTest {
             versionCode = 1,
             versionName = "1.0",
             permissions = permissions,
+            serverPackage = serverPackage,
         )
     )
 
@@ -71,5 +73,18 @@ class ManifestGeneratorTest {
     fun `permission without implied feature emits no uses-feature`() {
         val xml = render(permissions = listOf("android.permission.INTERNET"))
         assertFalse(xml.contains("uses-feature"))
+    }
+
+    @Test
+    fun `server package is emitted as meta-data in application element`() {
+        val xml = render(serverPackage = "com.lightos")
+        assertTrue(
+            xml.contains("""android:name="com.thelightphone.sdk.LIGHT_SERVER_PACKAGE""""),
+            "expected LIGHT_SERVER_PACKAGE meta-data name; got:\n$xml"
+        )
+        assertTrue(
+            xml.contains("""android:value="com.lightos""""),
+            "expected com.lightos as meta-data value; got:\n$xml"
+        )
     }
 }

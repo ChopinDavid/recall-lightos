@@ -20,6 +20,7 @@ data class LightToolMetadata(
     val versionCode: Int,
     val versionName: String,
     val permissions: List<String>,
+    val serverPackage: String,
 ) {
     companion object {
         const val FILE_NAME: String = "lighttool.toml"
@@ -56,6 +57,7 @@ data class LightToolMetadata(
                 versionCode = validateVersionCode(tool.tomlLong("versionCode")),
                 versionName = validateVersionName(tool.tomlString("versionName")),
                 permissions = validatePermissions(tool.tomlStringList("permissions")),
+                serverPackage = validateServerPackage(tool.tomlString("serverPackage")),
             )
         }
 
@@ -89,6 +91,15 @@ data class LightToolMetadata(
             val v = value ?: throw LightToolMetadataException("tool.versionName is required")
             require(LightToolPolicy.VERSION_NAME_PATTERN.matches(v)) {
                 "tool.versionName may contain only [A-Za-z0-9._+-] and must be <=30 chars; got '$v'"
+            }
+            return v
+        }
+
+        private fun validateServerPackage(value: String?): String {
+            val v = value ?: throw LightToolMetadataException("tool.serverPackage is required")
+            require(LightToolPolicy.TOOL_ID_PATTERN.matches(v)) {
+                "tool.serverPackage must be a lowercase dotted Java package identifier " +
+                        "(e.g. com.lightos); got '$v'"
             }
             return v
         }

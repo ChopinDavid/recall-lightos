@@ -24,6 +24,7 @@ class LightToolMetadataTest {
             versionCode = 7
             versionName = "1.2.0"
             permissions = ["android.permission.INTERNET"]
+            serverPackage = "com.lightos"
         """.trimIndent())
 
         val meta = LightToolMetadata.parse(file)
@@ -33,6 +34,7 @@ class LightToolMetadataTest {
         assertEquals(7, meta.versionCode)
         assertEquals("1.2.0", meta.versionName)
         assertEquals(listOf("android.permission.INTERNET"), meta.permissions)
+        assertEquals("com.lightos", meta.serverPackage)
     }
 
     @Test
@@ -143,5 +145,46 @@ class LightToolMetadataTest {
         """.trimIndent())
         val ex = assertThrows<LightToolMetadataException> { LightToolMetadata.parse(file) }
         assert(ex.message!!.contains("versionCode")) { ex.message ?: "" }
+    }
+
+    @Test
+    fun `missing serverPackage fails`(@TempDir dir: Path) {
+        val file = writeToml(dir, """
+            [tool]
+            id = "com.example.mytool"
+            label = "X"
+            versionCode = 1
+            versionName = "1.0"
+        """.trimIndent())
+        val ex = assertThrows<LightToolMetadataException> { LightToolMetadata.parse(file) }
+        assert(ex.message!!.contains("serverPackage"))
+    }
+
+    @Test
+    fun `invalid serverPackage with capitals fails`(@TempDir dir: Path) {
+        val file = writeToml(dir, """
+            [tool]
+            id = "com.example.mytool"
+            label = "X"
+            versionCode = 1
+            versionName = "1.0"
+            serverPackage = "Com.LightOS"
+        """.trimIndent())
+        val ex = assertThrows<LightToolMetadataException> { LightToolMetadata.parse(file) }
+        assert(ex.message!!.contains("serverPackage"))
+    }
+
+    @Test
+    fun `single-segment serverPackage fails`(@TempDir dir: Path) {
+        val file = writeToml(dir, """
+            [tool]
+            id = "com.example.mytool"
+            label = "X"
+            versionCode = 1
+            versionName = "1.0"
+            serverPackage = "lightos"
+        """.trimIndent())
+        val ex = assertThrows<LightToolMetadataException> { LightToolMetadata.parse(file) }
+        assert(ex.message!!.contains("serverPackage"))
     }
 }
