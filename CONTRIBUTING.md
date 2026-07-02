@@ -10,7 +10,7 @@ While the software in this library is fully open source, it is depended upon by 
 
 ### Welcome Contributions
 
-We expect contributions to come in the form of GitHub [issues](issues) and [pull requests](pulls). Not every issue requires a pull request, but we will close any pull requests that are not associated with an existing issue. If you are interested in submitting code changes for your issue, please state that clearly. Someone from the Light team will explicitly indicate on an issue that we would welcome a relevant PR. **We reserve the right to politely refuse any proposed work. If having your work merged is important to you, please wait until we give a green light on your issue!**
+We expect contributions to come in the form of GitHub [issues](https://github.com/lightphone/light-sdk/issues) and [pull requests](https://github.com/lightphone/light-sdk/pulls). Not every issue requires a pull request, but we will close any pull requests that are not associated with an existing issue. If you are interested in submitting code changes for your issue, please state that clearly. Someone from the Light team will explicitly indicate on an issue that we would welcome a relevant PR. **We reserve the right to politely refuse any proposed work. If having your work merged is important to you, please wait until we give a green light on your issue!**
 
 We expect _all_ modules in this repository to compile, and _all_ tests to pass for each PR. We will have an automated check that runs on GitHub, but to save time/resources, **please** check that this is true before opening your PR. For this repo, you can run `./gradlew check` in the root directory.
 
