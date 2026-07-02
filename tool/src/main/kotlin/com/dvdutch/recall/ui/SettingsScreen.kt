@@ -35,10 +35,9 @@ import com.thelightphone.sdk.ui.gridUnitsAsDp
  * weather example's Screen/ViewModel pairing and its mode-based full-screen
  * text editing (weather's LocationInput mode).
  *
- * Temporarily marked `@InitialScreen` for Task 5 so the tool builds/runs; Task 6
- * moves the initial screen to the deck list.
+ * The initial screen is [RecallHomeScreen]; Settings is reached from there via
+ * the gear row (or auto-navigation when no token is configured yet).
  */
-@InitialScreen
 class SettingsScreen(sealedActivity: SealedLightActivity) :
     LightScreen<Unit, SettingsViewModel>(sealedActivity) {
 
@@ -93,6 +92,7 @@ class SettingsScreen(sealedActivity: SealedLightActivity) :
                             bridgeToken = state.bridgeToken,
                             statusLine = state.statusLine,
                             testing = state.testing,
+                            onBack = { goBack() },
                             onEditUrl = viewModel::openEditUrl,
                             onEditToken = viewModel::openEditToken,
                             onTestConnection = viewModel::testConnection,
@@ -113,6 +113,7 @@ private fun SettingsMain(
     bridgeToken: String,
     statusLine: String?,
     testing: Boolean,
+    onBack: () -> Unit,
     onEditUrl: () -> Unit,
     onEditToken: () -> Unit,
     onTestConnection: () -> Unit,
@@ -120,6 +121,10 @@ private fun SettingsMain(
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         LightTopBar(
+            leftButton = LightBarButton.LightIcon(
+                icon = LightIcons.BACK,
+                onClick = onBack,
+            ),
             center = LightTopBarCenter.Text("Settings"),
             modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
         )
