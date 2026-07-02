@@ -1,7 +1,6 @@
 package com.thelightphone.sample
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -18,6 +17,7 @@ import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.SimpleLightScreen
+import com.thelightphone.sdk.ui.lightClickable
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.OkHttp
@@ -111,7 +111,7 @@ class DetailScreen(sealedActivity: SealedLightActivity) :
                 text = "Go Back",
                 modifier = Modifier
                     .padding(top = 16.dp)
-                    .clickable { goBack() },
+                    .lightClickable { goBack() },
             )
         }
     }

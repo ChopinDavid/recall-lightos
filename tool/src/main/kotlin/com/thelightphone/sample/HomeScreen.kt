@@ -2,7 +2,6 @@ package com.thelightphone.sample
 
 import android.util.Log
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,6 +29,7 @@ import com.thelightphone.sdk.ui.LightTextVariant
 import com.thelightphone.sdk.ui.LightTheme
 import com.thelightphone.sdk.ui.LightThemeController
 import com.thelightphone.sdk.ui.LightThemeTokens
+import com.thelightphone.sdk.ui.lightClickable
 import com.thelightphone.sdk.shared.LightServiceMethod
 import com.thelightphone.sdk.shared.error
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -97,7 +97,7 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeSc
                         icon = LightIcons.SETTINGS,
                         modifier = Modifier
                             .padding(end = 16.dp)
-                            .clickable { LightThemeController.toggle() },
+                            .lightClickable { LightThemeController.toggle() },
                     )
                     LightIcon(icon = LightIcons.CALL, modifier = Modifier.padding(end = 16.dp))
                     LightIcon(icon = LightIcons.SEARCH, modifier = Modifier.padding(end = 16.dp))
@@ -127,7 +127,7 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeSc
                                 variant = LightTextVariant.Copy,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { viewModel.selectRingtone(filename) }
+                                    .lightClickable { viewModel.selectRingtone(filename) }
                                     .padding(vertical = 12.dp),
                             )
                         }

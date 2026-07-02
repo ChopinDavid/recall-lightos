@@ -1,7 +1,6 @@
 package com.thelightphone.uidemo
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,6 +23,7 @@ import com.thelightphone.sdk.ui.LightThemeTokens
 import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
+import com.thelightphone.sdk.ui.lightClickable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -75,7 +75,7 @@ class UiDemoSecondScreen(sealedActivity: SealedLightActivity) :
                         text = "+ INCREMENT",
                         variant = LightTextVariant.Copy,
                         modifier = Modifier
-                            .clickable { viewModel.increment() }
+                            .lightClickable { viewModel.increment() }
                             .padding(vertical = 0.75f.gridUnitsAsDp()),
                     )
                 }
