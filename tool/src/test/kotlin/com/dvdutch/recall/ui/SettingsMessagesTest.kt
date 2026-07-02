@@ -1,0 +1,95 @@
+package com.dvdutch.recall.ui
+
+import com.dvdutch.recall.api.BridgeError
+import com.dvdutch.recall.api.StatusResponse
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+/**
+ * Unit tests for [SettingsMessages] — the pure error/success -> status line
+ * mapping shown by the Settings "Test connection" action. No Compose/Android
+ * runtime is required; the mapping lives in a plain object so it is testable on
+ * the JVM.
+ */
+class SettingsMessagesTest {
+
+    private val url = "http://10.0.2.2:8000"
+
+    @Test
+    fun `unreachable interpolates the configured url`() {
+        assertEquals(
+            "can't reach your bridge at $url",
+            SettingsMessages.errorLine(BridgeError.Unreachable, url),
+        )
+    }
+
+    @Test
+    fun `unauthorized maps to token rejected`() {
+        assertEquals(
+            "token rejected",
+            SettingsMessages.errorLine(BridgeError.Unauthorized, url),
+        )
+    }
+
+    @Test
+    fun `needs attention maps to full sync copy`() {
+        assertEquals(
+            "bridge needs attention: full sync required (fix on the server)",
+            SettingsMessages.errorLine(BridgeError.NeedsAttention, url),
+        )
+    }
+
+    @Test
+    fun `version skew maps to update copy`() {
+        assertEquals(
+            "update the tool / update the bridge",
+            SettingsMessages.errorLine(BridgeError.VersionSkew(got = "2"), url),
+        )
+    }
+
+    @Test
+    fun `server error is shown verbatim`() {
+        assertEquals(
+            "collection is locked",
+            SettingsMessages.errorLine(BridgeError.Server("collection is locked"), url),
+        )
+    }
+
+    @Test
+    fun `ok line with never-synced reports never`() {
+        val status = StatusResponse(
+            bridgeVersion = "0.1.0",
+            ankiVersion = "25.09.5",
+            collectionOpen = true,
+            lastSync = null,
+        )
+        assertEquals(
+            "ok — anki 25.09.5 · synced never",
+            SettingsMessages.okLine(status, now = 1_000_000L),
+        )
+    }
+
+    @Test
+    fun `ok line with recent sync reports just now`() {
+        val now = 1_000_000L
+        val status = StatusResponse(
+            bridgeVersion = "0.1.0",
+            ankiVersion = "25.09.5",
+            collectionOpen = true,
+            lastSync = now - 5_000L,
+        )
+        assertEquals(
+            "ok — anki 25.09.5 · synced just now",
+            SettingsMessages.okLine(status, now = now),
+        )
+    }
+
+    @Test
+    fun `relative labels cover minutes hours and days`() {
+        val now = 100_000_000L
+        assertEquals("just now", SettingsMessages.relativeSince(now - 30_000L, now))
+        assertEquals("5m ago", SettingsMessages.relativeSince(now - 5 * 60_000L, now))
+        assertEquals("3h ago", SettingsMessages.relativeSince(now - 3 * 3_600_000L, now))
+        assertEquals("2d ago", SettingsMessages.relativeSince(now - 2 * 86_400_000L, now))
+    }
+}
