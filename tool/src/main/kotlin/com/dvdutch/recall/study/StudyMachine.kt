@@ -101,12 +101,19 @@ class StudyMachine(
     private var retainedBack: StudyState.ShowingBack? = null
 
     /**
-     * Begins the session: `studyStart` then the first `queue` fetch. Emits
-     * [StudyState.ShowingFront] for the first card, [StudyState.Finished] if none
-     * were returned, or [StudyState.Failed] on any bridge error.
+     * Begins (or restarts) the session: `studyStart` then the first `queue` fetch.
+     * Idempotent restart semantics — a retry after a mid-session failure clears the
+     * stale [buffer] and any [retainedBack] first, then fetches fresh, so leftover
+     * cards from the prior attempt never stack. [reviewed] is deliberately NOT
+     * reset: applied reviews really happened and persist across a restart.
+     *
+     * Emits [StudyState.ShowingFront] for the first card, [StudyState.Finished] if
+     * none were returned, or [StudyState.Failed] on any bridge error.
      */
     suspend fun start() {
         _state.value = StudyState.Loading
+        buffer.clear()
+        retainedBack = null
         guard {
             client.studyStart(deckId)
             val response = client.queue()
@@ -156,23 +163,23 @@ class StudyMachine(
         retainedBack = back
         guard {
             val result = client.answer(listOf(answer)).firstOrNull()?.status
-            when (result) {
-                "error" -> {
-                    // Keep the card so the grade can be retried; surface retriable.
-                    _state.value = StudyState.Failed(FailCause.AnswerRejected, retriable = true)
-                    return@guard
-                }
-                "applied", "duplicate" -> {
-                    retainedBack = null
-                    reviewed++
-                    advance()
-                }
-                else -> {
-                    // stale / gone / unknown: superseded, advance without counting.
-                    retainedBack = null
-                    advance()
-                }
+            if (result == "error") {
+                // Keep the card retained so the grade can be re-posted; surface
+                // retriable. This is the ONLY outcome that preserves retainedBack.
+                _state.value = StudyState.Failed(FailCause.AnswerRejected, retriable = true)
+                return@guard
             }
+            // Every terminal outcome (applied/duplicate/stale/gone/unknown) clears
+            // the retained card, so a serialized double-tap grade becomes a true
+            // no-op instead of re-posting the previous card as a ghost answer.
+            retainedBack = null
+            when (result) {
+                // applied / duplicate: the review counted.
+                "applied", "duplicate" -> reviewed++
+                // stale / gone / unknown: superseded, advance without counting.
+                else -> Unit
+            }
+            advance()
         }
     }
 

@@ -21,20 +21,36 @@ import java.util.UUID
 
 /**
  * ViewModel for [StudyScreen]. It owns one [StudyMachine] for the session and is
- * the single coroutine context that drives it: every `start`/`reveal`/`grade`/
- * `finish` is `launch`ed on [driver] (a single-threaded confinement), so the
- * not-thread-safe machine is never touched concurrently. The machine's own
+ * the single coroutine context that drives it.
+ *
+ * [StudyMachine] is NOT thread-safe (plain mutable buffer/counters and a
+ * [kotlinx.coroutines.flow.MutableStateFlow] it mutates without locking), so
+ * every `begin`/`reveal`/`grade`/`retry`/`finish` is `launch`ed on [driver] — a
+ * `Dispatchers.Default.limitedParallelism(1)` dispatcher, i.e. a serial single-
+ * lane executor. `limitedParallelism(1)` guarantees at most one coroutine runs on
+ * it at a time, so these `launch`es form one queue and the machine is never
+ * touched concurrently. This closes the races a plain multi-threaded dispatcher
+ * (e.g. [Dispatchers.IO]) allowed: a double-tap grade can no longer have two
+ * `grade()` bodies pass the ShowingBack guard at once, and a finish triggered by
+ * hide/pause/back can no longer interleave with an in-flight grade mutating the
+ * buffer or state. `reveal()` is synchronous but is routed through the same lane
+ * so its state write is ordered against grades too. The machine's own
  * [StudyState] flow is surfaced directly to the UI.
  *
  * The bridge client is built from the persisted URL + token exactly as the other
  * ViewModels do. The machine is created lazily on the first [begin] once those
  * prefs are read.
  */
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class StudyViewModel(
     private val deckId: Long,
     private val dataStore: DataStore<Preferences>,
-    /** Confines every machine call to one thread; overridable in tests. */
-    private val driver: CoroutineDispatcher = Dispatchers.IO,
+    /**
+     * The serial confinement lane for every machine call. Defaults to a single-
+     * parallelism slice of [Dispatchers.Default] so all machine access is
+     * serialized; overridable in tests.
+     */
+    private val driver: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(1),
 ) : LightViewModel<Unit>() {
 
     private val _state = MutableStateFlow<StudyState>(StudyState.Loading)

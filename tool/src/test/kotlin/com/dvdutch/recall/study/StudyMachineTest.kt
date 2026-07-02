@@ -272,6 +272,99 @@ class StudyMachineTest {
         assertEquals(7L, bridge.answerArgs.last().single().cardId)
     }
 
+    // A mid-session transport failure then start() again with a fresh queue must
+    // NOT stack the stale leftover card: next ShowingFront is queue B's first
+    // card. reviewed still counts the one applied answer (real reviews persist).
+    @Test
+    fun startAfterFailureClearsStaleBuffer() = runBlocking {
+        val bridge = FakeBridge()
+        // Queue A: two cards. Grade card 1 (applied). Prefetch (buffer 1 < 5) fails.
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 2), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(
+                QueueResponse(listOf(card(1, "A1"), card(2, "A2")), counts(new = 2)),
+            ),
+        )
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u1", "applied"))))
+        // Prefetch after advancing to card 2 fails at transport level -> Failed.
+        bridge.queueScript.add(FakeBridge.Outcome.Fail(BridgeError.Unreachable))
+        val m = machine(bridge, now = clock(1_000L, 1_200L), uuid = uuids("u1"))
+        m.start()
+        m.reveal()
+        m.grade("good") // applied -> reviewed=1, then prefetch fails -> Failed
+
+        assertTrue(m.state.value is StudyState.Failed, "was ${m.state.value}")
+
+        // Retry: start() again with a fresh queue B. Stale card 2 must be gone.
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 1), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(listOf(card(9, "B9")), counts(new = 1))),
+        )
+        m.start()
+
+        val state = m.state.value
+        assertTrue(state is StudyState.ShowingFront, "was $state")
+        assertEquals(9L, state.card.cardId) // queue B's first card, not A's leftover
+    }
+
+    // A serialized double-tap grade after an applied answer is a true no-op: the
+    // second grade() (not ShowingBack, retainedBack cleared on success) posts
+    // nothing and leaves the next card's ShowingFront untouched.
+    @Test
+    fun doubleGradeAfterSuccessIsNoop() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 2), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(
+                QueueResponse(listOf(card(1, "s1"), card(2, "s2")), counts(new = 2)),
+            ),
+        )
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(emptyList(), counts(new = 1))))
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u1", "applied"))))
+        val m = machine(bridge, now = clock(1_000L, 1_200L), uuid = uuids("u1"))
+        m.start()
+        m.reveal()
+        m.grade("good") // applied -> advance to card 2
+
+        val afterFirst = m.state.value
+        assertTrue(afterFirst is StudyState.ShowingFront, "was $afterFirst")
+        assertEquals(2L, afterFirst.card.cardId)
+
+        m.grade("good") // double-tap: not ShowingBack, retainedBack cleared -> no-op
+
+        assertEquals(1, bridge.answerArgs.size) // answer() called exactly once
+        val state = m.state.value
+        assertTrue(state is StudyState.ShowingFront, "was $state")
+        assertEquals(2L, state.card.cardId) // unchanged
+    }
+
+    // An "error" outcome keeps retainedBack so the legitimate re-grade path works.
+    // (Same intent as errorResultFailsRetriableKeepingCard; asserts the retained
+    // re-grade explicitly, guarding against over-clearing retainedBack.)
+    @Test
+    fun errorKeepsRetainedForRegrade() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 1), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(listOf(card(7, "s7")), counts(new = 1))),
+        )
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u1", "error"))))
+        val m = machine(bridge, now = clock(1_000L, 1_200L), uuid = uuids("u1", "u2"))
+        m.start()
+        m.reveal()
+        m.grade("good") // error -> Failed(retriable), card retained
+
+        assertTrue(m.state.value is StudyState.Failed, "was ${m.state.value}")
+
+        // Re-grade without reveal succeeds against the retained card 7.
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u2", "applied"))))
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(emptyList(), counts())))
+        m.grade("good")
+
+        assertEquals(2, bridge.answerArgs.size)
+        assertEquals(7L, bridge.answerArgs.last().single().cardId)
+    }
+
     // prefetch triggers a second queue() call when buffer drops below 5.
     @Test
     fun prefetchWhenBufferBelowFive() = runBlocking {
