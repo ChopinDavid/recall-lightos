@@ -197,6 +197,32 @@ class StudyMachineTest {
         assertEquals(1, state.reviewed) // one applied answer counted
     }
 
+    // Finished carries the counts from the MOST RECENT queue() response even when
+    // the buffer is now empty: learning cards may be due later today.
+    @Test
+    fun finishedCarriesLatestQueueCounts() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 1), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(listOf(card(1, "s1")), counts(new = 1))),
+        )
+        // prefetch returns no cards NOW but reports 3 learning cards due later today.
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(emptyList(), counts(learning = 3))),
+        )
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u1", "applied"))))
+        val m = machine(bridge, now = clock(1_000L, 1_200L), uuid = uuids("u1"))
+        m.start()
+        m.reveal()
+
+        m.grade("good")
+
+        val state = m.state.value
+        assertTrue(state is StudyState.Finished, "was $state")
+        assertEquals(1, state.reviewed)
+        assertEquals(3, state.counts?.learning) // "3 more due later today"
+    }
+
     // stale/gone results advance WITHOUT counting toward reviewed.
     @Test
     fun staleResultAdvancesButDoesNotCount() = runBlocking {
@@ -236,6 +262,7 @@ class StudyMachineTest {
         val state = m.state.value
         assertTrue(state is StudyState.Failed, "was $state")
         assertTrue(state.retriable)
+        assertTrue(state.cause is FailCause.AnswerRejected, "was ${state.cause}")
 
         // Re-grade is possible: same card is retained. Script another answer.
         bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u2", "applied"))))
@@ -287,7 +314,9 @@ class StudyMachineTest {
 
         val state = m.state.value
         assertTrue(state is StudyState.Failed, "was $state")
-        assertSame(BridgeError.Unauthorized, state.error)
+        val cause = state.cause
+        assertTrue(cause is FailCause.Transport, "was $cause")
+        assertSame(BridgeError.Unauthorized, cause.error)
         assertTrue(!state.retriable)
     }
 

@@ -26,11 +26,33 @@ sealed interface StudyState {
     /** The back is revealed; [shownAtMs] is when the reveal happened. */
     data class ShowingBack(val card: CardPayload, val counts: Counts, val shownAtMs: Long) : StudyState
 
-    /** No cards remain (or the session was finished); [reviewed] answers counted. */
-    data class Finished(val reviewed: Int, val sync: com.dvdutch.recall.api.SyncInfo?) : StudyState
+    /**
+     * No cards remain NOW (or the session was finished); [reviewed] answers
+     * counted. [counts] carries the most recent server report so the UI can
+     * distinguish "all done" from "done for now — more due later today"
+     * (e.g. `counts.learning > 0` with the queue empty).
+     */
+    data class Finished(
+        val reviewed: Int,
+        val sync: com.dvdutch.recall.api.SyncInfo?,
+        val counts: Counts?,
+    ) : StudyState
 
     /** A bridge call failed. [retriable] distinguishes transient from terminal. */
-    data class Failed(val error: BridgeError, val retriable: Boolean) : StudyState
+    data class Failed(val cause: FailCause, val retriable: Boolean) : StudyState
+}
+
+/**
+ * Why a [StudyState.Failed] happened, kept distinct so the UI renders the right
+ * copy: a transport-level [BridgeError] is not the same as the bridge accepting
+ * the request but rejecting one answer.
+ */
+sealed interface FailCause {
+    /** A bridge call failed at the transport level; [error] is the taxonomy. */
+    data class Transport(val error: BridgeError) : FailCause
+
+    /** The bridge returned a per-item `"error"` status for the graded answer. */
+    data object AnswerRejected : FailCause
 }
 
 /**
@@ -137,7 +159,7 @@ class StudyMachine(
             when (result) {
                 "error" -> {
                     // Keep the card so the grade can be retried; surface retriable.
-                    _state.value = StudyState.Failed(BridgeError.Server("answer error"), retriable = true)
+                    _state.value = StudyState.Failed(FailCause.AnswerRejected, retriable = true)
                     return@guard
                 }
                 "applied", "duplicate" -> {
@@ -165,7 +187,7 @@ class StudyMachine(
         } catch (_: BridgeError) {
             null
         }
-        _state.value = StudyState.Finished(reviewed, sync)
+        _state.value = StudyState.Finished(reviewed, sync, counts)
     }
 
     /**
@@ -190,7 +212,9 @@ class StudyMachine(
     private fun settle() {
         val next = buffer.firstOrNull()
         _state.value = if (next == null) {
-            StudyState.Finished(reviewed, sync = null)
+            // Empty NOW, but carry the latest counts so the UI can say whether
+            // more are due later today. No re-polling: anti-loop behavior intact.
+            StudyState.Finished(reviewed, sync = null, counts = counts)
         } else {
             StudyState.ShowingFront(next, counts)
         }
@@ -205,7 +229,10 @@ class StudyMachine(
         try {
             block()
         } catch (e: BridgeError) {
-            _state.value = StudyState.Failed(e, retriable = e !is BridgeError.Unauthorized)
+            _state.value = StudyState.Failed(
+                FailCause.Transport(e),
+                retriable = e !is BridgeError.Unauthorized,
+            )
         }
     }
 
