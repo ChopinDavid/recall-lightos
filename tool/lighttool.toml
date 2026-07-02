@@ -1,8 +1,8 @@
 [tool]
-id = "com.thelightphone.app"
-label = "Light SDK Tool"
+id = "com.dvdutch.recall"
+label = "Recall"
 versionCode = 1
-versionName = "1.0"
+versionName = "0.1"
 permissions = ["android.permission.INTERNET"]
 # change if you run this on an LP3!
 # serverPackage = "com.lightos"
