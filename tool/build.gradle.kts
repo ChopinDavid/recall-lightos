@@ -57,5 +57,7 @@ kotlin {
 dependencies {
     implementation(project(":sdk:client"))
     testImplementation(libs.kotlin.test)
+    // No catalog alias for the mock engine; pin to the catalog ktor version.
+    testImplementation("io.ktor:ktor-client-mock:${libs.versions.ktor.get()}")
     ksp(libs.androidx.room.compiler)
 }
