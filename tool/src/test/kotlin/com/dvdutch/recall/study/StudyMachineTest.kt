@@ -1,0 +1,335 @@
+package com.dvdutch.recall.study
+
+import com.dvdutch.recall.api.AnswerIn
+import com.dvdutch.recall.api.AnswerResult
+import com.dvdutch.recall.api.BridgeApi
+import com.dvdutch.recall.api.BridgeError
+import com.dvdutch.recall.api.CardPayload
+import com.dvdutch.recall.api.Counts
+import com.dvdutch.recall.api.QueueResponse
+import com.dvdutch.recall.api.StudyStartResponse
+import com.dvdutch.recall.api.SyncInfo
+import com.dvdutch.recall.api.TextNode
+import com.dvdutch.recall.api.TextRun
+import kotlinx.coroutines.runBlocking
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertSame
+import kotlin.test.assertTrue
+
+/**
+ * A scriptable [BridgeApi] fake. Each collaborator is backed by a queue of
+ * canned outcomes (a value to return or a [BridgeError] to throw) consumed in
+ * order; call arguments are recorded for assertions.
+ */
+private class FakeBridge : BridgeApi {
+    sealed interface Outcome<out T> {
+        data class Ok<T>(val value: T) : Outcome<T>
+        data class Fail(val error: BridgeError) : Outcome<Nothing>
+    }
+
+    val startScript = ArrayDeque<Outcome<StudyStartResponse>>()
+    val queueScript = ArrayDeque<Outcome<QueueResponse>>()
+    val answerScript = ArrayDeque<Outcome<List<AnswerResult>>>()
+    val finishScript = ArrayDeque<Outcome<SyncInfo>>()
+
+    var startCalls = 0
+    var queueCalls = 0
+    var finishCalls = 0
+    val answerArgs = mutableListOf<List<AnswerIn>>()
+
+    private fun <T> ArrayDeque<Outcome<T>>.next(): T = when (val o = removeFirst()) {
+        is Outcome.Ok -> o.value
+        is Outcome.Fail -> throw o.error
+    }
+
+    override suspend fun studyStart(deckId: Long): StudyStartResponse {
+        startCalls++
+        return startScript.next()
+    }
+
+    override suspend fun queue(limit: Int): QueueResponse {
+        queueCalls++
+        return queueScript.next()
+    }
+
+    override suspend fun answer(answers: List<AnswerIn>): List<AnswerResult> {
+        answerArgs.add(answers)
+        return answerScript.next()
+    }
+
+    override suspend fun studyFinish(): SyncInfo {
+        finishCalls++
+        return finishScript.next()
+    }
+}
+
+class StudyMachineTest {
+
+    private fun card(id: Long, states: String): CardPayload = CardPayload(
+        cardId = id,
+        noteId = id * 10,
+        front = listOf(TextNode(listOf(TextRun("front $id")))),
+        back = listOf(TextNode(listOf(TextRun("back $id")))),
+        states = states,
+        nextDueLabels = mapOf("good" to "1d"),
+    )
+
+    private val sync = SyncInfo(synced = true, detail = "ok")
+
+    private fun counts(new: Int = 0, learning: Int = 0, review: Int = 0) =
+        Counts(new = new, learning = learning, review = review)
+
+    // A fixed clock: reveal reads 1_000, grade reads 1_200 -> ms_taken == 200.
+    private fun clock(vararg values: Long): () -> Long {
+        val q = ArrayDeque(values.toList())
+        return { if (q.size > 1) q.removeFirst() else q.first() }
+    }
+
+    private fun uuids(vararg values: String): () -> String {
+        val q = ArrayDeque(values.toList())
+        return { q.removeFirst() }
+    }
+
+    private fun machine(
+        bridge: FakeBridge,
+        now: () -> Long = { 0L },
+        uuid: () -> String = { "uuid" },
+        deckId: Long = 42L,
+    ) = StudyMachine(client = bridge, deckId = deckId, nowMs = now, uuid = uuid)
+
+    // start -> ShowingFront with first card, exposing start counts.
+    @Test
+    fun startShowsFirstCard() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 2), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(
+                QueueResponse(listOf(card(1, "s1"), card(2, "s2")), counts(new = 2)),
+            ),
+        )
+        val m = machine(bridge)
+
+        m.start()
+
+        val state = m.state.value
+        assertTrue(state is StudyState.ShowingFront, "was $state")
+        assertEquals(1L, state.card.cardId)
+        assertEquals(2, state.counts.new)
+        assertEquals(1, bridge.startCalls)
+        assertEquals(1, bridge.queueCalls)
+    }
+
+    // reveal moves to ShowingBack recording shownAt from the clock.
+    @Test
+    fun revealRecordsShownAt() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 1), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(listOf(card(1, "s1")), counts(new = 1))),
+        )
+        val m = machine(bridge, now = clock(1_000L))
+        m.start()
+
+        m.reveal()
+
+        val state = m.state.value
+        assertTrue(state is StudyState.ShowingBack, "was $state")
+        assertEquals(1_000L, state.shownAtMs)
+    }
+
+    // reveal -> grade("good") posts a byte-identical AnswerIn and advances.
+    @Test
+    fun gradePostsAnswerAndAdvances() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 2), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(
+                QueueResponse(listOf(card(1, "STATES-1"), card(2, "STATES-2")), counts(new = 2)),
+            ),
+        )
+        // buffer drops to 1 (<5) after answering card 1 -> prefetch returns nothing new.
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(emptyList(), counts(new = 1))),
+        )
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u1", "applied"))))
+        val m = machine(bridge, now = clock(1_000L, 1_200L), uuid = uuids("u1"))
+        m.start()
+        m.reveal()
+
+        m.grade("good")
+
+        val posted = bridge.answerArgs.single().single()
+        assertEquals("u1", posted.uuid)
+        assertEquals(1L, posted.cardId)
+        assertEquals("good", posted.rating)
+        assertEquals("STATES-1", posted.states) // echoed byte-identical
+        assertEquals(200L, posted.msTaken) // 1200 - 1000
+        assertEquals(1_200L, posted.answeredAt)
+
+        val state = m.state.value
+        assertTrue(state is StudyState.ShowingFront, "was $state")
+        assertEquals(2L, state.card.cardId) // advanced to next card
+    }
+
+    // queue exhaustion (buffer empty + empty counts) -> Finished with reviewed count.
+    @Test
+    fun exhaustionFinishesWithReviewedCount() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 1), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(listOf(card(1, "s1")), counts(new = 1))),
+        )
+        // buffer < 5 after removing card 1 -> prefetch returns empty with empty counts.
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(emptyList(), counts())),
+        )
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u1", "applied"))))
+        val m = machine(bridge, now = clock(1_000L, 1_200L), uuid = uuids("u1"))
+        m.start()
+        m.reveal()
+
+        m.grade("good")
+
+        val state = m.state.value
+        assertTrue(state is StudyState.Finished, "was $state")
+        assertEquals(1, state.reviewed) // one applied answer counted
+    }
+
+    // stale/gone results advance WITHOUT counting toward reviewed.
+    @Test
+    fun staleResultAdvancesButDoesNotCount() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 1), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(listOf(card(1, "s1")), counts(new = 1))),
+        )
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(emptyList(), counts())))
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u1", "stale"))))
+        val m = machine(bridge, now = clock(1_000L, 1_200L), uuid = uuids("u1"))
+        m.start()
+        m.reveal()
+
+        m.grade("good")
+
+        val state = m.state.value
+        assertTrue(state is StudyState.Finished, "was $state")
+        assertEquals(0, state.reviewed) // stale did not count
+    }
+
+    // grade receiving status "error" -> Failed(retriable=true), same card retained.
+    @Test
+    fun errorResultFailsRetriableKeepingCard() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 1), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(listOf(card(7, "s7")), counts(new = 1))),
+        )
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u1", "error"))))
+        val m = machine(bridge, now = clock(1_000L, 1_200L), uuid = uuids("u1", "u2"))
+        m.start()
+        m.reveal()
+
+        m.grade("good")
+
+        val state = m.state.value
+        assertTrue(state is StudyState.Failed, "was $state")
+        assertTrue(state.retriable)
+
+        // Re-grade is possible: same card is retained. Script another answer.
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u2", "applied"))))
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(emptyList(), counts())))
+        m.grade("good")
+        // the second answer was for the same card 7
+        assertEquals(7L, bridge.answerArgs.last().single().cardId)
+    }
+
+    // prefetch triggers a second queue() call when buffer drops below 5.
+    @Test
+    fun prefetchWhenBufferBelowFive() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 5), sync)))
+        // 5 cards; after removing one -> 4 (<5) triggers prefetch.
+        val initial = (1L..5L).map { card(it, "s$it") }
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(initial, counts(new = 5))))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(listOf(card(6, "s6")), counts(new = 4))),
+        )
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u1", "applied"))))
+        val m = machine(bridge, now = clock(1_000L, 1_200L), uuid = uuids("u1"))
+        m.start()
+        assertEquals(1, bridge.queueCalls) // only the start fetch so far
+        m.reveal()
+
+        m.grade("good")
+
+        assertEquals(2, bridge.queueCalls) // prefetch fired
+        val state = m.state.value
+        assertTrue(state is StudyState.ShowingFront, "was $state")
+        assertEquals(2L, state.card.cardId)
+    }
+
+    // 401 mid-session -> Failed(retriable=false).
+    @Test
+    fun unauthorizedMidSessionFailsNonRetriable() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 1), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(listOf(card(1, "s1")), counts(new = 1))),
+        )
+        bridge.answerScript.add(FakeBridge.Outcome.Fail(BridgeError.Unauthorized))
+        val m = machine(bridge, now = clock(1_000L, 1_200L), uuid = uuids("u1"))
+        m.start()
+        m.reveal()
+
+        m.grade("good")
+
+        val state = m.state.value
+        assertTrue(state is StudyState.Failed, "was $state")
+        assertSame(BridgeError.Unauthorized, state.error)
+        assertTrue(!state.retriable)
+    }
+
+    // Unreachable during start -> Failed(retriable=true).
+    @Test
+    fun unreachableDuringStartFailsRetriable() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Fail(BridgeError.Unreachable))
+        val m = machine(bridge)
+
+        m.start()
+
+        val state = m.state.value
+        assertTrue(state is StudyState.Failed, "was $state")
+        assertTrue(state.retriable)
+    }
+
+    // finish() calls studyFinish and yields Finished with its sync info.
+    @Test
+    fun finishSurfacesSyncInfo() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.finishScript.add(FakeBridge.Outcome.Ok(SyncInfo(synced = true, detail = "synced")))
+        val m = machine(bridge)
+
+        m.finish()
+
+        val state = m.state.value
+        assertTrue(state is StudyState.Finished, "was $state")
+        assertEquals("synced", state.sync?.detail)
+    }
+
+    // finish() best-effort: studyFinish failure still yields Finished(sync=null).
+    @Test
+    fun finishBestEffortOnFailure() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.finishScript.add(FakeBridge.Outcome.Fail(BridgeError.Unreachable))
+        val m = machine(bridge)
+
+        m.finish()
+
+        val state = m.state.value
+        assertTrue(state is StudyState.Finished, "was $state")
+        assertNull(state.sync)
+    }
+}

@@ -51,7 +51,7 @@ class BridgeClient(
     baseUrl: String,
     private val token: String,
     engine: HttpClientEngine = OkHttp.create(),
-) {
+) : BridgeApi {
     private val base = baseUrl.trimEnd('/')
 
     private val client = HttpClient(engine) {
@@ -68,7 +68,7 @@ class BridgeClient(
     suspend fun decks(): List<Deck> =
         request { get("$base/v1/decks") { auth() } }.decode<DecksResponse>().decks
 
-    suspend fun studyStart(deckId: Long): StudyStartResponse =
+    override suspend fun studyStart(deckId: Long): StudyStartResponse =
         request {
             post("$base/v1/study/start") {
                 auth()
@@ -77,7 +77,7 @@ class BridgeClient(
             }
         }.decode()
 
-    suspend fun queue(limit: Int = 20): QueueResponse =
+    override suspend fun queue(limit: Int): QueueResponse =
         request {
             get("$base/v1/queue") {
                 auth()
@@ -85,7 +85,7 @@ class BridgeClient(
             }
         }.decode()
 
-    suspend fun answer(answers: List<AnswerIn>): List<AnswerResult> =
+    override suspend fun answer(answers: List<AnswerIn>): List<AnswerResult> =
         request {
             post("$base/v1/answer") {
                 auth()
@@ -94,7 +94,7 @@ class BridgeClient(
             }
         }.decode<AnswerResultsResponse>().results
 
-    suspend fun studyFinish(): SyncInfo =
+    override suspend fun studyFinish(): SyncInfo =
         request { post("$base/v1/study/finish") { auth() } }.decode()
 
     suspend fun media(filename: String): ByteArray =
