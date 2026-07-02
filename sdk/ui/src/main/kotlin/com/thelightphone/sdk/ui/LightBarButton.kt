@@ -1,7 +1,6 @@
 package com.thelightphone.sdk.ui
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -72,7 +71,7 @@ internal fun LightBarButtonView(
     }
 
     val baseModifier = Modifier.let { modifier ->
-        if (button.onClick != null) modifier.clickable { button.onClick?.invoke() } else modifier
+        if (button.onClick != null) modifier.lightClickable { button.onClick?.invoke() } else modifier
     }
 
     when (button) {

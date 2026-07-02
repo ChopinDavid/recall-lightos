@@ -1,7 +1,6 @@
 package com.thelightphone.sdk.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -40,7 +39,7 @@ fun LightTextField(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
+                .lightClickable(onClick = onClick)
                 .padding(top = 0.25f.gridUnitsAsDp()),
         ) {
             LightText(

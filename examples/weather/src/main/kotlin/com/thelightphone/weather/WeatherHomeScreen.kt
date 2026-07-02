@@ -1,7 +1,6 @@
 package com.thelightphone.weather
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -51,6 +50,7 @@ import com.thelightphone.sdk.ui.LightThemeTokens
 import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
+import com.thelightphone.sdk.ui.lightClickable
 import com.thelightphone.sdk.ui.verticalGridUnitsAsDp
 
 @InitialScreen
@@ -523,7 +523,7 @@ private fun SelectSettingRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .lightClickable(onClick = onClick)
             .padding(vertical = 0.75f.gridUnitsAsDp()),
     ) {
         LightText(
