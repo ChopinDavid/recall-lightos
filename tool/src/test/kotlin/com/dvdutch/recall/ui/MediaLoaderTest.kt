@@ -7,12 +7,16 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * Unit coverage for the pure, Android-runtime-free parts of media loading:
@@ -127,6 +131,51 @@ class MediaLoaderTest {
     fun loadReturnsNullWhenSrcHasNoFilename(): Unit = runBlocking {
         val loader = MediaLoader(unreachableClient())
         assertNull(loader.load("not-a-media-url"))
+    }
+
+    /**
+     * A [BridgeClient] whose `media()` signals [entered] once the request reaches the
+     * engine, then parks on [gate] forever — letting a test cancel the loading coroutine
+     * while it is suspended mid-fetch.
+     */
+    private fun suspendingClient(
+        entered: CompletableDeferred<Unit>,
+        gate: CompletableDeferred<Unit>,
+    ): BridgeClient =
+        BridgeClient(
+            baseUrl = "https://bridge.example",
+            token = "t",
+            engine = MockEngine {
+                entered.complete(Unit)
+                gate.await() // park here until cancelled (the test never completes gate)
+                respond(content = byteArrayOf(), status = HttpStatusCode.OK)
+            },
+        )
+
+    @Test
+    fun loadPropagatesCancellation(): Unit = runBlocking {
+        // Cancelling a coroutine parked mid-load must surface as CancellationException,
+        // not be swallowed into a null (which would mask the cancellation as a load
+        // failure and leave the placeholder up as if the fetch had genuinely failed).
+        // We capture what load() itself does — return vs. throw — from inside the
+        // coroutine, so the assertion reflects load()'s catch behaviour rather than
+        // merely the enclosing Job's cancelled state.
+        val entered = CompletableDeferred<Unit>()
+        val gate = CompletableDeferred<Unit>()
+        val loader = MediaLoader(suspendingClient(entered, gate))
+        val outcome = CompletableDeferred<Throwable?>()
+        val job = launch {
+            try {
+                loader.load("/v1/media/dog.jpg")
+                outcome.complete(null) // load() returned (e.g. swallowed cancellation)
+            } catch (e: Throwable) {
+                outcome.complete(e) // load() propagated
+            }
+        }
+        entered.await() // producer is now parked inside media()
+        job.cancel()
+        val thrown = outcome.await()
+        assertTrue(thrown is CancellationException, "expected load() to propagate cancellation, got $thrown")
     }
 
     @Test
