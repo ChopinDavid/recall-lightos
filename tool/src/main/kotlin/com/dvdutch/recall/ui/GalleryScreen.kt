@@ -8,11 +8,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import com.dvdutch.recall.api.BridgeClient
 import com.dvdutch.recall.api.BridgeJson
 import com.dvdutch.recall.api.CardPayload
 import com.dvdutch.recall.api.QueueResponse
+import com.dvdutch.recall.prefs.RecallPreferences
+import kotlinx.coroutines.flow.first
 import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.SimpleLightScreen
 import com.thelightphone.sdk.ui.LightBarButton
@@ -45,6 +49,17 @@ class GalleryScreen(sealedActivity: SealedLightActivity) : SimpleLightScreen<Uni
         val themeColors by LightThemeController.colors.collectAsState()
         val cards = remember { parseGalleryCards() }
 
+        // A real session loader built from the persisted bridge URL + token, so the
+        // gallery can render live media images (not just placeholders). Null until
+        // the prefs resolve; shares one ~16-entry LRU across all fixture cards.
+        val dataStore = lightContext.dataStore
+        val mediaLoader by produceState<MediaLoader?>(initialValue = null, dataStore) {
+            val prefs = dataStore.data.first()
+            val url = prefs[RecallPreferences.BRIDGE_URL] ?: RecallPreferences.DEFAULT_BRIDGE_URL
+            val token = prefs[RecallPreferences.BRIDGE_TOKEN].orEmpty()
+            value = MediaLoader(BridgeClient(baseUrl = url, token = token))
+        }
+
         LightTheme(colors = themeColors) {
             Column(
                 modifier = Modifier
@@ -67,7 +82,7 @@ class GalleryScreen(sealedActivity: SealedLightActivity) : SimpleLightScreen<Uni
                         .padding(horizontal = 1f.gridUnitsAsDp()),
                 ) {
                     cards.forEachIndexed { index, card ->
-                        GalleryCard(index = index, card = card)
+                        GalleryCard(index = index, card = card, mediaLoader = mediaLoader)
                     }
                 }
             }
@@ -77,7 +92,7 @@ class GalleryScreen(sealedActivity: SealedLightActivity) : SimpleLightScreen<Uni
 
 /** Renders one fixture card: a labelled front block above a labelled back block. */
 @Composable
-private fun GalleryCard(index: Int, card: CardPayload) {
+private fun GalleryCard(index: Int, card: CardPayload, mediaLoader: MediaLoader?) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -89,7 +104,7 @@ private fun GalleryCard(index: Int, card: CardPayload) {
             lighten = true,
             modifier = Modifier.padding(bottom = 0.5f.gridUnitsAsDp()),
         )
-        RenderNodeColumn(nodes = card.front, mediaLoader = null)
+        RenderNodeColumn(nodes = card.front, mediaLoader = mediaLoader)
 
         LightText(
             text = "back",
@@ -100,7 +115,7 @@ private fun GalleryCard(index: Int, card: CardPayload) {
                 bottom = 0.5f.gridUnitsAsDp(),
             ),
         )
-        RenderNodeColumn(nodes = card.back, mediaLoader = null)
+        RenderNodeColumn(nodes = card.back, mediaLoader = mediaLoader)
     }
 }
 
