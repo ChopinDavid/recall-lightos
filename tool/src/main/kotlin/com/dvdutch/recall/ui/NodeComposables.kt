@@ -133,15 +133,7 @@ fun RenderNodeView(node: RenderNode, mediaLoader: MediaLoader?) {
                 .background(LightThemeTokens.colors.contentSecondary),
         )
 
-        is OcclusionNode ->
-            // Task 1 emits this node from the engine; the real Compose overlay lands in
-            // a later task. Until then show a labelled placeholder so the card is never
-            // blank (and never falls back to the broken canvas HTML path).
-            LightText(
-                text = "▢ [occlusion: ${node.shapes.size} shapes]",
-                variant = LightTextVariant.Fine,
-                lighten = true,
-            )
+        is OcclusionNode -> OcclusionImage(node = node, mediaLoader = mediaLoader)
 
         is UnsupportedNode ->
             // The `audio` placeholder is retired: audio is now real playback with a
