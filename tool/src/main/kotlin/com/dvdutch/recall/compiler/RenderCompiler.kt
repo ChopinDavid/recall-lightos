@@ -241,6 +241,11 @@ private fun walk(el: Element, ctx: Ctx, styles: Set<String>, hidden: CssHidden) 
 private fun isInlineHidden(el: Element): Boolean =
     CssHidden.declaresDisplayNone(el.attr("style") ?: "")
 
-// Python's str.isdigit() on an ASCII width/height. lxml attribute values here
-// only contain ASCII digits when numeric; guard against Unicode-digit surprises.
+// ASCII-only digit check for img width/height, INTENTIONALLY narrower than
+// Python's str.isdigit(). str.isdigit() also accepts Unicode digits (e.g.
+// superscript "²"), which the reference then feeds to int() — and int("²")
+// RAISES ValueError, violating the never-raises contract. ASCII-only is the
+// safe, superset-compatible choice: it accepts every value int() would accept
+// without ever admitting one int() would reject. lxml attribute values here
+// only carry ASCII digits when genuinely numeric, so parity is unaffected.
 private fun String.isAsciiDigits(): Boolean = isNotEmpty() && all { it in '0'..'9' }
