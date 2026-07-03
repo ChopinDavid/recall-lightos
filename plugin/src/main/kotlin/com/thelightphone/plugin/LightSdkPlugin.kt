@@ -33,9 +33,10 @@ class LightSdkPlugin : Plugin<Project> {
             "androidx.room",
             "androidx.work",
             "androidx.startup",
-            // DEV ONLY — pending lightphone/light-sdk PR: anki backend artifacts.
-            // Remove these two lines when the upstream PR merges.
+            // anki-android-backend: upstream since lightphone/light-sdk PR #44.
             "io.github.david-allison:anki-android-backend",
+            // DEV ONLY: the -testing artifact below is NOT yet upstream — drop this one
+            // line if/when Light allowlists it (or remove if JVM engine tests are retired).
             "io.github.david-allison:anki-android-backend-testing",
         )
 
