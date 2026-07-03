@@ -46,6 +46,19 @@ enum class LightScrollBarPosition {
     Inside,
 }
 
+/**
+ * The end-gutter width (grid units) reserved for the scrollbar under a given
+ * [LightScrollBarPosition]. Deliberately depends ONLY on the position, never on whether
+ * the bar is currently shown: reserving the gutter conditionally would let the content's
+ * available width change when the bar toggles, which for aspect-ratio content can flip
+ * viewport overflow and drive an infinite show/hide layout loop. Pure, so this invariant
+ * is unit-testable without a Compose runtime.
+ */
+fun scrollBarGutterUnits(position: LightScrollBarPosition): Float = when (position) {
+    LightScrollBarPosition.Outside -> SCROLLBAR_WIDTH_UNITS
+    LightScrollBarPosition.Inside -> 0f
+}
+
 @Composable
 fun LightScrollView(
     modifier: Modifier = Modifier,
@@ -55,11 +68,11 @@ fun LightScrollView(
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
     val showScrollBar = scrollState.maxValue > 0
-    val contentPaddingEnd = when {
-        !showScrollBar -> 0f
-        scrollBarPosition == LightScrollBarPosition.Outside -> SCROLLBAR_WIDTH_UNITS
-        else -> 0f
-    }
+    // Reserve the Outside scrollbar gutter UNCONDITIONALLY (see [scrollBarGutterUnits]):
+    // if the reserved width tracked `showScrollBar`, toggling the bar would change the
+    // content's available width, and for aspect-ratio content a narrower box means a
+    // shorter image, which can flip viewport overflow — making the bar oscillate forever.
+    val contentPaddingEnd = scrollBarGutterUnits(scrollBarPosition)
 
     if (scrollBarPosition == LightScrollBarPosition.Inside) {
         Box(modifier = modifier) {
