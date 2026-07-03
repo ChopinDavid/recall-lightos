@@ -1,7 +1,6 @@
 package com.thelightphone.authenticator
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,6 +27,7 @@ import com.thelightphone.sdk.ui.LightThemeTokens
 import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
+import com.thelightphone.sdk.ui.lightClickable
 
 @InitialScreen
 class AuthenticatorHomeScreen(sealedActivity: SealedLightActivity) :
@@ -86,7 +86,7 @@ class AuthenticatorHomeScreen(sealedActivity: SealedLightActivity) :
                             AccountListRow(
                                 account = account,
                                 modifier = Modifier
-                                    .clickable {
+                                    .lightClickable {
                                         navigateTo(screenFactory = {
                                             AuthenticatorCodeScreen(
                                                 it,
