@@ -51,7 +51,7 @@ class BridgeClient(
     baseUrl: String,
     private val token: String,
     engine: HttpClientEngine = OkHttp.create(),
-) : BridgeApi {
+) : EngineApi {
     private val base = baseUrl.trimEnd('/')
 
     private val client = HttpClient(engine) {

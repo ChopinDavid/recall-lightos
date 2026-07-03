@@ -2,7 +2,7 @@ package com.dvdutch.recall.study
 
 import com.dvdutch.recall.api.AnswerIn
 import com.dvdutch.recall.api.AnswerResult
-import com.dvdutch.recall.api.BridgeApi
+import com.dvdutch.recall.api.EngineApi
 import com.dvdutch.recall.api.BridgeError
 import com.dvdutch.recall.api.CardPayload
 import com.dvdutch.recall.api.Counts
@@ -19,11 +19,11 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /**
- * A scriptable [BridgeApi] fake. Each collaborator is backed by a queue of
+ * A scriptable [EngineApi] fake. Each collaborator is backed by a queue of
  * canned outcomes (a value to return or a [BridgeError] to throw) consumed in
  * order; call arguments are recorded for assertions.
  */
-private class FakeBridge : BridgeApi {
+private class FakeBridge : EngineApi {
     sealed interface Outcome<out T> {
         data class Ok<T>(val value: T) : Outcome<T>
         data class Fail(val error: BridgeError) : Outcome<Nothing>

@@ -1,7 +1,7 @@
 package com.dvdutch.recall.study
 
 import com.dvdutch.recall.api.AnswerIn
-import com.dvdutch.recall.api.BridgeApi
+import com.dvdutch.recall.api.EngineApi
 import com.dvdutch.recall.api.BridgeError
 import com.dvdutch.recall.api.CardPayload
 import com.dvdutch.recall.api.Counts
@@ -64,7 +64,7 @@ sealed interface FailCause {
  * the answer `uuid` comes from the injected [uuid] generator. It NEVER inspects
  * or reinterprets scheduling data.
  *
- * All I/O goes through [BridgeApi] (which [com.dvdutch.recall.api.BridgeClient]
+ * All I/O goes through [EngineApi] (which [com.dvdutch.recall.api.BridgeClient]
  * implements) so the machine is unit-testable on the JVM with no Android or HTTP
  * dependencies. [nowMs] and [uuid] are injected to keep every transition
  * deterministic under test.
@@ -74,7 +74,7 @@ sealed interface FailCause {
  * once the buffer is exhausted and the server reports no cards remain.
  */
 class StudyMachine(
-    private val client: BridgeApi,
+    private val client: EngineApi,
     private val deckId: Long,
     private val nowMs: () -> Long,
     private val uuid: () -> String,
