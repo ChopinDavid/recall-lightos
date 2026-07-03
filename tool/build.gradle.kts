@@ -75,35 +75,49 @@ kotlin {
 dependencies {
     implementation(project(":sdk:client"))
 
-    // On-device Anki engine (rslib via JNI). The SDK's unifiedpush→tink chain
-    // already supplies full protobuf-java, so exclude the backend's bundled
-    // protobuf-javalite to avoid a duplicate-class conflict.
-    implementation("io.github.david-allison:anki-android-backend:0.1.64-anki25.09.2") {
-        exclude(group = "com.google.protobuf", module = "protobuf-javalite")
-    }
+    // On-device Anki engine (rslib via JNI). Its generated proto messages
+    // (CardAnswer, SchedulingStates, …) that LocalEngineApi constructs/reads extend
+    // com.google.protobuf.GeneratedMessageLite, which lives in the backend's
+    // transitive protobuf-javalite. That base class must be on the main *compile*
+    // classpath, so javalite is left in as a natural transitive of this (allowlisted)
+    // dependency — no explicit protobuf coordinate, which the Light SDK allowlist
+    // would reject. At *runtime* the SDK's unifiedpush→tink chain already supplies
+    // full protobuf-java (which also carries GeneratedMessageLite), and shipping BOTH
+    // editions is a hard duplicate-class dex failure — so javalite is excluded from
+    // the runtime/packaged classpath only (see the configurations block below),
+    // leaving exactly one protobuf edition in the APK.
+    implementation("io.github.david-allison:anki-android-backend:0.1.64-anki25.09.2")
 
     testImplementation(libs.kotlin.test)
     // No catalog alias for the mock engine; pin to the catalog ktor version.
     testImplementation("io.ktor:ktor-client-mock:${libs.versions.ktor.get()}")
     // Desktop natives + loader for JVM-side engine tests (spike, Task 0).
     testImplementation("io.github.david-allison:anki-android-backend-testing:0.1.64-anki25.09.2")
-    // Also depend on the backend in test scope WITHOUT the javalite exclude, so the
-    // generated protobuf messages' base classes (GeneratedMessageLite, resolved
-    // here via the backend's own protobuf-javalite) are on the test *compile*
-    // classpath. The app's `implementation` above still excludes javalite for the
-    // APK; this test-only edition affects unit tests only.
+    // Backend in test scope so JVM unit tests can drive it (the -testing artifact
+    // above supplies the desktop natives). protobuf-javalite reaches the test compile
+    // classpath transitively (as it does for main), giving the generated messages'
+    // GeneratedMessageLite base class.
     //
-    // KNOWN SKEW (test scope only): this re-declaration puts BOTH protobuf-javalite
-    // 4.33.4 (from the backend, needed above) AND full protobuf-java 4.33.0 (from the
-    // SDK's unifiedpush→tink chain) on the test classpath at once. Those two artifacts
-    // share ~513 fully-qualified class names (e.g. com.google.protobuf.*) at DIFFERENT
-    // versions, so the JVM resolves each duplicated class by classpath order rather
-    // than by version — a latent hazard. It is tolerated here because it is confined
-    // to the test classpath: the shipped APK is unaffected (it excludes javalite and
-    // was verified to carry only the single protobuf-java edition). The durable fix is
-    // upstream — either allowlist a single protobuf artifact so this re-declaration can
-    // collapse to one `testImplementation`, or have the backend's `-testing` chain grow
-    // a matching protobuf so the base classes come in without pulling javalite here.
+    // KNOWN SKEW (test scope only): the test classpath carries BOTH protobuf-javalite
+    // 4.33.4 (from the backend) AND full protobuf-java 4.33.0 (from the SDK's tink
+    // chain) at once. Those two artifacts share ~513 fully-qualified class names (e.g.
+    // com.google.protobuf.*) at DIFFERENT versions, so the JVM resolves each duplicated
+    // class by classpath order rather than version — a latent hazard, but confined to
+    // tests. The shipped APK is unaffected: its runtime classpath excludes javalite
+    // (see the configurations block below), leaving a single protobuf edition. The
+    // durable fix is upstream — a single allowlisted protobuf artifact.
     testImplementation("io.github.david-allison:anki-android-backend:0.1.64-anki25.09.2")
     ksp(libs.androidx.room.compiler)
+}
+
+// Keep protobuf-javalite on the *compile* classpath (it carries the proto message
+// base class GeneratedMessageLite that the backend's generated messages extend, and
+// it is a transitive of the allowlisted anki-android-backend), but strip it from the
+// *runtime/packaged* classpath: the SDK's tink chain already ships full protobuf-java,
+// and packaging both editions is a duplicate-class dex failure. This runtime-only
+// exclude leaves exactly one protobuf edition in the APK while main still compiles.
+configurations.configureEach {
+    if (name.endsWith("RuntimeClasspath", ignoreCase = true)) {
+        exclude(group = "com.google.protobuf", module = "protobuf-javalite")
+    }
 }
