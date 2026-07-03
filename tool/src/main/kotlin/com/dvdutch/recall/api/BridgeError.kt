@@ -1,25 +1,22 @@
 package com.dvdutch.recall.api
 
 /**
- * The closed set of failures a [BridgeClient] call can surface.
+ * The closed set of failures a study/sync operation can surface on-device.
  *
- * Every non-success outcome is mapped to exactly one of these before it leaves
- * the client, so callers never see raw Ktor/IO exceptions and can exhaustively
- * `when` over the taxonomy.
+ * Kept as a sealed taxonomy so callers ([com.dvdutch.recall.study.StudyMachine]'s
+ * `guard`, the Settings/Study copy mappers) can exhaustively `when` over it. The
+ * former network-only variants (version-header skew, raw HTTP status detail,
+ * transport unreachability) retired with [com.dvdutch.recall.engine.LocalEngineApi]'s
+ * move on-device — the engine either resolves an operation locally or raises one
+ * of the variants below.
  */
 sealed class BridgeError : Exception() {
-    /** Connect/IO failure — the bridge could not be reached at all. */
+    /** The engine/sync layer could not complete the operation (e.g. a sync round-trip failed). */
     data object Unreachable : BridgeError()
 
-    /** HTTP 401 — the token is invalid or missing. Never auto-retry. */
+    /** Sync auth was rejected — the token is invalid or missing. Never auto-retry. */
     data object Unauthorized : BridgeError()
 
-    /** The response's `X-Bridge-Api` header was absent or not `"1"`. */
-    data class VersionSkew(val got: String?) : BridgeError()
-
-    /** HTTP 503 whose body carries the `needs_attention` shape. */
+    /** A FULL_* divergence latched: the collection needs an out-of-band full up/download. */
     data object NeedsAttention : BridgeError()
-
-    /** Any other non-2xx response; [message] is shown to the operator verbatim. */
-    data class Server(override val message: String) : BridgeError()
 }

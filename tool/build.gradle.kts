@@ -89,8 +89,6 @@ dependencies {
     implementation("io.github.david-allison:anki-android-backend:0.1.64-anki25.09.2")
 
     testImplementation(libs.kotlin.test)
-    // No catalog alias for the mock engine; pin to the catalog ktor version.
-    testImplementation("io.ktor:ktor-client-mock:${libs.versions.ktor.get()}")
     // Desktop natives + loader for JVM-side engine tests (spike, Task 0).
     testImplementation("io.github.david-allison:anki-android-backend-testing:0.1.64-anki25.09.2")
     // Backend in test scope so JVM unit tests can drive it (the -testing artifact

@@ -64,10 +64,10 @@ sealed interface FailCause {
  * the answer `uuid` comes from the injected [uuid] generator. It NEVER inspects
  * or reinterprets scheduling data.
  *
- * All I/O goes through [EngineApi] (which [com.dvdutch.recall.api.BridgeClient]
- * implements) so the machine is unit-testable on the JVM with no Android or HTTP
- * dependencies. [nowMs] and [uuid] are injected to keep every transition
- * deterministic under test.
+ * All I/O goes through [EngineApi] (implemented on-device by
+ * [com.dvdutch.recall.engine.LocalEngineApi]) so the machine is unit-testable on
+ * the JVM with no Android or engine dependencies. [nowMs] and [uuid] are injected
+ * to keep every transition deterministic under test.
  *
  * The buffer is topped up eagerly: whenever it drops below [PREFETCH_THRESHOLD]
  * cards a second `queue()` fetch is appended. The session is [StudyState.Finished]

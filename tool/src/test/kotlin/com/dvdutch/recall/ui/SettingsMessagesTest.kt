@@ -18,7 +18,7 @@ class SettingsMessagesTest {
     @Test
     fun `unreachable interpolates the configured url`() {
         assertEquals(
-            "can't reach your bridge at $url",
+            "sync failed — check your connection to $url",
             SettingsMessages.errorLine(BridgeError.Unreachable, url),
         )
     }
@@ -34,24 +34,8 @@ class SettingsMessagesTest {
     @Test
     fun `needs attention maps to full sync copy`() {
         assertEquals(
-            "bridge needs attention: full sync required (fix on the server)",
+            "needs attention: full sync required (resolve from the home screen)",
             SettingsMessages.errorLine(BridgeError.NeedsAttention, url),
-        )
-    }
-
-    @Test
-    fun `version skew maps to update copy`() {
-        assertEquals(
-            "update the tool / update the bridge",
-            SettingsMessages.errorLine(BridgeError.VersionSkew(got = "2"), url),
-        )
-    }
-
-    @Test
-    fun `server error is shown verbatim`() {
-        assertEquals(
-            "collection is locked",
-            SettingsMessages.errorLine(BridgeError.Server("collection is locked"), url),
         )
     }
 
