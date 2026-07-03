@@ -2,6 +2,7 @@ package com.dvdutch.recall.prefs
 
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 
 /**
  * DataStore keys for Recall's persisted settings. The values are read/written
@@ -31,6 +32,16 @@ object RecallPreferences {
      * Home can route to AttentionScreen even sessions/restarts after the divergence latched.
      */
     val NEEDS_ATTENTION = booleanPreferencesKey("needs_attention")
+
+    /**
+     * Local-only deck collapse state: the set of deck ids the user has EXPANDED
+     * (as decimal strings). Absence = collapsed, so an empty/unset value means every
+     * parent deck is collapsed — the deliberate default that shows only top-level decks
+     * on first load. This is a pure UI preference; it is NEVER written back to the Anki
+     * collection (no `setDeckCollapsed`), preserving the review-only "only write is
+     * answerCard" guarantee.
+     */
+    val EXPANDED_DECK_IDS = stringSetPreferencesKey("expanded_deck_ids")
 
     /** Default sync endpoint when nothing has been persisted yet (host-local dev hub). */
     const val DEFAULT_SYNC_ENDPOINT = "http://10.0.2.2:18080/"
