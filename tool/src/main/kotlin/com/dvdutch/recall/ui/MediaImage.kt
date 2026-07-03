@@ -14,6 +14,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import com.dvdutch.recall.api.BridgeClient
 import com.dvdutch.recall.api.ImageNode
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.net.URLDecoder
 
 /** The path prefix every bridge media `src` carries: `/v1/media/<url-encoded-name>`. */
@@ -43,9 +46,12 @@ fun mediaFilenameFromSrc(src: String): String? {
 }
 
 /**
- * A tiny insertion/access-ordered LRU map. Not thread-safe; [MediaLoader] confines
- * all access to the loading coroutine. Generic (and unit-tested) over value type so
- * eviction order can be asserted without constructing Android bitmaps.
+ * A tiny insertion/access-ordered LRU map. Thread-safe: [MediaLoader.load] now runs on
+ * [Dispatchers.Default], so concurrent [MediaImage] producers can genuinely parallelise
+ * and race on the map — Main-confinement no longer holds. Access-order mutates the map
+ * even on reads (`get`), so every operation, `get` included, is synchronized on the map.
+ * Generic (and unit-tested) over value type so eviction order can be asserted without
+ * constructing Android bitmaps.
  */
 class SessionLru<K, V>(private val maxEntries: Int) {
     private val map = object : LinkedHashMap<K, V>(16, 0.75f, /* accessOrder = */ true) {
@@ -53,10 +59,10 @@ class SessionLru<K, V>(private val maxEntries: Int) {
             size > maxEntries
     }
 
-    fun get(key: K): V? = map[key]
+    fun get(key: K): V? = synchronized(map) { map[key] }
 
     fun put(key: K, value: V) {
-        map[key] = value
+        synchronized(map) { map[key] = value }
     }
 }
 
@@ -86,17 +92,26 @@ class MediaLoader(
 
     suspend fun load(src: String): ImageBitmap? {
         val name = mediaFilenameFromSrc(src) ?: return null
-        cache.get(name)?.let { return it }
-        val bytes = try {
-            client.media(name)
-        } catch (_: Exception) {
-            // BridgeError (Unreachable/Unauthorized/…) and any other transport
-            // failure → placeholder. Content is preserved as a labelled fallback.
-            return null
+        // Move fetch + decode off the caller's dispatcher: MediaImage's produceState
+        // producer runs on the composition's Main context, and a full-res WebP decode
+        // (BitmapFactory) inline there janks frames. Dispatchers.Default makes the
+        // loader off-main-safe at the source rather than at each call site.
+        return withContext(Dispatchers.Default) {
+            cache.get(name)?.let { return@withContext it }
+            val bytes = try {
+                client.media(name)
+            } catch (e: Exception) {
+                // Cancellation must propagate — swallowing it into a null would mask a
+                // cancelled load as a genuine failure (and fight structured concurrency).
+                if (e is CancellationException) throw e
+                // BridgeError (Unreachable/Unauthorized/…) and any other transport
+                // failure → placeholder. Content is preserved as a labelled fallback.
+                return@withContext null
+            }
+            val bitmap = decode(bytes) ?: return@withContext null
+            cache.put(name, bitmap)
+            bitmap
         }
-        val bitmap = decode(bytes) ?: return null
-        cache.put(name, bitmap)
-        return bitmap
     }
 }
 
