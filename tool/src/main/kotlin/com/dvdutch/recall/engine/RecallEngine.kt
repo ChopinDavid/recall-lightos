@@ -72,4 +72,16 @@ class RecallEngine(
      */
     fun api(sync: SyncController?): LocalEngineApi =
         LocalEngineApi(holder, sync, backupFolder = storage.collectionDir.absolutePath)
+
+    /**
+     * The number of cards in the open collection, for the needs-attention screen's
+     * concrete-consequence copy ("…deletes N cards…"). An empty search string matches
+     * every card, so `searchCards("")` returns all card ids; we only need its size and
+     * the sort order is irrelevant (unsorted default). Cheap — one rslib query, no
+     * render — and lane-confined like every other engine touch. Callers must have called
+     * [openCollection] first.
+     */
+    suspend fun localCardCount(): Int = withContext(holder.lane) {
+        holder.backend().searchCards("", anki.search.SortOrder.getDefaultInstance()).size
+    }
 }

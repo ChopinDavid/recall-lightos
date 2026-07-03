@@ -14,31 +14,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** The phase of the needs-attention resolution flow. */
-sealed interface AttentionPhase {
-    /** Explaining the divergence; both direction buttons are shown. */
-    data object Explain : AttentionPhase
-
-    /** The operator picked [direction] and must type its confirmation word. */
-    data class Confirming(val direction: AttentionDirection) : AttentionPhase
-
-    /** A `fullSync(direction)` is in flight. */
-    data class Resolving(val direction: AttentionDirection) : AttentionPhase
-
-    /** Resolved: the divergence is cleared; the screen goes back. */
-    data object Resolved : AttentionPhase
-
-    /** The full sync failed; [reason] is shown with a retry. */
-    data class Failed(val reason: String) : AttentionPhase
-}
-
-data class AttentionUiState(val phase: AttentionPhase = AttentionPhase.Explain)
-
 /**
- * Drives resolution of a needs-attention (FULL_*) divergence: pick a direction,
- * type the exact confirmation word ([AttentionConfirm]), then run the destructive
- * `fullSync(direction)`. On success it clears the controller's attention latch and
- * the screen goes back to Home.
+ * Drives resolution of a needs-attention (FULL_*) divergence with a two-tap confirm:
+ * the operator picks a direction, sees its concrete consequence (with the real local
+ * card count), and confirms — no typed word. The confirm then runs the destructive
+ * `fullSync(direction)`; on success it clears the controller's attention latch and the
+ * screen goes back to Home. All phase transitions go through the pure [AttentionReducer].
  */
 class AttentionViewModel(
     private val filesDir: File,
@@ -50,36 +31,51 @@ class AttentionViewModel(
     private val _uiState = MutableStateFlow(AttentionUiState())
     val uiState: StateFlow<AttentionUiState> = _uiState.asStateFlow()
 
-    fun choose(direction: AttentionDirection) {
-        _uiState.update { it.copy(phase = AttentionPhase.Confirming(direction)) }
-    }
-
-    fun cancel() {
-        _uiState.update { it.copy(phase = AttentionPhase.Explain) }
-    }
-
-    /**
-     * Called with the typed confirmation. Runs the full sync only when [typed] is the
-     * exact direction word; otherwise stays on the confirm phase (the screen re-prompts).
-     */
-    fun confirm(direction: AttentionDirection, typed: CharSequence) {
-        if (!AttentionConfirm.matches(direction, typed.toString())) {
-            _uiState.update { it.copy(phase = AttentionPhase.Confirming(direction)) }
-            return
-        }
-        _uiState.update { it.copy(phase = AttentionPhase.Resolving(direction)) }
+    init {
+        // Read this phone's card count up front so the confirm screen can state the
+        // concrete consequence ("…deletes N cards…"). Best-effort: if the collection
+        // can't be opened or counted, the count stays null and the copy omits the number.
         viewModelScope.launch(Dispatchers.IO) {
-            try {
+            val count = try {
                 engine.openCollection()
-                engine.controller().fullSync(upload = direction.upload)
-                setPhase(AttentionPhase.Resolved)
-            } catch (t: Throwable) {
-                setPhase(AttentionPhase.Failed(t.message ?: "sync failed"))
+                engine.localCardCount()
+            } catch (_: Throwable) {
+                null
+            }
+            withContext(Dispatchers.Main) {
+                _uiState.update { it.copy(localCardCount = count) }
             }
         }
     }
 
-    private suspend fun setPhase(phase: AttentionPhase) {
-        withContext(Dispatchers.Main) { _uiState.update { it.copy(phase = phase) } }
+    /** Picked a direction — show its per-direction confirm (does not act yet). */
+    fun choose(direction: AttentionDirection) {
+        _uiState.update { AttentionReducer.choose(it, direction) }
+    }
+
+    /** Backed out of a confirm — return to the choice screen. */
+    fun cancel() {
+        _uiState.update { AttentionReducer.cancel(it) }
+    }
+
+    /**
+     * Confirmed the destructive resolution for [direction]: run `fullSync(upload)`,
+     * moving to Running while it is in flight and Done/Failed on the outcome.
+     */
+    fun confirm(direction: AttentionDirection) {
+        _uiState.update { AttentionReducer.running(it, direction) }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                engine.openCollection()
+                engine.controller().fullSync(upload = direction.upload)
+                setState { AttentionReducer.done(it) }
+            } catch (t: Throwable) {
+                setState { AttentionReducer.failed(it, t.message ?: "sync failed") }
+            }
+        }
+    }
+
+    private suspend fun setState(transform: (AttentionUiState) -> AttentionUiState) {
+        withContext(Dispatchers.Main) { _uiState.update(transform) }
     }
 }

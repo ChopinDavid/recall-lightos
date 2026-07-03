@@ -3,33 +3,82 @@ package com.dvdutch.recall.ui
 /**
  * A direction for resolving a needs-attention (FULL_*) divergence via a full,
  * one-way collection transfer. [upload] is the argument passed straight to
- * `SyncController.fullSync(upload)`; [word] is the exact confirmation the operator
- * must type before it fires.
+ * `SyncController.fullSync(upload)`: Download pulls the server's copy down
+ * (overwriting this phone); Upload pushes this phone's copy up (overwriting the
+ * server). Both are destructive on the side being replaced.
  */
-enum class AttentionDirection(val word: String, val upload: Boolean) {
+enum class AttentionDirection(val upload: Boolean) {
     /** Pull the server's collection down, discarding local divergence. */
-    Download("download", upload = false),
+    Download(upload = false),
 
     /** Push the local collection up, discarding the server's divergence. */
-    Upload("upload", upload = true),
+    Upload(upload = true),
 }
 
 /**
- * Pure confirmation matcher for the needs-attention screen. Resolving a FULL_*
- * divergence overwrites one side's history, so — like the bridge CLI — the
- * operator must type the exact direction word before the destructive
- * `fullSync(direction)` runs. Matching is trimmed and case-insensitive so an
- * on-screen-keyboard capital or stray space doesn't reject an intended confirm.
+ * The phase of the needs-attention resolution flow. Resolving a FULL_* divergence
+ * overwrites one side's collection, so confirmation is a deliberate two-tap — pick a
+ * direction on [Choose], then confirm the concrete consequence on [Confirm] — instead
+ * of the old typed-word gate. This mirrors AnkiDroid/desktop's choice + confirm dialog
+ * and removes all typing from the screen users hit while confused.
  */
-object AttentionConfirm {
+sealed interface AttentionPhase {
+    /** Explaining the divergence; both direction choices are shown. */
+    data object Choose : AttentionPhase
 
-    /** True when [typed] is the exact confirmation word for [direction]. */
-    fun matches(direction: AttentionDirection, typed: String): Boolean =
-        typed.trim().equals(direction.word, ignoreCase = true)
+    /**
+     * The operator picked [direction] and sees its concrete consequence, stated with the
+     * real [localCardCount] where known (null when the count couldn't be read cheaply).
+     * Two taps in: confirm runs the destructive sync, cancel returns to [Choose].
+     */
+    data class Confirm(val direction: AttentionDirection, val localCardCount: Int?) : AttentionPhase
 
-    /** Resolves a typed word to its [AttentionDirection], or null if it is neither. */
-    fun parse(typed: String): AttentionDirection? {
-        val normalized = typed.trim().lowercase()
-        return AttentionDirection.entries.firstOrNull { it.word == normalized }
-    }
+    /** A `fullSync(direction)` is in flight. */
+    data class Running(val direction: AttentionDirection) : AttentionPhase
+
+    /** Resolved: the divergence is cleared; the screen goes back. */
+    data object Done : AttentionPhase
+
+    /** The full sync failed; [reason] is shown with a way back. */
+    data class Failed(val reason: String) : AttentionPhase
+}
+
+/**
+ * The needs-attention UI state: the current [phase] plus the [localCardCount] this
+ * phone holds (null until read from the engine, or if reading it failed). The count is
+ * held on the state — not just the Confirm phase — so it survives a cancel back to
+ * [Choose] and doesn't need re-reading.
+ */
+data class AttentionUiState(
+    val phase: AttentionPhase = AttentionPhase.Choose,
+    val localCardCount: Int? = null,
+)
+
+/**
+ * Pure phase transitions for the two-tap resolution flow. Kept separate from the
+ * ViewModel so the whole confirm-flow shape is unit-testable without a backend: pick →
+ * confirm-or-cancel → run → done-or-failed. There is no typed-word matcher any more —
+ * confirmation is the deliberate two-tap itself.
+ */
+object AttentionReducer {
+
+    /** Enter the per-direction confirm, carrying the known local card count. */
+    fun choose(state: AttentionUiState, direction: AttentionDirection): AttentionUiState =
+        state.copy(phase = AttentionPhase.Confirm(direction, state.localCardCount))
+
+    /** Back out of a confirm to the choice screen (card count is retained). */
+    fun cancel(state: AttentionUiState): AttentionUiState =
+        state.copy(phase = AttentionPhase.Choose)
+
+    /** The destructive sync is now in flight for [direction]. */
+    fun running(state: AttentionUiState, direction: AttentionDirection): AttentionUiState =
+        state.copy(phase = AttentionPhase.Running(direction))
+
+    /** The sync resolved the divergence. */
+    fun done(state: AttentionUiState): AttentionUiState =
+        state.copy(phase = AttentionPhase.Done)
+
+    /** The sync failed with [reason]. */
+    fun failed(state: AttentionUiState, reason: String): AttentionUiState =
+        state.copy(phase = AttentionPhase.Failed(reason))
 }
