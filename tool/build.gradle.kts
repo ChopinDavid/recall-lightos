@@ -52,6 +52,18 @@ android {
         sourceCompatibility = JavaVersion.toVersion(rootProject.ext["jvmTarget"] as String)
         targetCompatibility = JavaVersion.toVersion(rootProject.ext["jvmTarget"] as String)
     }
+
+    testOptions {
+        unitTests.all {
+            // Forward the render-compiler parity corpus path to the test JVM.
+            // The corpus is a personal deck kept out of git; ParityTest skips
+            // cleanly when this property is absent (e.g. on CI).
+            //   ./gradlew :tool:testDebugUnitTest -Precall.parityCorpus=/abs/path/corpus.jsonl
+            (findProperty("recall.parityCorpus") as String?)?.let { corpus ->
+                it.systemProperty("recall.parityCorpus", corpus)
+            }
+        }
+    }
 }
 
 kotlin {
