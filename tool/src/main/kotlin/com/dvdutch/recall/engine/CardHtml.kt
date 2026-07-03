@@ -17,18 +17,34 @@ import anki.card_rendering.RenderedTemplateNode
  *     `currentText` is appended unchanged (unresolved custom filters therefore
  *     surface as their already-substituted field text, never as a crash).
  *
- * The `FrontSide` special-case in the reference does not apply here:
- * `renderExistingCard` resolves `{{FrontSide}}` in the answer side itself, so
- * `currentText` already carries the front HTML by the time we assemble.
+ * The `FrontSide` special-case DOES apply here: rslib does NOT resolve
+ * `{{FrontSide}}` on the answer side — it emits a replacement node whose
+ * `fieldName == "FrontSide"` with an EMPTY `currentText`, expecting the client to
+ * inject the already-rendered question HTML (this is exactly what the reference's
+ * `applyCustomFilters(anodes, frontSide = qout.text)` does). We therefore render
+ * the front first and pass it as [frontSide]; without this, the whole front line
+ * vanishes from the answer (only `<hr> + Back` survive). A `null` [frontSide]
+ * (the question side, which never contains `{{FrontSide}}`) leaves the empty
+ * `currentText` untouched, matching the reference's `frontSide = null` question call.
  */
-internal fun assembleCardSide(nodes: List<RenderedTemplateNode>): String {
+internal fun assembleCardSide(
+    nodes: List<RenderedTemplateNode>,
+    frontSide: String? = null,
+): String {
     val sb = StringBuilder()
     for (node in nodes) {
         if (node.hasText()) {
             sb.append(node.text)
         } else {
-            // Replacement node: append rslib's already-resolved field text.
-            sb.append(node.replacement.currentText)
+            val replacement = node.replacement
+            // Inject the rendered question into the answer's {{FrontSide}} node,
+            // which rslib leaves empty. Mirrors TemplateManager.applyCustomFilters.
+            if (replacement.fieldName == "FrontSide" && frontSide != null) {
+                sb.append(frontSide)
+            } else {
+                // Replacement node: append rslib's already-resolved field text.
+                sb.append(replacement.currentText)
+            }
         }
     }
     return sb.toString()
