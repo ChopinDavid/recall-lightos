@@ -29,6 +29,10 @@ data class FirstRunState(
     val username: String,
     val password: String,
 ) {
+    /** Masks the password — data-class toString would leak it into any log. */
+    override fun toString(): String =
+        "FirstRunState(endpoint=$endpoint, username=$username, password=***, phase=$phase)"
+
     /** True only when all three sync-config fields are non-blank (mirrors [SyncController.configured]). */
     val canDownload: Boolean
         get() = endpoint.isNotBlank() && username.isNotBlank() && password.isNotBlank()
