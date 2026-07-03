@@ -7,14 +7,21 @@ import androidx.datastore.preferences.core.stringPreferencesKey
  * through `lightContext.dataStore` exactly as the SDK's weather example does
  * (`WeatherPreferences` + its `WeatherViewModel` usage) — that is the sanctioned
  * way a tool reaches DataStore through the SDK.
+ *
+ * Sync-era: the phone runs the Anki engine on-device and syncs directly against a
+ * sync server (AnkiWeb or a self-hosted `anki.syncserver`), so the persisted
+ * config is a sync endpoint + credentials, not a bridge URL/token.
  */
 object RecallPreferences {
-    /** Base URL of the Anki bridge. Emulator reaches the host at 10.0.2.2. */
-    val BRIDGE_URL = stringPreferencesKey("bridge_url")
+    /** Sync server endpoint. Emulator reaches a host-local hub at `http://10.0.2.2:<port>/`. */
+    val SYNC_ENDPOINT = stringPreferencesKey("sync_endpoint")
 
-    /** Bearer token sent to the bridge. */
-    val BRIDGE_TOKEN = stringPreferencesKey("bridge_token")
+    /** Sync account username. */
+    val SYNC_USERNAME = stringPreferencesKey("sync_username")
 
-    /** Default bridge URL when nothing has been persisted yet. */
-    const val DEFAULT_BRIDGE_URL = "http://10.0.2.2:8000"
+    /** Sync account password. Stored in DataStore; masked in the UI. */
+    val SYNC_PASSWORD = stringPreferencesKey("sync_password")
+
+    /** Default sync endpoint when nothing has been persisted yet (host-local dev hub). */
+    const val DEFAULT_SYNC_ENDPOINT = "http://10.0.2.2:18080/"
 }

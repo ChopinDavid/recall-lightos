@@ -85,6 +85,39 @@ class SettingsMessagesTest {
     }
 
     @Test
+    fun `login ok line reports success`() {
+        assertEquals("login ok", SettingsMessages.loginOkLine())
+    }
+
+    @Test
+    fun `login failed line carries the reason`() {
+        assertEquals(
+            "login failed: wrong password",
+            SettingsMessages.loginFailedLine("wrong password"),
+        )
+    }
+
+    @Test
+    fun `login failed line falls back when the reason is blank`() {
+        assertEquals("login failed", SettingsMessages.loginFailedLine("  "))
+        assertEquals("login failed", SettingsMessages.loginFailedLine(null))
+    }
+
+    @Test
+    fun `last-sync line reports never when there is no prior sync`() {
+        assertEquals("last sync: never", SettingsMessages.lastSyncLine(null, now = 1_000_000L))
+    }
+
+    @Test
+    fun `last-sync line reports a relative label`() {
+        val now = 100_000_000L
+        assertEquals(
+            "last sync: 5m ago",
+            SettingsMessages.lastSyncLine(now - 5 * 60_000L, now = now),
+        )
+    }
+
+    @Test
     fun `relative labels cover minutes hours and days`() {
         val now = 100_000_000L
         assertEquals("just now", SettingsMessages.relativeSince(now - 30_000L, now))
