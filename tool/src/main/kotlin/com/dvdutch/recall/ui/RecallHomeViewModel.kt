@@ -2,14 +2,18 @@ package com.dvdutch.recall.ui
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.viewModelScope
+import com.dvdutch.recall.api.Deck
 import com.dvdutch.recall.engine.RecallEngine
+import com.dvdutch.recall.prefs.RecallPreferences
 import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SimpleLightScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -65,6 +69,12 @@ class RecallHomeViewModel(
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
+    /**
+     * The most recent flat deck list, cached so [toggle] can re-filter locally without
+     * reopening the collection (no collection read/write happens on a collapse toggle).
+     */
+    private var lastDecks: List<Deck> = emptyList()
+
     /** Re-load whenever the screen becomes visible (e.g. returning from first-run). */
     override fun onScreenShow(screen: SimpleLightScreen<Unit>) {
         super.onScreenShow(screen)
@@ -90,7 +100,9 @@ class RecallHomeViewModel(
                 if (HomeMode.attentionRoute(controller.configured, diverged)) {
                     HomeMode.NeedsAttention
                 } else {
-                    HomeMode.Loaded(deckRows(engine.api(controller).decks()))
+                    val decks = engine.api(controller).decks()
+                    lastDecks = decks
+                    HomeMode.Loaded(visibleDeckRows(decks, readExpandedIds()))
                 }
             } catch (t: Throwable) {
                 HomeMode.Error(t.message ?: "couldn't open your collection")
@@ -98,6 +110,33 @@ class RecallHomeViewModel(
             setMode(mode)
         }
     }
+
+    /**
+     * Toggle the local collapse state of a parent deck: expand it if collapsed (add its id
+     * to the persisted EXPANDED set) or collapse it otherwise (remove it). Persists to
+     * DataStore and re-renders the visible tree reactively — this touches only the UI
+     * preference, never the Anki collection.
+     */
+    fun toggle(deckId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val current = readExpandedIds()
+            val next = if (deckId in current) current - deckId else current + deckId
+            dataStore.edit { prefs ->
+                prefs[RecallPreferences.EXPANDED_DECK_IDS] = next.map { it.toString() }.toSet()
+            }
+            // Re-filter from the cached deck list; no collection reopen needed.
+            if (_uiState.value.mode is HomeMode.Loaded) {
+                setMode(HomeMode.Loaded(visibleDeckRows(lastDecks, next)))
+            }
+        }
+    }
+
+    /** Read the persisted EXPANDED-id set (decimal strings) as longs; absent ⇒ empty. */
+    private suspend fun readExpandedIds(): Set<Long> =
+        dataStore.data.first()[RecallPreferences.EXPANDED_DECK_IDS]
+            ?.mapNotNull { it.toLongOrNull() }
+            ?.toSet()
+            ?: emptySet()
 
     private suspend fun setMode(mode: HomeMode) {
         withContext(Dispatchers.Main) { _uiState.update { it.copy(mode = mode) } }

@@ -97,6 +97,7 @@ class RecallHomeScreen(sealedActivity: SealedLightActivity) :
                         onOpenDeck = { deckId ->
                             navigateTo(screenFactory = { StudyScreen(it, deckId) })
                         },
+                        onToggle = viewModel::toggle,
                     )
                 }
             }
@@ -105,7 +106,11 @@ class RecallHomeScreen(sealedActivity: SealedLightActivity) :
 }
 
 @Composable
-private fun DeckList(rows: List<DeckRow>, onOpenDeck: (Long) -> Unit) {
+private fun DeckList(
+    rows: List<DeckRow>,
+    onOpenDeck: (Long) -> Unit,
+    onToggle: (Long) -> Unit,
+) {
     if (rows.isEmpty()) {
         CenteredMessage("no decks")
         return
@@ -116,29 +121,45 @@ private fun DeckList(rows: List<DeckRow>, onOpenDeck: (Long) -> Unit) {
             .padding(horizontal = 1f.gridUnitsAsDp()),
     ) {
         rows.forEach { row ->
-            DeckListRow(row = row, onClick = { onOpenDeck(row.id) })
+            DeckListRow(
+                row = row,
+                onOpen = { onOpenDeck(row.id) },
+                onToggle = { onToggle(row.id) },
+            )
         }
     }
 }
 
 @Composable
-private fun DeckListRow(row: DeckRow, onClick: () -> Unit) {
+private fun DeckListRow(row: DeckRow, onOpen: () -> Unit, onToggle: () -> Unit) {
     // Indent children by their `::` depth; each level adds one grid unit.
     val indent = row.depth.toFloat()
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 0.5f.gridUnitsAsDp()),
+            .padding(vertical = 0.5f.gridUnitsAsDp())
+            .padding(start = indent.gridUnitsAsDp()),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Parent decks get a leading +/− glyph that is its own tap target (toggle);
+        // tapping the name still starts study. Leaf decks have no glyph.
+        if (row.hasChildren) {
+            LightText(
+                text = if (row.isExpanded) "−" else "+",
+                variant = if (row.isTopLevel) LightTextVariant.Heading else LightTextVariant.Copy,
+                lighten = !row.hasDue,
+                modifier = Modifier
+                    .clickable(onClick = onToggle)
+                    .padding(end = 0.5f.gridUnitsAsDp()),
+            )
+        }
         LightText(
             text = row.label,
             variant = if (row.isTopLevel) LightTextVariant.Heading else LightTextVariant.Copy,
             lighten = !row.hasDue,
             modifier = Modifier
                 .weight(1f)
-                .padding(start = indent.gridUnitsAsDp()),
+                .clickable(onClick = onOpen),
         )
         LightText(
             text = row.countsLabel(),
