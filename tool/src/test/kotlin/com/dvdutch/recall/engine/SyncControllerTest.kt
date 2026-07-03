@@ -72,6 +72,50 @@ class SyncControllerTest {
 
     private fun config() = SyncConfig(endpoint = ENDPOINT, username = USER, password = PW)
 
+    /** Records every durable needs-attention write the controller makes. */
+    private class RecordingPersist {
+        val writes = mutableListOf<Boolean>()
+        val callback: suspend (Boolean) -> Unit = { writes.add(it) }
+        val last: Boolean? get() = writes.lastOrNull()
+    }
+
+    @Test
+    fun `FULL_* latch persists needs-attention true via the callback`() {
+        org.junit.Assume.assumeTrue("sync server not reachable", serverReachable())
+        // Establish a known server state by full-uploading THIS collection.
+        runBlocking { SyncController(config(), EngineHolder).fullSync(upload = true) }
+
+        // A SECOND, never-synced collection diverges → FULL_* on a normal sync.
+        val otherDir = Files.createTempDirectory("recall-sync-persist")
+        val otherCol = otherDir.resolve("collection.anki2").toString()
+        runBlocking { withContext(EngineHolder.lane) { EngineHolder.openCollection(otherCol) } }
+        try {
+            val persist = RecordingPersist()
+            val controller = SyncController(config(), EngineHolder, persistNeedsAttention = persist.callback)
+            val info = runBlocking { controller.sync(media = false) }
+            assertFalse(info.synced, "a divergent collection must not clean-sync")
+            assertTrue(controller.needsAttention.value, "FULL_* must latch the in-memory flow too")
+            assertEquals(true, persist.last, "FULL_* must durably persist needs-attention=true")
+        } finally {
+            runBlocking {
+                withContext(EngineHolder.lane) {
+                    EngineHolder.openCollection(tmpDir.resolve("collection.anki2").toString())
+                }
+            }
+            otherDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `fullSync success persists needs-attention false via the callback`() {
+        org.junit.Assume.assumeTrue("sync server not reachable", serverReachable())
+        val persist = RecordingPersist()
+        val controller = SyncController(config(), EngineHolder, persistNeedsAttention = persist.callback)
+        runBlocking { controller.fullSync(upload = true) }
+        assertFalse(controller.needsAttention.value, "fullSync clears the in-memory latch")
+        assertEquals(false, persist.last, "a successful fullSync must durably clear needs-attention")
+    }
+
     @Test
     fun `login caches auth and a repeat login reuses the cached SyncAuth`() {
         org.junit.Assume.assumeTrue("sync server not reachable", serverReachable())

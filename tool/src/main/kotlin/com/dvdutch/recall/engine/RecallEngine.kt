@@ -2,6 +2,7 @@ package com.dvdutch.recall.engine
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
 import com.dvdutch.recall.prefs.RecallPreferences
 import com.dvdutch.recall.prefs.RecallStorage
 import kotlinx.coroutines.flow.first
@@ -36,8 +37,22 @@ class RecallEngine(
         )
     }
 
-    /** A [SyncController] built from the persisted config (unconfigured if fields are blank). */
-    suspend fun controller(): SyncController = SyncController(syncConfig(), holder)
+    /**
+     * A [SyncController] built from the persisted config (unconfigured if fields are blank),
+     * wired to persist its needs-attention latch to DataStore. The durable pref outlives the
+     * controller instance, so Home can still route to attention after the session that latched
+     * the divergence is long gone.
+     */
+    suspend fun controller(): SyncController =
+        SyncController(syncConfig(), holder, persistNeedsAttention = ::writeNeedsAttention)
+
+    /** The durable "collections have diverged" latch (defaults false when never written). */
+    suspend fun needsAttention(): Boolean =
+        dataStore.data.first()[RecallPreferences.NEEDS_ATTENTION] ?: false
+
+    private suspend fun writeNeedsAttention(value: Boolean) {
+        dataStore.edit { it[RecallPreferences.NEEDS_ATTENTION] = value }
+    }
 
     /**
      * Opens the on-device collection (creating its directory if needed) on the engine

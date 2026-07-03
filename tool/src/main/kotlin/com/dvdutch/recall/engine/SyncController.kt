@@ -45,6 +45,14 @@ data class SyncConfig(
 class SyncController(
     private val config: SyncConfig,
     private val holder: EngineHolder,
+    /**
+     * Durable sink for the needs-attention latch. [needsAttention] is in-memory and dies
+     * with each controller instance a ViewModel constructs, but a FULL_* divergence persists
+     * across sessions and process restarts — so the durable source of truth is a persisted
+     * pref. [RecallEngine.controller] wires this to DataStore; tests pass a fake. The default
+     * no-op keeps the seam optional for callers that don't need durability.
+     */
+    private val persistNeedsAttention: suspend (Boolean) -> Unit = {},
 ) {
 
     private companion object {
@@ -127,6 +135,7 @@ class SyncController(
             }
             if (out.required in FULL_REQUIRED) {
                 _needsAttention.value = true
+                persistNeedsAttention(true) // durable latch: Home routes to attention across restarts
                 return@withContext SyncInfo(
                     synced = false,
                     detail = "needs attention: full sync required",
@@ -177,8 +186,9 @@ class SyncController(
                 .build()
             backend.fullUploadOrDownload(request)
             // The backend reopened the collection internally (afterFullSync semantics);
-            // the resolved divergence clears the attention latch.
+            // the resolved divergence clears both the in-memory and the durable latch.
             _needsAttention.value = false
+            persistNeedsAttention(false)
         }
     }
 

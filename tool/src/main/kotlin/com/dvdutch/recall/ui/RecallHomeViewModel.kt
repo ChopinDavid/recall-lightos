@@ -31,6 +31,18 @@ sealed interface HomeMode {
 
     /** A decks load failed; [message] is shown with a retry. */
     data class Error(val message: String) : HomeMode
+
+    companion object {
+        /**
+         * Pure routing decision, extracted so it is JVM-testable without the Android
+         * [LightViewModel] runtime. When a FULL_* divergence has latched — either durably
+         * (the persisted pref, which survives the session/process that latched it) or on the
+         * live controller flow — the answer is [NeedsAttention]; otherwise the caller loads
+         * the deck tree. First-run is handled earlier (no collection file).
+         */
+        fun attentionRoute(configured: Boolean, needsAttention: Boolean): Boolean =
+            configured && needsAttention
+    }
 }
 
 data class HomeUiState(val mode: HomeMode = HomeMode.Loading)
@@ -69,7 +81,11 @@ class RecallHomeViewModel(
             val mode = try {
                 engine.openCollection()
                 val controller = engine.controller()
-                if (controller.configured && controller.needsAttention.value) {
+                // Durable pref OR the live flow: the pref catches a divergence that latched
+                // in a prior session (the controller instance that latched it is long gone),
+                // the flow catches one that latches during this process's lifetime.
+                val diverged = engine.needsAttention() || controller.needsAttention.value
+                if (HomeMode.attentionRoute(controller.configured, diverged)) {
                     HomeMode.NeedsAttention
                 } else {
                     HomeMode.Loaded(deckRows(engine.api(controller).decks()))
