@@ -22,7 +22,7 @@ object SettingsMessages {
 
     /**
      * Maps every [BridgeError] variant to operator-facing copy. `url` is the
-     * user's configured bridge URL, interpolated into the unreachable message.
+     * user's configured sync endpoint, interpolated into the unreachable message.
      */
     fun errorLine(error: BridgeError, url: String): String = when (error) {
         is BridgeError.Unreachable ->
