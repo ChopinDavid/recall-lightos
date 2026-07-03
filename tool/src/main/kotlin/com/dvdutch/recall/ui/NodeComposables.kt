@@ -34,6 +34,13 @@ import com.thelightphone.sdk.ui.gridUnitsAsDp
 /** Relative font size applied to `small` runs so it scales with the base style. */
 private const val SMALL_TEXT_SCALE = 0.8f
 
+/**
+ * The [UnsupportedNode.kind] the engine tags a side's audio marker with. Its inline
+ * `▢ [audio]` placeholder is retired: audio is real playback with a replay affordance
+ * in StudyScreen, so this kind renders nothing.
+ */
+private const val AUDIO_NODE_KIND = "audio"
+
 /** Wire value of [ClozeNode.state] for a cloze that is still hidden (question side). */
 private const val CLOZE_STATE_HIDDEN = "hidden"
 
@@ -125,11 +132,18 @@ fun RenderNodeView(node: RenderNode, mediaLoader: MediaLoader?) {
                 .background(LightThemeTokens.colors.contentSecondary),
         )
 
-        is UnsupportedNode -> LightText(
-            text = "▢ [${node.kind}]",
-            variant = LightTextVariant.Fine,
-            lighten = true,
-        )
+        is UnsupportedNode ->
+            // The `audio` placeholder is retired: audio is now real playback with a
+            // dedicated replay affordance in StudyScreen, so an inline `▢ [audio]` box
+            // would be a dead duplicate. Other genuinely-unsupported kinds still show
+            // their labelled box so content is never silently dropped.
+            if (node.kind != AUDIO_NODE_KIND) {
+                LightText(
+                    text = "▢ [${node.kind}]",
+                    variant = LightTextVariant.Fine,
+                    lighten = true,
+                )
+            }
     }
 }
 

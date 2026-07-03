@@ -93,6 +93,8 @@ class StudyScreen(
                         card = s.card,
                         showBack = false,
                         mediaLoader = mediaLoader,
+                        onAutoPlay = viewModel::playAudio,
+                        onReplay = viewModel::playAudio,
                         bottom = {
                             LightBottomBar(
                                 items = listOf(
@@ -109,6 +111,8 @@ class StudyScreen(
                         card = s.card,
                         showBack = true,
                         mediaLoader = mediaLoader,
+                        onAutoPlay = viewModel::playAudio,
+                        onReplay = viewModel::playAudio,
                         bottom = {
                             GradeBar(
                                 buttons = gradeButtons(s.card.nextDueLabels),
@@ -164,8 +168,19 @@ private fun androidx.compose.foundation.layout.ColumnScope.CardBody(
     card: CardPayload,
     showBack: Boolean,
     mediaLoader: MediaLoader?,
+    onAutoPlay: (List<String>) -> Unit,
+    onReplay: (List<String>) -> Unit,
     bottom: @Composable () -> Unit,
 ) {
+    val sideAudio = activeSideAudio(card, showBack)
+
+    // Auto-play the current side's audio once per (card, side) transition — front on
+    // show, back on reveal (Anki's default). Keyed so it fires on the transition, not on
+    // every recomposition; an empty list is a no-op play (nothing to hear this side).
+    LaunchedEffect(card.cardId, showBack) {
+        onAutoPlay(sideAudio)
+    }
+
     LightScrollView(
         modifier = Modifier
             .weight(1f)
@@ -177,7 +192,33 @@ private fun androidx.compose.foundation.layout.ColumnScope.CardBody(
             mediaLoader = mediaLoader,
         )
     }
+    if (sideAudio.isNotEmpty()) {
+        ReplayAudioRow(onReplay = { onReplay(sideAudio) })
+    }
     bottom()
+}
+
+/**
+ * A tappable "🔊 REPLAY AUDIO" row shown only when the current side has audio; a tap
+ * replays that side's list from the start. Monochrome LightText in the design system,
+ * sitting just above the bottom bar / grade buttons — discoverable but not intrusive.
+ */
+@Composable
+private fun ReplayAudioRow(onReplay: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onReplay)
+            .padding(horizontal = 1f.gridUnitsAsDp(), vertical = 0.25f.gridUnitsAsDp()),
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        LightText(
+            text = "🔊 REPLAY AUDIO",
+            variant = LightTextVariant.Fine,
+            lighten = true,
+            align = TextAlign.Center,
+        )
+    }
 }
 
 /** The four grade buttons, evenly spaced, each a fixed word over its interval. */
