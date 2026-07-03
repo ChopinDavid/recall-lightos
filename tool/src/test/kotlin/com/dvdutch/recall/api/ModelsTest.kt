@@ -21,6 +21,7 @@ class ModelsTest {
                     node.hint?.let { append(it) }
                 }
                 is ImageNode -> append(node.src)
+                is OcclusionNode -> append(node.image)
                 RuleNode -> Unit
                 is UnsupportedNode -> Unit
             }
