@@ -26,15 +26,11 @@ object SettingsMessages {
      */
     fun errorLine(error: BridgeError, url: String): String = when (error) {
         is BridgeError.Unreachable ->
-            "can't reach your bridge at $url"
+            "sync failed — check your connection to $url"
         is BridgeError.Unauthorized ->
             "token rejected"
         is BridgeError.NeedsAttention ->
-            "bridge needs attention: full sync required (fix on the server)"
-        is BridgeError.VersionSkew ->
-            "update the tool / update the bridge"
-        is BridgeError.Server ->
-            error.message
+            "needs attention: full sync required (resolve from the home screen)"
     }
 
     /** Success line for the Settings "Test login" action. */

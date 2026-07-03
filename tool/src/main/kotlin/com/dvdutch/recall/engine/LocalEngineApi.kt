@@ -24,11 +24,11 @@ import net.ankiweb.rsdroid.exceptions.BackendNotFoundException
 import java.util.Base64
 
 /**
- * On-device implementation of the decks / queue / answer surface, backed directly
- * by rslib through [EngineHolder]. It is the local twin of
- * [com.dvdutch.recall.api.BridgeClient]: same method names, same DTOs, same
- * `states`-as-opaque-base64 contract, so [com.dvdutch.recall.study.StudyMachine]
- * and the rest of the app cannot tell which backs a session.
+ * On-device implementation of the decks / queue / answer surface ([EngineApi]),
+ * backed directly by rslib through [EngineHolder]. It preserves the frozen
+ * former-bridge contract verbatim — same method names, same DTOs, same
+ * `states`-as-opaque-base64 boundary — so [com.dvdutch.recall.study.StudyMachine]
+ * and the rest of the app are unchanged by the move on-device.
  *
  * Every engine touch is confined to [EngineHolder.lane] (the serial native lane) via
  * `withContext(holder.lane) { ... }`; the raw [Backend] handle is never used off-lane.

@@ -81,9 +81,11 @@ class RecallHomeViewModel(
             val mode = try {
                 engine.openCollection()
                 val controller = engine.controller()
-                // Durable pref OR the live flow: the pref catches a divergence that latched
-                // in a prior session (the controller instance that latched it is long gone),
-                // the flow catches one that latches during this process's lifetime.
+                // The open + controller read are not redundant with the durable pref: routing
+                // gates on controller.configured (below) and we need the open collection to read
+                // decks in the non-diverged case anyway. Divergence itself is the durable pref OR
+                // the live flow — the pref catches a divergence latched in a prior session (that
+                // controller instance is long gone), the flow catches one latched this process.
                 val diverged = engine.needsAttention() || controller.needsAttention.value
                 if (HomeMode.attentionRoute(controller.configured, diverged)) {
                     HomeMode.NeedsAttention
