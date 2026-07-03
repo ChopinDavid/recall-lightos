@@ -129,8 +129,14 @@ class LocalEngineApi(
         val card = entry.card
         val rendered = backend.renderExistingCard(card.id, false, true)
         val css = rendered.css
-        val front = compileSide(backend, assembleCardSide(rendered.questionNodesList), "front", css)
-        val back = compileSide(backend, assembleCardSide(rendered.answerNodesList), "back", css)
+        // Assemble the question HTML first: rslib leaves the answer's {{FrontSide}}
+        // replacement node empty, so we must inject the rendered front into the back
+        // (mirrors TemplateManager.applyCustomFilters(anodes, frontSide = qout.text)).
+        // Without this the whole front line vanishes from the revealed answer.
+        val frontHtml = assembleCardSide(rendered.questionNodesList)
+        val front = compileSide(backend, frontHtml, "front", css)
+        val backHtml = assembleCardSide(rendered.answerNodesList, frontSide = frontHtml)
+        val back = compileSide(backend, backHtml, "back", css)
         val labels = backend.describeNextStates(entry.states)
         return CardPayload(
             cardId = card.id,
