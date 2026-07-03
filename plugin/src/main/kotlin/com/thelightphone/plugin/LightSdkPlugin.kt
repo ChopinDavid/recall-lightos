@@ -33,6 +33,10 @@ class LightSdkPlugin : Plugin<Project> {
             "androidx.room",
             "androidx.work",
             "androidx.startup",
+            // DEV ONLY — pending lightphone/light-sdk PR: anki backend artifacts.
+            // Remove these two lines when the upstream PR merges.
+            "io.github.david-allison:anki-android-backend",
+            "io.github.david-allison:anki-android-backend-testing",
         )
 
         val ALLOWED_PLUGINS = setOf(
