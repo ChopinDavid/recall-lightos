@@ -14,6 +14,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -201,5 +202,72 @@ class LocalEngineApiTest {
     fun `studyFinish reports sync not configured`() {
         val resp = runBlocking { api.studyFinish() }
         assertEquals(false, resp.synced)
+    }
+
+    // --- Sync-aware study brackets (Task 3) ---------------------------------------
+
+    private companion object {
+        const val SYNC_ENDPOINT = "http://127.0.0.1:18080/"
+        const val SYNC_USER = "test"
+        const val SYNC_PW = "test123"
+    }
+
+    private fun syncReachable(): Boolean =
+        try {
+            val c = (java.net.URI(SYNC_ENDPOINT).toURL().openConnection() as java.net.HttpURLConnection)
+            c.connectTimeout = 500; c.readTimeout = 500; c.requestMethod = "GET"; c.connect()
+            c.responseCode; c.disconnect(); true
+        } catch (_: Exception) {
+            false
+        }
+
+    private fun syncConfig() = SyncConfig(SYNC_ENDPOINT, SYNC_USER, SYNC_PW)
+
+    @Test
+    fun `studyStart throws NeedsAttention when the controller is latched`() {
+        val controller = SyncController(syncConfig(), EngineHolder).apply {
+            setNeedsAttentionForTest(true)
+        }
+        val syncApi = LocalEngineApi(EngineHolder, controller)
+        val deckId = seedNote("Latched", "q", "a")
+        // The frozen contract: a latched FULL_* requirement surfaces as a BridgeError,
+        // NOT a Failed answer path — StudyMachine already maps transport BridgeErrors.
+        assertFailsWith<com.dvdutch.recall.api.BridgeError.NeedsAttention> {
+            runBlocking { syncApi.studyStart(deckId) }
+        }
+    }
+
+    @Test
+    fun `studyStart with a configured controller syncs and reports synced live`() {
+        org.junit.Assume.assumeTrue("sync server not reachable", syncReachable())
+        val controller = SyncController(syncConfig(), EngineHolder)
+        // Establish lineage so the study-start sync is a clean normal sync.
+        runBlocking { controller.fullSync(upload = true) }
+        val syncApi = LocalEngineApi(EngineHolder, controller)
+        val deckId = seedNote("SyncedStudy", "q", "a")
+        val resp = runBlocking { syncApi.studyStart(deckId) }
+        assertTrue(resp.sync.synced, "study-start sync must succeed, got: ${resp.sync.detail}")
+        assertTrue(resp.counts.new >= 1, "the seeded new card must appear in counts")
+    }
+
+    @Test
+    fun `studyFinish syncs and writes a best-effort backup file live`() {
+        org.junit.Assume.assumeTrue("sync server not reachable", syncReachable())
+        val controller = SyncController(syncConfig(), EngineHolder)
+        runBlocking { controller.fullSync(upload = true) }
+        val backupDir = tmpDir.resolve("backups")
+        Files.createDirectories(backupDir)
+        val syncApi = LocalEngineApi(EngineHolder, controller, backupFolder = backupDir.toString())
+        val resp = runBlocking { syncApi.studyFinish() }
+        assertTrue(resp.synced, "study-finish sync must succeed, got: ${resp.detail}")
+        // createBackup(force=false, waitForCompletion=false) writes into the folder.
+        // waitForCompletion=false means the file may lag; poll briefly for it.
+        var backups = backupDir.toFile().listFiles()?.toList().orEmpty()
+        var tries = 0
+        while (backups.isEmpty() && tries < 50) {
+            Thread.sleep(100); tries++
+            backups = backupDir.toFile().listFiles()?.toList().orEmpty()
+        }
+        assertTrue(backups.isNotEmpty(), "createBackup must have written a backup into $backupDir")
     }
 }

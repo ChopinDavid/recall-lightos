@@ -6,6 +6,7 @@ import anki.scheduler.SchedulingStates
 import com.dvdutch.recall.api.AnswerIn
 import com.dvdutch.recall.api.AnswerResult
 import com.dvdutch.recall.api.BridgeApi
+import com.dvdutch.recall.api.BridgeError
 import com.dvdutch.recall.api.CardPayload
 import com.dvdutch.recall.api.Counts
 import com.dvdutch.recall.api.Deck
@@ -49,7 +50,20 @@ import java.util.Base64
  * NOT ported, and `"duplicate"` is never returned. The `uuid` field is still
  * carried through unchanged so results correlate 1:1 with requests.
  */
-class LocalEngineApi(private val holder: EngineHolder) : BridgeApi {
+class LocalEngineApi(
+    private val holder: EngineHolder,
+    /**
+     * The sync layer, or null when sync is unconfigured. When null, [studyStart]/
+     * [studyFinish] behave exactly like the pre-sync stub (`"sync not configured"`),
+     * so an unconfigured on-device session still runs against the local collection.
+     */
+    private val sync: SyncController? = null,
+    /**
+     * Directory under tool storage where [studyFinish] writes a best-effort backup
+     * via `createBackup`. Null skips the backup (e.g. sync unconfigured or no storage).
+     */
+    private val backupFolder: String? = null,
+) : BridgeApi {
 
     private companion object {
         val LABEL_KEYS = listOf("again", "hard", "good", "easy")
@@ -231,27 +245,74 @@ class LocalEngineApi(private val holder: EngineHolder) : BridgeApi {
     }
 
     /**
-     * Stub filled by Task 3 (sync). For now it selects the deck and reports its due
-     * counts with a "sync not configured" result. Mirrors the bridge's
-     * `/v1/study/start` shape.
+     * Opens a study session: sync the collection up front (bringing down any reviews
+     * done elsewhere), select the deck, and report its due counts. Mirrors the bridge's
+     * `/v1/study/start` (`anki_bridge.routes.study.study_start`):
+     *   - gate on [SyncController.needsAttention] FIRST — a latched FULL_* requirement
+     *     must block study until it is resolved out-of-band. The bridge raises HTTP 503
+     *     `needs_attention`; here we throw [BridgeError.NeedsAttention], which
+     *     [com.dvdutch.recall.study.StudyMachine] already maps as a transport failure
+     *     (it catches [BridgeError] from `studyStart`), keeping the frozen contract;
+     *   - then [SyncController.sync] (non-fatal: studying proceeds even if it fails);
+     *   - gate AGAIN — the sync itself may have just latched needsAttention on a FULL_*;
+     *   - then `setCurrentDeck` + counts, carrying the sync outcome in the response.
+     *
+     * With no [sync] configured this degrades to the original stub behaviour: select the
+     * deck, report counts, `"sync not configured"`.
      */
-    override suspend fun studyStart(deckId: Long): StudyStartResponse = withContext(holder.lane) {
-        val backend = holder.backend()
-        backend.setCurrentDeck(deckId)
-        val queued = backend.getQueuedCards(1, false)
-        StudyStartResponse(
-            counts = Counts(
-                new = queued.newCount,
-                learning = queued.learningCount,
-                review = queued.reviewCount,
-            ),
-            sync = SyncInfo(synced = false, detail = "sync not configured"),
-        )
+    override suspend fun studyStart(deckId: Long): StudyStartResponse {
+        val controller = sync
+        val syncInfo = if (controller == null) {
+            SyncInfo(synced = false, detail = "sync not configured")
+        } else {
+            if (controller.needsAttention.value) throw BridgeError.NeedsAttention
+            val info = controller.sync(media = true)
+            if (controller.needsAttention.value) throw BridgeError.NeedsAttention
+            info
+        }
+        return withContext(holder.lane) {
+            val backend = holder.backend()
+            backend.setCurrentDeck(deckId)
+            val queued = backend.getQueuedCards(1, false)
+            StudyStartResponse(
+                counts = Counts(
+                    new = queued.newCount,
+                    learning = queued.learningCount,
+                    review = queued.reviewCount,
+                ),
+                sync = syncInfo,
+            )
+        }
     }
 
     /**
-     * Stub filled by Task 3 (sync). Reports "sync not configured" until sync lands.
+     * Closes a study session: sync the reviews just performed up to the server, then
+     * take a best-effort local backup. Mirrors the bridge's `/v1/study/finish`
+     * (`anki_bridge.routes.study.study_finish`) plus an on-device backup step.
+     *
+     * The backup is best-effort and never fails the finish: `createBackup(folder, force
+     * = false, waitForCompletion = false)` — arg meanings VERIFIED against AnkiDroid
+     * libanki `Collection.createBackup` / rsdroid `Backend.createBackup(String, boolean,
+     * boolean)`: `force=false` respects the user's minimum-interval so we do not spam
+     * backups on every finish, and `waitForCompletion=false` returns immediately (the
+     * backup runs on a backend thread) so closing the session is not blocked on disk I/O.
+     * A null [backupFolder] (or no [sync]) skips the backup entirely.
+     *
+     * With no [sync] configured this returns the original `"sync not configured"` stub.
      */
-    override suspend fun studyFinish(): SyncInfo =
-        SyncInfo(synced = false, detail = "sync not configured")
+    override suspend fun studyFinish(): SyncInfo {
+        val controller = sync ?: return SyncInfo(synced = false, detail = "sync not configured")
+        val info = controller.sync(media = true)
+        val folder = backupFolder
+        if (folder != null) {
+            withContext(holder.lane) {
+                try {
+                    holder.backend().createBackup(folder, false, false)
+                } catch (_: Throwable) {
+                    // Backups are best-effort: a failure here must never fail the finish.
+                }
+            }
+        }
+        return info
+    }
 }
