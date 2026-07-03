@@ -134,47 +134,61 @@ class LocalEngineApi(
         // (mirrors TemplateManager.applyCustomFilters(anodes, frontSide = qout.text)).
         // Without this the whole front line vanishes from the revealed answer.
         val frontHtml = assembleCardSide(rendered.questionNodesList)
-        val front = compileSide(backend, frontHtml, "front", css)
+        val front = compileSide(backend, frontHtml, "front", css, isQuestion = true)
         val backHtml = assembleCardSide(rendered.answerNodesList, frontSide = frontHtml)
-        val back = compileSide(backend, backHtml, "back", css)
+        val back = compileSide(backend, backHtml, "back", css, isQuestion = false)
         val labels = backend.describeNextStates(entry.states)
         return CardPayload(
             cardId = card.id,
             noteId = card.noteId,
-            front = front,
-            back = back,
+            front = front.nodes,
+            back = back.nodes,
             states = Base64.getEncoder().encodeToString(entry.states.toByteArray()),
             nextDueLabels = LABEL_KEYS.zip(labels).toMap(),
+            frontAudio = front.audio,
+            backAudio = back.audio,
         )
     }
 
+    /** One compiled card side: its render nodes plus the ordered audio filenames. */
+    private data class CompiledSide(val nodes: List<RenderNode>, val audio: List<String>)
+
     /**
-     * Compiles one card side to render nodes, replacing Anki's audio references with
-     * a single `audio` placeholder. Mirrors the bridge's
-     * `anki_bridge.rendering.compile_side`: `stripAvTags` removes the `[sound:...]`
-     * references (they must never reach the phone as literal text — it is the direct
-     * analogue of pylib's `strip_av_refs`), and if the stripped text differs from the
-     * input then a reference was present, so one `unsupported/audio` node is appended
-     * so audio never silently vanishes.
+     * Compiles one card side to render nodes AND extracts its ordered `[sound:]`
+     * media filenames. Mirrors the bridge's `anki_bridge.rendering.compile_side` for
+     * the text path, extended with the filename list for on-device playback.
      *
-     * NOTE: `stripAvTags` — not `extractAvTags` — is the correct strip here.
-     * `extractAvTags` rewrites `[sound:x]` into an `[anki:play:...]` marker that it
-     * does NOT then remove, so its `.text` would leak that marker into the compiled
-     * output; `stripAvTags` removes the reference outright. MUST be called on
-     * [EngineHolder.lane].
+     * Two backend calls, by design, because they serve different needs:
+     *   - `stripAvTags(html)` produces the MARKER-FREE text to compile. This is the
+     *     direct analogue of pylib's `strip_av_refs`: `[sound:x]` references must
+     *     never reach the phone as literal text.
+     *   - `extractAvTags(html, isQuestion).avTagsList` yields the ordered filenames
+     *     ([soundFilenames]) that populate `front_audio`/`back_audio`.
+     *
+     * Why NOT use `extractAvTags(...).text` for the text too: verified on the real
+     * backend, `.text` rewrites `[sound:x]` into an `[anki:play:q:N]` marker that it
+     * does NOT then remove, so it would leak that marker into the compiled output.
+     * `stripAvTags` removes the reference outright, so it stays the source of the
+     * compiled text. Both are backend calls and MUST run on [EngineHolder.lane].
+     *
+     * The existing `unsupported/audio` placeholder node is KEPT (additive): Task 3
+     * owns replacing it with a real playback control, so behaviour here is unchanged
+     * beyond surfacing the filenames.
      */
     private fun compileSide(
         backend: Backend,
         html: String,
         side: String,
         css: String,
-    ): List<RenderNode> {
+        isQuestion: Boolean,
+    ): CompiledSide {
         val stripped = backend.stripAvTags(html)
         val nodes = compileHtml(stripped, side, css).toMutableList()
+        val audio = soundFilenames(backend.extractAvTags(html, isQuestion).avTagsList)
         if (stripped != html) {
             nodes.add(UnsupportedNode("audio"))
         }
-        return nodes
+        return CompiledSide(nodes, audio)
     }
 
     /**
