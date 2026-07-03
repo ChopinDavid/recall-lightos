@@ -61,6 +61,7 @@ class StudyScreen(
     override fun Content() {
         val themeColors by LightThemeController.colors.collectAsState()
         val state by viewModel.state.collectAsState()
+        val mediaLoader by viewModel.mediaLoader.collectAsState()
 
         LaunchedEffect(Unit) { viewModel.begin() }
 
@@ -87,6 +88,7 @@ class StudyScreen(
                     is StudyState.ShowingFront -> CardBody(
                         card = s.card,
                         showBack = false,
+                        mediaLoader = mediaLoader,
                         bottom = {
                             LightBottomBar(
                                 items = listOf(
@@ -102,6 +104,7 @@ class StudyScreen(
                     is StudyState.ShowingBack -> CardBody(
                         card = s.card,
                         showBack = true,
+                        mediaLoader = mediaLoader,
                         bottom = {
                             GradeBar(
                                 buttons = gradeButtons(s.card.nextDueLabels),
@@ -156,6 +159,7 @@ private fun CountsHeader(counts: Counts?) {
 private fun androidx.compose.foundation.layout.ColumnScope.CardBody(
     card: CardPayload,
     showBack: Boolean,
+    mediaLoader: MediaLoader?,
     bottom: @Composable () -> Unit,
 ) {
     LightScrollView(
@@ -164,7 +168,10 @@ private fun androidx.compose.foundation.layout.ColumnScope.CardBody(
             .fillMaxWidth()
             .padding(horizontal = 1f.gridUnitsAsDp()),
     ) {
-        RenderNodeColumn(nodes = if (showBack) card.back else card.front, mediaLoader = null)
+        RenderNodeColumn(
+            nodes = if (showBack) card.back else card.front,
+            mediaLoader = mediaLoader,
+        )
     }
     bottom()
 }

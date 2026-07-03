@@ -31,13 +31,6 @@ import com.thelightphone.sdk.ui.LightTextVariant
 import com.thelightphone.sdk.ui.LightThemeTokens
 import com.thelightphone.sdk.ui.gridUnitsAsDp
 
-/**
- * Loads bitmap media (images) referenced by [ImageNode]s. Implemented in a later
- * task; the render-node views take a nullable [MediaLoader] and fall back to a
- * labelled placeholder when it is absent (or, later, while an image is loading).
- */
-interface MediaLoader
-
 /** Relative font size applied to `small` runs so it scales with the base style. */
 private const val SMALL_TEXT_SCALE = 0.8f
 
@@ -120,7 +113,9 @@ fun RenderNodeView(node: RenderNode, mediaLoader: MediaLoader?) {
 
         is ClozeNode -> LightAnnotatedCopy(clozeToAnnotatedString(node))
 
-        is ImageNode -> ImagePlaceholder(node)
+        is ImageNode ->
+            if (mediaLoader != null) MediaImage(node = node, loader = mediaLoader)
+            else ImageNodePlaceholder(node)
 
         RuleNode -> Box(
             modifier = Modifier
@@ -146,9 +141,13 @@ fun RenderNodeColumn(nodes: List<RenderNode>, mediaLoader: MediaLoader?) {
     }
 }
 
-/** Placeholder shown for an [ImageNode] until the real media loader lands. */
+/**
+ * Placeholder shown for an [ImageNode] when no loader is supplied, while its image
+ * is loading, or when loading/decoding failed. Shows the media `src` label so the
+ * content is never silently dropped.
+ */
 @Composable
-private fun ImagePlaceholder(node: ImageNode) {
+internal fun ImageNodePlaceholder(node: ImageNode) {
     Box(
         modifier = Modifier
             .fillMaxWidth()

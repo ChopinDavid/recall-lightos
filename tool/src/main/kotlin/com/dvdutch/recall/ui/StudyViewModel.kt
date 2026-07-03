@@ -56,6 +56,14 @@ class StudyViewModel(
     private val _state = MutableStateFlow<StudyState>(StudyState.Loading)
     val state: StateFlow<StudyState> = _state.asStateFlow()
 
+    /**
+     * The session's image loader, published once the bridge client is built in
+     * [begin]. Null until then (and the render views fall back to placeholders).
+     * Shares the session client and its ~16-entry LRU across every card.
+     */
+    private val _mediaLoader = MutableStateFlow<MediaLoader?>(null)
+    val mediaLoader: StateFlow<MediaLoader?> = _mediaLoader.asStateFlow()
+
     private var client: BridgeClient? = null
     private var machine: StudyMachine? = null
 
@@ -78,6 +86,7 @@ class StudyViewModel(
             )
             client = c
             machine = m
+            _mediaLoader.value = MediaLoader(c)
             // Mirror the machine's state into our surfaced flow.
             viewModelScope.launch(Dispatchers.Main) {
                 m.state.collect { _state.value = it }
