@@ -302,9 +302,13 @@ private fun androidx.compose.foundation.layout.ColumnScope.FailedBody(
  * line instead of the URL-interpolated Settings copy.
  */
 private fun failMessage(cause: FailCause): String = when (cause) {
-    is FailCause.Transport ->
-        if (cause.error is BridgeError.Unreachable) "can't reach your bridge"
-        else SettingsMessages.errorLine(cause.error, "")
+    is FailCause.Transport -> when (cause.error) {
+        is BridgeError.Unreachable -> "can't reach your bridge"
+        // A FULL_* divergence can't be resolved mid-session — the resolution flow lives on
+        // Home (AttentionScreen). Point the operator there instead of the server-facing copy.
+        is BridgeError.NeedsAttention -> "collections have diverged — resolve from the home screen"
+        else -> SettingsMessages.errorLine(cause.error, "")
+    }
     FailCause.AnswerRejected -> "answer rejected by the bridge — try again"
 }
 

@@ -1,5 +1,6 @@
 package com.dvdutch.recall.prefs
 
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 
 /**
@@ -21,6 +22,15 @@ object RecallPreferences {
 
     /** Sync account password. Stored in DataStore; masked in the UI. */
     val SYNC_PASSWORD = stringPreferencesKey("sync_password")
+
+    /**
+     * Durable "collections have diverged" latch. A [SyncController] sets this true when a
+     * normal sync reports a FULL_* requirement and clears it on a successful full sync.
+     * Unlike the controller's in-memory StateFlow (which dies with each fresh controller
+     * instance a ViewModel builds), this pref outlives the controller and the process, so
+     * Home can route to AttentionScreen even sessions/restarts after the divergence latched.
+     */
+    val NEEDS_ATTENTION = booleanPreferencesKey("needs_attention")
 
     /** Default sync endpoint when nothing has been persisted yet (host-local dev hub). */
     const val DEFAULT_SYNC_ENDPOINT = "http://10.0.2.2:18080/"
