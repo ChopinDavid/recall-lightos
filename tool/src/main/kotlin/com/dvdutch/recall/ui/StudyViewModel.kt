@@ -3,6 +3,7 @@ package com.dvdutch.recall.ui
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.lifecycle.viewModelScope
+import com.dvdutch.recall.audio.CardAudioPlayer
 import com.dvdutch.recall.engine.RecallEngine
 import com.dvdutch.recall.study.StudyMachine
 import com.dvdutch.recall.study.StudyState
@@ -66,6 +67,15 @@ class StudyViewModel(
     private val _mediaLoader = MutableStateFlow<MediaLoader?>(null)
     val mediaLoader: StateFlow<MediaLoader?> = _mediaLoader.asStateFlow()
 
+    /**
+     * The session's audio player, reading `[sound:]` media straight from the on-device
+     * `collection.media` dir (same resolution path as [MediaLoader]). Built in [begin]
+     * once the engine's storage is available and released on session teardown. Null
+     * until then, so early play/stop calls are no-ops. Its own single-thread runner keeps
+     * MediaPlayer I/O off both the UI and the machine's [driver] lane.
+     */
+    private var audioPlayer: CardAudioPlayer? = null
+
     private var machine: StudyMachine? = null
 
     /** True once [finish] has run so we never double-finish on hide + back. */
@@ -86,6 +96,7 @@ class StudyViewModel(
             )
             machine = m
             _mediaLoader.value = MediaLoader(engine.storage)
+            audioPlayer = CardAudioPlayer(resolve = engine.storage::mediaFile)
             // Mirror the machine's state into our surfaced flow.
             viewModelScope.launch(Dispatchers.Main) {
                 m.state.collect { _state.value = it }
@@ -101,7 +112,21 @@ class StudyViewModel(
 
     fun grade(rating: String) {
         val m = machine ?: return
+        // Stop this card's audio before advancing so it never bleeds into the next
+        // card. The next card's auto-play would supersede it anyway, but grading may
+        // reach Finished (no next card), and a lingering track then would be wrong.
+        audioPlayer?.stop()
         viewModelScope.launch(driver) { m.grade(rating) }
+    }
+
+    /** Plays [filenames] for the current side; a no-op empty list clears playback. */
+    fun playAudio(filenames: List<String>) {
+        audioPlayer?.play(filenames)
+    }
+
+    /** Stops any in-flight card audio (e.g. when the current side has none). */
+    fun stopAudio() {
+        audioPlayer?.stop()
     }
 
     /** Retry the whole session after a retriable failure by re-starting it. */
@@ -114,6 +139,10 @@ class StudyViewModel(
     fun finishSession() {
         if (finished) return
         finished = true
+        // Release the audio player on the SAME teardown path as the machine finish so
+        // leaving the screen (hide / pause / back) never leaves a track playing or a
+        // MediaPlayer un-released.
+        audioPlayer?.release()
         val m = machine
         viewModelScope.launch(driver) {
             runCatching { m?.finish() }
@@ -128,5 +157,11 @@ class StudyViewModel(
     override fun onAppPause() {
         super.onAppPause()
         finishSession()
+    }
+
+    /** Final safety net: release the player if the ViewModel is cleared without a hide. */
+    override fun onCleared() {
+        super.onCleared()
+        audioPlayer?.release()
     }
 }

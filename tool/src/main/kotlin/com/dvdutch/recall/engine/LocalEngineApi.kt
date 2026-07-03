@@ -171,9 +171,10 @@ class LocalEngineApi(
      * `stripAvTags` removes the reference outright, so it stays the source of the
      * compiled text. Both are backend calls and MUST run on [EngineHolder.lane].
      *
-     * The existing `unsupported/audio` placeholder node is KEPT (additive): Task 3
-     * owns replacing it with a real playback control, so behaviour here is unchanged
-     * beyond surfacing the filenames.
+     * The `unsupported/audio` marker node is still emitted here (a side-has-audio
+     * signal), but Task 3 retired its `▢ [audio]` UI: `NodeComposables` now drops the
+     * `audio` kind, and StudyScreen renders a real replay affordance driven by these
+     * `front_audio`/`back_audio` filenames instead.
      */
     private fun compileSide(
         backend: Backend,
