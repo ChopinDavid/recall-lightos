@@ -1,11 +1,14 @@
 package com.dvdutch.recall.compiler
 
 /**
- * Extracts the SIMPLE selectors whose rule set declares `display: none`, so the
- * compiler can drop CSS-hidden scaffolding the way real Anki never paints it.
+ * Extracts the SIMPLE selectors whose rule set declares `display: none` OR
+ * `visibility: hidden`, so the compiler can drop CSS-hidden scaffolding the way
+ * real Anki never paints it. (Both properties render nothing; e.g. the Russian
+ * Core 5000 deck hides Index/tag/Dispersion scaffolding with
+ * `.hidden { visibility: hidden }`.)
  *
  * Direct port of `anki_bridge.compiler`'s `_parse_hidden_css` / `_strip_at_rules`
- * / `_declares_display_none`. Conservative by design (never silently over-hide):
+ * / `_declares_hidden`. Conservative by design (never silently over-hide):
  * only `.class`, `#id`, `tag`, and `tag.class` selectors are honored; anything
  * with combinators/attributes/pseudos — including `tag#id` — is skipped. At-rule
  * blocks (`@media`/`@supports`/…) are stripped whole because their nested rules
@@ -32,6 +35,18 @@ class CssHidden private constructor(
         // A single declaration value of `none` (optionally `!important`).
         private val DISPLAY_NONE_DECL = Regex("""^none(?:\s*!important)?$""", RegexOption.IGNORE_CASE)
 
+        // A single declaration value of `hidden` (optionally `!important`).
+        private val VISIBILITY_HIDDEN_DECL = Regex("""^hidden(?:\s*!important)?$""", RegexOption.IGNORE_CASE)
+
+        // (property, value-matcher) pairs whose presence in a declaration block
+        // hides the element's content. `display: none` and `visibility: hidden`
+        // are the two CSS ways card templates conceal scaffolding; both render
+        // nothing, so both union into the hidden-selector set.
+        private val HIDDEN_DECLS = listOf(
+            "display" to DISPLAY_NONE_DECL,
+            "visibility" to VISIBILITY_HIDDEN_DECL,
+        )
+
         // simple selectors we honor: .class | #id | tag | tag.class
         private val SIMPLE_SELECTOR = Regex(
             "^(?:" +
@@ -47,7 +62,8 @@ class CssHidden private constructor(
         val EMPTY = CssHidden(emptySet(), emptySet(), emptySet(), emptySet())
 
         fun parse(css: String): CssHidden {
-            if (css.isEmpty() || !css.lowercase().contains("display")) return EMPTY
+            val lowered = css.lowercase()
+            if (css.isEmpty() || (!lowered.contains("display") && !lowered.contains("visibility"))) return EMPTY
             var text = CSS_COMMENT.replace(css, "")
             text = stripAtRules(text)
 
@@ -59,7 +75,7 @@ class CssHidden private constructor(
             for (m in RULE.findAll(text)) {
                 val selectors = m.groupValues[1]
                 val decls = m.groupValues[2]
-                if (!declaresDisplayNone(decls)) continue
+                if (!declaresHidden(decls)) continue
                 for (rawSel in selectors.split(",")) {
                     val sm = SIMPLE_SELECTOR.matchEntire(rawSel.trim()) ?: continue
                     val cls = sm.groups["cls"]?.value
@@ -81,21 +97,23 @@ class CssHidden private constructor(
         }
 
         /**
-         * True iff the declaration block contains an exact `display: none`.
+         * True iff the declaration block hides content via `display: none` OR
+         * `visibility: hidden`.
          * Per-declaration parse: split on `;`, split each on the first `:`, and
-         * require property exactly `display` and value exactly `none`
-         * (case-insensitive/trimmed), value optionally followed by `!important`.
+         * require an exact property/value match (case-insensitive/trimmed),
+         * value optionally followed by `!important`. Per-declaration (not
+         * substring) matching keeps `background-display: none`,
+         * `display: none-ish`, `x-visibility: hidden`, and
+         * `visibility: hidden-ish` from over-hiding.
          */
-        fun declaresDisplayNone(decls: String): Boolean {
+        fun declaresHidden(decls: String): Boolean {
             for (decl in decls.split(";")) {
                 val idx = decl.indexOf(':')
                 if (idx < 0) continue
-                val prop = decl.substring(0, idx)
-                val value = decl.substring(idx + 1)
-                if (prop.trim().lowercase() == "display" &&
-                    DISPLAY_NONE_DECL.matches(value.trim())
-                ) {
-                    return true
+                val prop = decl.substring(0, idx).trim().lowercase()
+                val value = decl.substring(idx + 1).trim()
+                for ((hiddenProp, valueRe) in HIDDEN_DECLS) {
+                    if (prop == hiddenProp && valueRe.matches(value)) return true
                 }
             }
             return false

@@ -239,7 +239,7 @@ private fun walk(el: Element, ctx: Ctx, styles: Set<String>, hidden: CssHidden) 
 }
 
 private fun isInlineHidden(el: Element): Boolean =
-    CssHidden.declaresDisplayNone(el.attr("style") ?: "")
+    CssHidden.declaresHidden(el.attr("style") ?: "")
 
 // ASCII-only digit check for img width/height, INTENTIONALLY narrower than
 // Python's str.isdigit(). str.isdigit() also accepts Unicode digits (e.g.

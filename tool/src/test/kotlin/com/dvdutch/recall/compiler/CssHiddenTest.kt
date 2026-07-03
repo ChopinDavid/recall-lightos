@@ -86,6 +86,76 @@ class CssHiddenTest {
         assertFalse(visible("""<span id="x">SECRET</span>""", "#x { display: none }"))
     }
 
+    // --- visibility: hidden hides content, same as display: none --------------
+    // A real browser paints neither `display:none` nor `visibility:hidden`, so
+    // the compiler must drop both (Russian Core 5000 scaffolding leak). Mirrors
+    // the display:none adversarial suite exactly.
+
+    @Test
+    fun visibilityHiddenHides() {
+        val html = """<div class="foo">SECRET</div>"""
+        assertFalse(visible(html, ".foo { visibility: hidden }"))
+    }
+
+    @Test
+    fun visibilityHiddenCaseAndImportantStillHides() {
+        val html = """<div class="foo">SECRET</div>"""
+        assertFalse(visible(html, ".foo { visibility: HIDDEN !important }"))
+    }
+
+    @Test
+    fun visibilityHiddenMultiDeclarationStillHides() {
+        val html = """<div class="foo">SECRET</div>"""
+        assertFalse(visible(html, ".foo { color: red; visibility: hidden }"))
+    }
+
+    @Test
+    fun visibilityHiddenInlineStyleHides() {
+        val html = """<div style="visibility: hidden">SECRET</div>"""
+        assertFalse(visible(html, ""))
+    }
+
+    @Test
+    fun visibilityVisibleDoesNotHide() {
+        val html = """<div class="foo">SECRET</div>"""
+        assertTrue(visible(html, ".foo { visibility: visible }"))
+    }
+
+    @Test
+    fun visibilityCollapseDoesNotHide() {
+        // `collapse` only hides table rows/columns; only exact `hidden` hides.
+        val html = """<div class="foo">SECRET</div>"""
+        assertTrue(visible(html, ".foo { visibility: collapse }"))
+    }
+
+    @Test
+    fun xVisibilityHiddenDoesNotHide() {
+        // property must be exactly `visibility`, not a substring.
+        val html = """<div class="foo">SECRET</div>"""
+        assertTrue(visible(html, ".foo { x-visibility: hidden }"))
+    }
+
+    @Test
+    fun visibilityHiddenIshDoesNotHide() {
+        // value must be exactly `hidden`, not a prefix of `hidden-ish`.
+        val html = """<div class="foo">SECRET</div>"""
+        assertTrue(visible(html, ".foo { visibility: hidden-ish }"))
+    }
+
+    @Test
+    fun visibilityHiddenMediaAtRuleDoesNotHide() {
+        val html = """<div class="foo">SECRET</div>"""
+        assertTrue(visible(html, "@media screen { .foo { visibility: hidden } }"))
+    }
+
+    @Test
+    fun visibilityHiddenOnlyCssStillParses() {
+        // a stylesheet with visibility but no `display` token must still parse
+        // (the early-exit guard now checks for `visibility` too).
+        val html = """<div class="foo">SECRET</div>"""
+        assertFalse(visible(html, ".foo { visibility: hidden }"))
+    }
+
     // --- degradation ladder: never raises on garbage --------------------------
 
     @Test
