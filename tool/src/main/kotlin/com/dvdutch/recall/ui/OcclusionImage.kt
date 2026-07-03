@@ -2,11 +2,15 @@ package com.dvdutch.recall.ui
 
 import android.util.Log
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -17,12 +21,18 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
 import com.dvdutch.recall.api.OcclusionNode
 import com.dvdutch.recall.api.OcclusionShapeState
 import com.dvdutch.recall.api.Pt
 import com.dvdutch.recall.api.ShapeState
+import com.thelightphone.sdk.ui.LightText
+import com.thelightphone.sdk.ui.LightTextVariant
+import com.thelightphone.sdk.ui.LightThemeTokens
+import com.thelightphone.sdk.ui.gridUnitsAsDp
 
 /**
  * Log tag for occlusion rendering diagnostics (degenerate natural dimensions).
@@ -45,6 +55,50 @@ private val OUTLINE_COLOR = Color.White
 
 /** Outline stroke width, in natural-image pixels (scaled with the image). */
 private const val OUTLINE_STROKE_PX = 2f
+
+// --- Base-image load state (why this exists) ----------------------------------
+
+/**
+ * The three states an occlusion base image can be in.
+ *
+ * This exists to kill a real UX bug: the generic [ImageNodePlaceholder] is a *solid
+ * grey filled box*, and a masked occlusion shape ([MASK_FILL]) is *also* a solid grey
+ * box. So a mid-load occlusion card rendered through the shared placeholder was visually
+ * indistinguishable from an occlusion whose mask never lifts — it read as broken. The
+ * loading and failed states must therefore be *text in a bordered (unfilled) box*, never
+ * a solid fill, so they can never be mistaken for a mask.
+ */
+enum class OcclusionImageState {
+    /** Decode in flight — bitmap not yet resolved. */
+    Loading,
+
+    /** Load completed but yielded no bitmap (missing / undecodable media). */
+    Failed,
+
+    /** Bitmap decoded and ready to draw. */
+    Loaded,
+}
+
+/**
+ * Resolves the [OcclusionImageState] from the two observable signals of the
+ * [produceState] load: whether the producer has finished ([loadCompleted]) and the
+ * resolved [bitmap] (null until/unless a bitmap decodes).
+ *
+ * `produceState` seeds `null` (Loading), then the producer resolves to a bitmap
+ * (Loaded) or to `null` (Failed). The only way to tell a still-loading null from a
+ * failed null is the completion flag, so we thread it through. Pure and unit-tested.
+ */
+fun occlusionImageState(bitmap: ImageBitmap?, loadCompleted: Boolean): OcclusionImageState = when {
+    bitmap != null -> OcclusionImageState.Loaded
+    loadCompleted -> OcclusionImageState.Failed
+    else -> OcclusionImageState.Loading
+}
+
+/** Centred text shown while the occlusion base image is still decoding. */
+private const val LOADING_LABEL = "Loading image…"
+
+/** Centred text shown when the occlusion base image is missing / failed to decode. */
+private const val FAILED_LABEL = "⚠ image unavailable"
 
 // --- Pure scaling / coordinate math (Android-runtime-free, unit-tested) -------
 
@@ -177,17 +231,27 @@ fun scaleShape(shape: OcclusionShapeState, transform: FitTransform): ScaledShape
 @Composable
 fun OcclusionImage(node: OcclusionNode, mediaLoader: MediaLoader?) {
     if (mediaLoader == null) {
-        ImageNodePlaceholder(occlusionPlaceholderNode(node))
+        // No loader supplied (config-time): treat as unavailable, but with the
+        // bordered text state — never a solid grey fill that reads as a stuck mask.
+        OcclusionImagePlaceholder(OcclusionImageState.Failed, node.image)
         return
     }
 
-    val bitmap by produceState<ImageBitmap?>(initialValue = null, node.image, mediaLoader) {
-        value = mediaLoader.load(node.image)
+    // Two signals distinguish Loading from Failed: `completed` flips true only after the
+    // producer returns, so a still-loading null (Loading) is never confused with a
+    // resolved null (Failed). See [occlusionImageState].
+    val loaded by produceState<Pair<ImageBitmap?, Boolean>>(
+        initialValue = null to false,
+        node.image,
+        mediaLoader,
+    ) {
+        value = mediaLoader.load(node.image) to true
     }
 
+    val (bitmap, completed) = loaded
     val image = bitmap
     if (image == null) {
-        ImageNodePlaceholder(occlusionPlaceholderNode(node))
+        OcclusionImagePlaceholder(occlusionImageState(bitmap, completed), node.image)
         return
     }
 
@@ -310,9 +374,38 @@ private fun polygonPath(points: List<Pair<Float, Float>>): Path = Path().apply {
 }
 
 /**
- * A synthetic [com.dvdutch.recall.api.ImageNode] used only to reuse [ImageNodePlaceholder]'s
- * labelled fallback box when the occlusion base image can't be shown — same "content is
- * never silently dropped" contract as [MediaImage].
+ * The non-drawn states of an occlusion base image: a *bordered, text-labelled, unfilled*
+ * box — deliberately NOT the solid grey [ImageNodePlaceholder]. A solid grey fill is
+ * exactly what a [MASK_FILL] mask looks like, so reusing it made a mid-load (or missing)
+ * occlusion card indistinguishable from an occlusion whose mask never lifts. Text plus an
+ * outline (no fill) can never be mistaken for a mask.
+ *
+ * [state] must be [OcclusionImageState.Loading] or [OcclusionImageState.Failed]; the
+ * [OcclusionImageState.Loaded] state is drawn by [OcclusionImage] itself and never
+ * reaches here. [imageName] is the media filename, appended so content is never silently
+ * dropped (same contract as [MediaImage]'s placeholder).
  */
-private fun occlusionPlaceholderNode(node: OcclusionNode) =
-    com.dvdutch.recall.api.ImageNode(src = node.image, w = null, h = null)
+@Composable
+private fun OcclusionImagePlaceholder(state: OcclusionImageState, imageName: String) {
+    val label = when (state) {
+        OcclusionImageState.Loading -> LOADING_LABEL
+        OcclusionImageState.Failed -> "$FAILED_LABEL — $imageName"
+        // Loaded is drawn by OcclusionImage; never routed here. Fall back defensively.
+        OcclusionImageState.Loaded -> "$FAILED_LABEL — $imageName"
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 0.5f.gridUnitsAsDp())
+            .border(1.dp, LightThemeTokens.colors.contentSecondary)
+            .padding(2f.gridUnitsAsDp()),
+        contentAlignment = Alignment.Center,
+    ) {
+        LightText(
+            text = label,
+            variant = LightTextVariant.Fine,
+            align = TextAlign.Center,
+            lighten = true,
+        )
+    }
+}
