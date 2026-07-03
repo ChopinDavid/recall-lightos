@@ -2,6 +2,9 @@ package com.dvdutch.recall.engine
 
 import anki.notes.Note
 import com.dvdutch.recall.api.AnswerIn
+import com.dvdutch.recall.api.OcclusionNode
+import com.dvdutch.recall.api.OcclusionShapeState
+import com.dvdutch.recall.api.ShapeState
 import com.dvdutch.recall.api.TextNode
 import com.dvdutch.recall.api.UnsupportedNode
 import kotlinx.coroutines.runBlocking
@@ -78,6 +81,73 @@ class LocalEngineApiTest {
             backend.addNote(n, deckId)
             deckId
         }
+    }
+
+    /**
+     * Seeds a 3-shape (rect+ellipse+polygon) Image Occlusion note into [deckName] and
+     * returns the deck id. Creates the stock IO notetype, writes a real 640×480 PNG to a
+     * temp path, and calls the backend's `addImageOcclusionNote` with the verified grammar.
+     */
+    private fun seedOcclusionNote(deckName: String, occludeInactive: Boolean): Long {
+        return onEngine { backend ->
+            backend.addImageOcclusionNotetype()
+            val ioId = backend.getNotetypeNames().first { nn ->
+                backend.getNotetype(nn.id).config.originalStockKind ==
+                    anki.notetypes.StockNotetype.OriginalStockKind.ORIGINAL_STOCK_KIND_IMAGE_OCCLUSION
+            }.id
+            val deckId = deckIdCreating(backend, deckName)
+            backend.setCurrentDeck(deckId)
+            val png = tmpDir.resolve("occ.png")
+            Files.write(png, MINIMAL_PNG)
+            val oi = if (occludeInactive) ":oi=1" else ""
+            val occlusions =
+                "{{c1::image-occlusion:rect:left=10:top=20:width=100:height=80$oi}}" +
+                    "{{c2::image-occlusion:ellipse:left=200:top=50:width=60:height=40:rx=30:ry=20$oi}}" +
+                    "{{c3::image-occlusion:polygon:points=10,10 60,10 35,50$oi}}"
+            backend.addImageOcclusionNote(
+                png.toString(), occlusions, "Cerebellum", "Coordinates motor", emptyList(), ioId,
+            )
+            deckId
+        }
+    }
+
+    @Test
+    fun `queue emits a native OcclusionNode for an Image Occlusion card not a canvas`() {
+        // card ord 0 tests occlusion ordinal 1 (the rect). Hide-all mode.
+        selectDeck(seedOcclusionNote("Anatomy", occludeInactive = true))
+        val q = runBlocking { api.queue(20) }
+        // Cards come back in ordinal order; ord 0 is the rect card.
+        val card = q.cards.first()
+
+        // The front must carry a real OcclusionNode, NOT the broken canvas/unsupported path.
+        val occ = card.front.filterIsInstance<OcclusionNode>().single()
+        assertTrue(
+            card.front.none { it is UnsupportedNode && it.kind == "canvas" },
+            "occlusion card must not fall through to a canvas unsupported node: ${card.front}",
+        )
+        assertEquals("occ.png", occ.image)
+        assertEquals(640, occ.naturalW, "natural width decoded from image bytes")
+        assertEquals(480, occ.naturalH, "natural height decoded from image bytes")
+        assertEquals("front", occ.side)
+        assertEquals(3, occ.shapes.size)
+
+        // The tested shape (ordinal 1 = rect) is MASKED on the front.
+        val rect = occ.shapes.filterIsInstance<OcclusionShapeState.Rect>().single()
+        assertEquals(ShapeState.MASKED, rect.state)
+        // Hide-all: the inactive ellipse/polygon are also masked on the front.
+        assertTrue(occ.shapes.all { it.state == ShapeState.MASKED }, "hide-all front all masked: ${occ.shapes}")
+
+        // Header is a text node, present before the image on both sides.
+        val frontText = card.front.filterIsInstance<TextNode>().flatMap { it.runs }.joinToString("") { it.s }
+        assertTrue("Cerebellum" in frontText, "header text node missing on front: $frontText")
+
+        // Back reveals the tested rect (outline) and carries Back Extra text.
+        val backOcc = card.back.filterIsInstance<OcclusionNode>().single()
+        assertEquals("back", backOcc.side)
+        val backRect = backOcc.shapes.filterIsInstance<OcclusionShapeState.Rect>().single()
+        assertEquals(ShapeState.REVEALED_OUTLINE, backRect.state)
+        val backText = card.back.filterIsInstance<TextNode>().flatMap { it.runs }.joinToString("") { it.s }
+        assertTrue("Coordinates motor" in backText, "back extra text node missing: $backText")
     }
 
     @Test
@@ -228,6 +298,10 @@ class LocalEngineApiTest {
     // --- Sync-aware study brackets (Task 3) ---------------------------------------
 
     private companion object {
+        /** A real 640×480 PNG (all-black) so `imageData` decodes to natural size 640×480. */
+        val MINIMAL_PNG: ByteArray = java.util.Base64.getDecoder().decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAoAAAAHgCAIAAAC6s0uzAAADk0lEQVR42u3BAQEAAACCIP+vbkhAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwaBKyAAEWSyeZAAAAAElFTkSuQmCC",
+        )
         const val SYNC_ENDPOINT = "http://127.0.0.1:18080/"
         const val SYNC_USER = "test"
         const val SYNC_PW = "test123"

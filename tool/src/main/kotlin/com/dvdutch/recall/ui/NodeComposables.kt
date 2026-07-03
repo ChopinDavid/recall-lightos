@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import com.dvdutch.recall.api.ClozeNode
 import com.dvdutch.recall.api.ImageNode
+import com.dvdutch.recall.api.OcclusionNode
 import com.dvdutch.recall.api.RenderNode
 import com.dvdutch.recall.api.RuleNode
 import com.dvdutch.recall.api.TextNode
@@ -131,6 +132,16 @@ fun RenderNodeView(node: RenderNode, mediaLoader: MediaLoader?) {
                 .height(1.dp)
                 .background(LightThemeTokens.colors.contentSecondary),
         )
+
+        is OcclusionNode ->
+            // Task 1 emits this node from the engine; the real Compose overlay lands in
+            // a later task. Until then show a labelled placeholder so the card is never
+            // blank (and never falls back to the broken canvas HTML path).
+            LightText(
+                text = "▢ [occlusion: ${node.shapes.size} shapes]",
+                variant = LightTextVariant.Fine,
+                lighten = true,
+            )
 
         is UnsupportedNode ->
             // The `audio` placeholder is retired: audio is now real playback with a

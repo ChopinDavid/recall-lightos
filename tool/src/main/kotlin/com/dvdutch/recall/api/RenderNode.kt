@@ -55,6 +55,88 @@ data object RuleNode : RenderNode
 data class UnsupportedNode(val kind: String) : RenderNode
 
 /**
+ * A natively-rendered Image Occlusion card side. Emitted directly by the engine
+ * from rslib's structured `getImageOcclusionNote` (NOT via the HTML→node compiler),
+ * so the canvas/JS template is bypassed entirely.
+ *
+ * The engine has already resolved every shape's [OcclusionShapeState.state] for this
+ * side (front vs back × tested-vs-inactive × hide-one/hide-all), so the composable is
+ * dumb: it draws each shape at its natural-pixel coordinates, scaled by
+ * displayedSize / (naturalW, naturalH), in the fill/outline/context style its state
+ * dictates.
+ *
+ * @property image the base image filename (bare name, served like any [ImageNode] src).
+ * @property naturalW natural image width in pixels — the reference frame for coords.
+ * @property naturalH natural image height in pixels.
+ * @property shapes the resolved shapes for this side.
+ * @property side `"front"` or `"back"`.
+ */
+@Serializable
+@SerialName("occlusion")
+data class OcclusionNode(
+    val image: String,
+    val naturalW: Int,
+    val naturalH: Int,
+    val shapes: List<OcclusionShapeState>,
+    val side: String,
+) : RenderNode
+
+/** How a single occlusion shape must be drawn on the resolved side. */
+enum class ShapeState {
+    /** Solid opaque mask — the shape is hidden. */
+    MASKED,
+
+    /** Outline only — the tested shape revealed on the answer side. */
+    REVEALED_OUTLINE,
+
+    /** Shown as plain context (no mask, no outline) — hide-one inactive shapes. */
+    CONTEXT,
+}
+
+/** A simple natural-pixel point for polygon geometry. */
+@Serializable
+data class Pt(val x: Double, val y: Double)
+
+/**
+ * A typed occlusion shape carrying its geometry (natural pixels) and its already
+ * resolved [state]. `text` shapes are intentionally NOT modelled in v1 (skipped by
+ * the parser); the med-student majority is rect/ellipse/polygon.
+ */
+@Serializable
+sealed interface OcclusionShapeState {
+    val state: ShapeState
+
+    @Serializable
+    @SerialName("rect")
+    data class Rect(
+        val left: Double,
+        val top: Double,
+        val width: Double,
+        val height: Double,
+        override val state: ShapeState,
+    ) : OcclusionShapeState
+
+    @Serializable
+    @SerialName("ellipse")
+    data class Ellipse(
+        val left: Double,
+        val top: Double,
+        val width: Double,
+        val height: Double,
+        val rx: Double,
+        val ry: Double,
+        override val state: ShapeState,
+    ) : OcclusionShapeState
+
+    @Serializable
+    @SerialName("polygon")
+    data class Polygon(
+        val points: List<Pt>,
+        override val state: ShapeState,
+    ) : OcclusionShapeState
+}
+
+/**
  * Selects a [RenderNode] subtype from the `"t"` discriminator. Any tag we don't
  * recognise is mapped to [UnsupportedNode] via [UnsupportedNodeSerializer].
  */
@@ -66,6 +148,7 @@ object RenderNodeSerializer : JsonContentPolymorphicSerializer<RenderNode>(Rende
             "cloze" -> ClozeNode.serializer()
             "image" -> ImageNode.serializer()
             "rule" -> RuleNode.serializer()
+            "occlusion" -> OcclusionNode.serializer()
             else -> UnsupportedNodeSerializer(tag ?: "")
         }
     }

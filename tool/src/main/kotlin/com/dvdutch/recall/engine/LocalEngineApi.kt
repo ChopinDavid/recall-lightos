@@ -10,8 +10,11 @@ import com.dvdutch.recall.api.BridgeError
 import com.dvdutch.recall.api.CardPayload
 import com.dvdutch.recall.api.Counts
 import com.dvdutch.recall.api.Deck
+import com.dvdutch.recall.api.OcclusionNode
 import com.dvdutch.recall.api.QueueResponse
 import com.dvdutch.recall.api.RenderNode
+import com.dvdutch.recall.api.TextNode
+import com.dvdutch.recall.api.TextRun
 import com.dvdutch.recall.api.StudyStartResponse
 import com.dvdutch.recall.api.SyncInfo
 import com.dvdutch.recall.api.UnsupportedNode
@@ -127,6 +130,7 @@ class LocalEngineApi(
     /** MUST be called on [EngineHolder.lane]. */
     private fun cardPayload(backend: Backend, entry: QueuedCards.QueuedCard): CardPayload {
         val card = entry.card
+        occlusionPayload(backend, entry)?.let { return it }
         val rendered = backend.renderExistingCard(card.id, false, true)
         val css = rendered.css
         // Assemble the question HTML first: rslib leaves the answer's {{FrontSide}}
@@ -149,6 +153,88 @@ class LocalEngineApi(
             backAudio = back.audio,
         )
     }
+
+    /**
+     * If [entry]'s card belongs to an Image Occlusion notetype, builds its self-contained
+     * [CardPayload] natively from rslib's structured `getImageOcclusionNote` and returns it;
+     * otherwise returns null so the caller falls through to the normal HTML→node path.
+     *
+     * This deliberately BYPASSES [compileHtml]: the occlusion template is canvas + JS we
+     * cannot execute (the source of the current `▢ [canvas]` + "No cloze found" breakage),
+     * but every fact we need — mask geometry in natural pixels, the tested ordinal, the
+     * hide mode, header/back-extra, and the image bytes — is available structured.
+     *
+     * Detection is by `Notetype.config.originalStockKind == ORIGINAL_STOCK_KIND_IMAGE_OCCLUSION`
+     * (locale-independent, unlike the notetype name; the IO notetype's *kind* is KIND_CLOZE,
+     * so only originalStockKind distinguishes it). MUST be called on [EngineHolder.lane].
+     */
+    private fun occlusionPayload(backend: Backend, entry: QueuedCards.QueuedCard): CardPayload? {
+        val card = entry.card
+        // The scheduler Card proto carries no notetype id, so resolve it via the note.
+        val note = backend.getNote(card.noteId)
+        val notetype = backend.getNotetype(note.notetypeId)
+        if (notetype.config.originalStockKind !=
+            anki.notetypes.StockNotetype.OriginalStockKind.ORIGINAL_STOCK_KIND_IMAGE_OCCLUSION
+        ) {
+            return null
+        }
+        val resp = backend.getImageOcclusionNote(card.noteId)
+        // A backend-side error (e.g. malformed field) → fall back to the generic path
+        // rather than crash the whole queue on one bad note.
+        if (resp.hasError() || !resp.hasNote()) return null
+        val occNote = resp.note
+
+        val parsed = ParsedOcclusion(
+            occludeInactive = occNote.occludeInactive,
+            occlusions = occNote.occlusionsList.map { occ ->
+                RawOcclusion(
+                    ordinal = occ.ordinal,
+                    shapes = occ.shapesList.map { sh ->
+                        RawShape(sh.shape, sh.propertiesList.associate { it.name to it.value })
+                    },
+                )
+            },
+        )
+        // card.templateIdx is the 0-based card ordinal; the tested occlusion is 1-based.
+        val tested = card.templateIdx + 1
+        val dims = imageDims(occNote.imageData.toByteArray()) ?: ImageDims(0, 0)
+
+        fun sideNode(isBack: Boolean) = OcclusionNode(
+            image = occNote.imageFileName,
+            naturalW = dims.width,
+            naturalH = dims.height,
+            shapes = resolveShapes(parsed, tested, isBack),
+            side = if (isBack) "back" else "front",
+        )
+
+        // Header (both sides) and Back Extra (back only) become ordinary text nodes.
+        val header = textNodeOrNull(occNote.header)
+        val backExtra = textNodeOrNull(occNote.backExtra)
+        val front = buildList {
+            header?.let { add(it) }
+            add(sideNode(isBack = false))
+        }
+        val back = buildList {
+            header?.let { add(it) }
+            add(sideNode(isBack = true))
+            backExtra?.let { add(it) }
+        }
+        val labels = backend.describeNextStates(entry.states)
+        return CardPayload(
+            cardId = card.id,
+            noteId = card.noteId,
+            front = front,
+            back = back,
+            states = Base64.getEncoder().encodeToString(entry.states.toByteArray()),
+            nextDueLabels = LABEL_KEYS.zip(labels).toMap(),
+            frontAudio = emptyList(),
+            backAudio = emptyList(),
+        )
+    }
+
+    /** A single-run [TextNode] for non-blank text, or null when the text is blank. */
+    private fun textNodeOrNull(text: String): RenderNode? =
+        text.trim().takeIf { it.isNotEmpty() }?.let { TextNode(listOf(TextRun(it))) }
 
     /** One compiled card side: its render nodes plus the ordered audio filenames. */
     private data class CompiledSide(val nodes: List<RenderNode>, val audio: List<String>)
