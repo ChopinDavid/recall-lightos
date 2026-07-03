@@ -54,10 +54,31 @@ object PeriodicSync {
     val PERIOD = 60.minutes
 
     /**
-     * Resolves the [SyncController] to sync with, or null when sync is unconfigured.
-     * Task 4 replaces the default with a prefs-backed resolver; overridable for tests.
+     * Resolves the [SyncController] to sync with, or null when sync is unconfigured
+     * (or no collection has been downloaded yet — nothing to sync). The default
+     * assembles it from persisted config + storage via [RecallEngine]: it opens the
+     * collection on the lane and builds a controller, returning null when the config
+     * is blank or the collection file is absent. Overridable for tests.
+     *
+     * Runs on the WorkManager worker thread (the handler is a suspend lambda), so a
+     * short blocking prefs read + collection open here is acceptable.
      */
-    var controllerProvider: (SealedLightContext) -> SyncController? = { null }
+    var controllerProvider: (SealedLightContext) -> SyncController? = { ctx ->
+        kotlinx.coroutines.runBlocking {
+            val engine = RecallEngine(ctx.filesDir, ctx.dataStore)
+            if (!engine.storage.collectionExists()) {
+                null // nothing downloaded yet — first-run owns the initial download
+            } else {
+                val controller = engine.controller()
+                if (!controller.configured) {
+                    null
+                } else {
+                    engine.openCollection()
+                    controller
+                }
+            }
+        }
+    }
 
     /**
      * Schedule the periodic sync. Idempotent (UPDATE policy): calling it repeatedly keeps

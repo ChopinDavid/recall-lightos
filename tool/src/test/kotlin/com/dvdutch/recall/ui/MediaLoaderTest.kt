@@ -1,28 +1,19 @@
 package com.dvdutch.recall.ui
 
-import com.dvdutch.recall.api.BridgeClient
-import com.dvdutch.recall.api.BridgeError
-import io.ktor.client.engine.mock.MockEngine
-import io.ktor.client.engine.mock.respond
-import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpStatusCode
-import io.ktor.http.headersOf
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
+import com.dvdutch.recall.prefs.RecallStorage
 import kotlinx.coroutines.runBlocking
-import kotlinx.io.IOException
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 /**
  * Unit coverage for the pure, Android-runtime-free parts of media loading:
  * filename extraction (incl. percent-decoding), the session LRU's eviction order,
- * and the failure→null contract of [MediaLoader.load]. Bitmap decoding is
- * [android.graphics.BitmapFactory] and is verified on the emulator instead.
+ * and the file-read + failure→null contract of [MediaLoader.load]. Bitmap decoding
+ * is [android.graphics.BitmapFactory] and is verified on the emulator instead — the
+ * tests inject a pure decoder that echoes the byte count so file reads are asserted
+ * without an Android runtime.
  */
 class MediaLoaderTest {
 
@@ -106,106 +97,61 @@ class MediaLoaderTest {
         assertNull(lru.get("b"))
     }
 
-    // --- load() failure contract --------------------------------------------
+    // --- load() file-read contract ------------------------------------------
 
-    /** A [BridgeClient] whose transport always fails, so `media()` throws Unreachable. */
-    private fun unreachableClient(): BridgeClient =
-        BridgeClient(
-            baseUrl = "https://bridge.example",
-            token = "t",
-            engine = MockEngine { throw IOException("connection refused") },
-        )
-
-    /** A [BridgeClient] that serves the given bytes for any media request. */
-    private fun bytesClient(bytes: ByteArray): BridgeClient =
-        BridgeClient(
-            baseUrl = "https://bridge.example",
-            token = "t",
-            engine = MockEngine {
-                respond(
-                    content = bytes,
-                    status = HttpStatusCode.OK,
-                    headers = headersOf(
-                        HttpHeaders.ContentType to listOf("image/webp"),
-                        "X-Bridge-Api" to listOf("1"),
-                    ),
-                )
-            },
-        )
-
-    @Test
-    fun sanityUnreachableClientThrows(): Unit = runBlocking {
-        assertFailsWith<BridgeError.Unreachable> { unreachableClient().media("x.png") }
+    private fun tmpMediaDir(): RecallStorage {
+        val root = File.createTempFile("recall-media", "").apply { delete(); mkdirs() }
+        val storage = RecallStorage(root)
+        storage.mediaDir.mkdirs()
+        return storage
     }
 
     @Test
-    fun loadReturnsNullWhenClientUnreachable(): Unit = runBlocking {
-        val loader = MediaLoader(unreachableClient())
-        assertNull(loader.load("/v1/media/dog.jpg"))
+    fun loadReadsBytesFromTheMediaFileAndHandsThemToDecode(): Unit = runBlocking {
+        // The real decoder (BitmapFactory) needs the Android runtime, so the injected
+        // decoder records the byte count it received: seeing 42 bytes proves load()
+        // read the on-disk file and handed its contents to decode.
+        val storage = tmpMediaDir()
+        storage.mediaFile("dog.jpg").writeBytes(ByteArray(42))
+        var seen = -1
+        val loader = MediaLoader(storage) { bytes -> seen = bytes.size; null }
+        loader.load("dog.jpg")
+        assertEquals(42, seen)
+        storage.collectionDir.deleteRecursively()
+    }
+
+    @Test
+    fun loadReturnsNullWhenFileMissing(): Unit = runBlocking {
+        val storage = tmpMediaDir()
+        var decodeCalls = 0
+        val loader = MediaLoader(storage) { decodeCalls++; null }
+        assertNull(loader.load("absent.jpg"))
+        assertEquals(0, decodeCalls, "a missing file must never reach the decoder")
+        storage.collectionDir.deleteRecursively()
     }
 
     @Test
     fun loadReturnsNullWhenSrcHasNoFilename(): Unit = runBlocking {
-        val loader = MediaLoader(unreachableClient())
+        val storage = tmpMediaDir()
+        var decodeCalls = 0
+        val loader = MediaLoader(storage) { decodeCalls++; null }
         assertNull(loader.load("not-a-media-url"))
-    }
-
-    /**
-     * A [BridgeClient] whose `media()` signals [entered] once the request reaches the
-     * engine, then parks on [gate] forever — letting a test cancel the loading coroutine
-     * while it is suspended mid-fetch.
-     */
-    private fun suspendingClient(
-        entered: CompletableDeferred<Unit>,
-        gate: CompletableDeferred<Unit>,
-    ): BridgeClient =
-        BridgeClient(
-            baseUrl = "https://bridge.example",
-            token = "t",
-            engine = MockEngine {
-                entered.complete(Unit)
-                gate.await() // park here until cancelled (the test never completes gate)
-                respond(content = byteArrayOf(), status = HttpStatusCode.OK)
-            },
-        )
-
-    @Test
-    fun loadPropagatesCancellation(): Unit = runBlocking {
-        // Cancelling a coroutine parked mid-load must surface as CancellationException,
-        // not be swallowed into a null (which would mask the cancellation as a load
-        // failure and leave the placeholder up as if the fetch had genuinely failed).
-        // We capture what load() itself does — return vs. throw — from inside the
-        // coroutine, so the assertion reflects load()'s catch behaviour rather than
-        // merely the enclosing Job's cancelled state.
-        val entered = CompletableDeferred<Unit>()
-        val gate = CompletableDeferred<Unit>()
-        val loader = MediaLoader(suspendingClient(entered, gate))
-        val outcome = CompletableDeferred<Throwable?>()
-        val job = launch {
-            try {
-                loader.load("/v1/media/dog.jpg")
-                outcome.complete(null) // load() returned (e.g. swallowed cancellation)
-            } catch (e: Throwable) {
-                outcome.complete(e) // load() propagated
-            }
-        }
-        entered.await() // producer is now parked inside media()
-        job.cancel()
-        val thrown = outcome.await()
-        assertTrue(thrown is CancellationException, "expected load() to propagate cancellation, got $thrown")
+        assertNull(loader.load(""))
+        assertEquals(0, decodeCalls, "a non-media src never reaches the file/decoder")
+        storage.collectionDir.deleteRecursively()
     }
 
     @Test
     fun loadReturnsNullWhenDecodeFails(): Unit = runBlocking {
-        // Non-image bytes: the injected decoder returns null (as BitmapFactory would),
-        // so load() yields null rather than throwing. This also proves the client is
-        // actually reached and its bytes handed to the decoder.
+        // Undecodable bytes: the injected decoder returns null (as BitmapFactory would),
+        // so load() yields null rather than throwing. Also proves the file is read and
+        // its bytes handed to the decoder.
+        val storage = tmpMediaDir()
+        storage.mediaFile("dog.jpg").writeBytes(byteArrayOf(0, 1, 2, 3))
         var decodeCalls = 0
-        val loader = MediaLoader(bytesClient(byteArrayOf(0, 1, 2, 3))) {
-            decodeCalls++
-            null
-        }
-        assertNull(loader.load("/v1/media/dog.jpg"))
+        val loader = MediaLoader(storage) { decodeCalls++; null }
+        assertNull(loader.load("dog.jpg"))
         assertEquals(1, decodeCalls)
+        storage.collectionDir.deleteRecursively()
     }
 }

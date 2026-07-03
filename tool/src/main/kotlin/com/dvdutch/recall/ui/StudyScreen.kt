@@ -55,7 +55,11 @@ class StudyScreen(
         get() = StudyViewModel::class.java
 
     override fun createViewModel(): StudyViewModel =
-        StudyViewModel(deckId = deckId, dataStore = lightContext.dataStore)
+        StudyViewModel(
+            deckId = deckId,
+            filesDir = lightContext.filesDir,
+            dataStore = lightContext.dataStore,
+        )
 
     @Composable
     override fun Content() {

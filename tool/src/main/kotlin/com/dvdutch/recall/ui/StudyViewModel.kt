@@ -3,8 +3,7 @@ package com.dvdutch.recall.ui
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.lifecycle.viewModelScope
-import com.dvdutch.recall.api.BridgeClient
-import com.dvdutch.recall.prefs.RecallPreferences
+import com.dvdutch.recall.engine.RecallEngine
 import com.dvdutch.recall.study.StudyMachine
 import com.dvdutch.recall.study.StudyState
 import com.thelightphone.sdk.LightViewModel
@@ -14,9 +13,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.UUID
 
 /**
@@ -44,6 +43,7 @@ import java.util.UUID
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class StudyViewModel(
     private val deckId: Long,
+    private val filesDir: File,
     private val dataStore: DataStore<Preferences>,
     /**
      * The serial confinement lane for every machine call. Defaults to a single-
@@ -53,18 +53,19 @@ class StudyViewModel(
     private val driver: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(1),
 ) : LightViewModel<Unit>() {
 
+    private val engine = RecallEngine(filesDir, dataStore)
+
     private val _state = MutableStateFlow<StudyState>(StudyState.Loading)
     val state: StateFlow<StudyState> = _state.asStateFlow()
 
     /**
-     * The session's image loader, published once the bridge client is built in
-     * [begin]. Null until then (and the render views fall back to placeholders).
-     * Shares the session client and its ~16-entry LRU across every card.
+     * The session's image loader, reading media straight from the on-device
+     * `collection.media` dir. Published in [begin]; shares one ~16-entry LRU across
+     * every card. Null until then (render views fall back to placeholders).
      */
     private val _mediaLoader = MutableStateFlow<MediaLoader?>(null)
     val mediaLoader: StateFlow<MediaLoader?> = _mediaLoader.asStateFlow()
 
-    private var client: BridgeClient? = null
     private var machine: StudyMachine? = null
 
     /** True once [finish] has run so we never double-finish on hide + back. */
@@ -74,19 +75,17 @@ class StudyViewModel(
     fun begin() {
         if (machine != null) return
         viewModelScope.launch(driver) {
-            val prefs = dataStore.data.first()
-            val url = prefs[RecallPreferences.BRIDGE_URL] ?: RecallPreferences.DEFAULT_BRIDGE_URL
-            val token = prefs[RecallPreferences.BRIDGE_TOKEN].orEmpty()
-            val c = BridgeClient(baseUrl = url, token = token)
+            engine.openCollection()
+            val controller = engine.controller().takeIf { it.configured }
+            val api = engine.api(controller)
             val m = StudyMachine(
-                client = c,
+                client = api,
                 deckId = deckId,
                 nowMs = { System.currentTimeMillis() },
                 uuid = { UUID.randomUUID().toString() },
             )
-            client = c
             machine = m
-            _mediaLoader.value = MediaLoader(c)
+            _mediaLoader.value = MediaLoader(engine.storage)
             // Mirror the machine's state into our surfaced flow.
             viewModelScope.launch(Dispatchers.Main) {
                 m.state.collect { _state.value = it }
@@ -118,7 +117,6 @@ class StudyViewModel(
         val m = machine
         viewModelScope.launch(driver) {
             runCatching { m?.finish() }
-            runCatching { client?.close() }
         }
     }
 

@@ -4,8 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.viewModelScope
-import com.dvdutch.recall.api.BridgeClient
-import com.dvdutch.recall.api.BridgeError
+import com.dvdutch.recall.engine.RecallEngine
 import com.dvdutch.recall.prefs.RecallPreferences
 import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SimpleLightScreen
@@ -17,38 +16,49 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /** Which sub-screen of Settings is on screen. Mirrors weather's mode enum. */
 sealed class SettingsMode {
-    /** The settings list: URL + token rows, Test-connection action, status line. */
+    /** The settings list: endpoint/username/password rows, Test-login action, status. */
     data object Main : SettingsMode()
 
-    /** Full-screen editor for the bridge URL. */
-    data object EditUrl : SettingsMode()
+    /** Full-screen editor for the sync endpoint. */
+    data object EditEndpoint : SettingsMode()
 
-    /** Full-screen editor for the bridge token. */
-    data object EditToken : SettingsMode()
+    /** Full-screen editor for the sync username. */
+    data object EditUsername : SettingsMode()
+
+    /** Full-screen editor for the sync password. */
+    data object EditPassword : SettingsMode()
 }
 
 data class SettingsUiState(
     val mode: SettingsMode = SettingsMode.Main,
-    val bridgeUrl: String = RecallPreferences.DEFAULT_BRIDGE_URL,
-    val bridgeToken: String = "",
+    val endpoint: String = RecallPreferences.DEFAULT_SYNC_ENDPOINT,
+    val username: String = "",
+    val password: String = "",
+    /** The last-login/test status line under the fields (null = nothing yet). */
     val statusLine: String? = null,
+    /** The last clean sync time, shown as a relative label; null = never synced. */
+    val lastSync: Long? = null,
     val testing: Boolean = false,
     /** Bumped each time an editor opens so the SDK editor re-seeds its field. */
     val editorSession: Int = 0,
 )
 
 /**
- * ViewModel for [SettingsScreen]. DataStore is reached through the SDK exactly
- * as weather does: the owning [com.thelightphone.sdk.LightScreen] passes
- * `lightContext.dataStore` into the constructor, and reads/writes go through
- * `dataStore.data.first()` / `dataStore.edit { }`.
+ * ViewModel for [SettingsScreen]. Sync-era: three fields (endpoint / username /
+ * password) persisted to DataStore exactly as weather does, plus a "Test login"
+ * action that runs a real `syncLogin` through [RecallEngine]/[SyncController] and
+ * reports the outcome via [SettingsMessages].
  */
 class SettingsViewModel(
+    private val filesDir: File,
     private val dataStore: DataStore<Preferences>,
 ) : LightViewModel<Unit>() {
+
+    private val engine = RecallEngine(filesDir, dataStore)
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -61,41 +71,45 @@ class SettingsViewModel(
 
     private suspend fun loadStoredState() {
         val prefs = dataStore.data.first()
-        val url = prefs[RecallPreferences.BRIDGE_URL] ?: RecallPreferences.DEFAULT_BRIDGE_URL
-        val token = prefs[RecallPreferences.BRIDGE_TOKEN] ?: ""
-        updateState { it.copy(bridgeUrl = url, bridgeToken = token) }
+        val endpoint = prefs[RecallPreferences.SYNC_ENDPOINT] ?: RecallPreferences.DEFAULT_SYNC_ENDPOINT
+        val username = prefs[RecallPreferences.SYNC_USERNAME].orEmpty()
+        val password = prefs[RecallPreferences.SYNC_PASSWORD].orEmpty()
+        updateState { it.copy(endpoint = endpoint, username = username, password = password) }
     }
 
     private suspend fun updateState(transform: (SettingsUiState) -> SettingsUiState) {
         withContext(Dispatchers.Main) { _uiState.update(transform) }
     }
 
-    fun openEditUrl() {
-        _uiState.update {
-            it.copy(mode = SettingsMode.EditUrl, editorSession = it.editorSession + 1)
-        }
-    }
+    fun openEditEndpoint() = openEditor(SettingsMode.EditEndpoint)
+    fun openEditUsername() = openEditor(SettingsMode.EditUsername)
+    fun openEditPassword() = openEditor(SettingsMode.EditPassword)
 
-    fun openEditToken() {
-        _uiState.update {
-            it.copy(mode = SettingsMode.EditToken, editorSession = it.editorSession + 1)
-        }
+    private fun openEditor(mode: SettingsMode) {
+        _uiState.update { it.copy(mode = mode, editorSession = it.editorSession + 1) }
     }
 
     fun cancelEdit() {
         _uiState.update { it.copy(mode = SettingsMode.Main) }
     }
 
-    fun submitUrl(raw: CharSequence) {
-        val url = raw.toString().trim()
-        _uiState.update { it.copy(bridgeUrl = url, mode = SettingsMode.Main, statusLine = null) }
-        persist(RecallPreferences.BRIDGE_URL, url)
-    }
+    fun submitEndpoint(raw: CharSequence) =
+        submitField(RecallPreferences.SYNC_ENDPOINT, raw.toString().trim()) { s, v -> s.copy(endpoint = v) }
 
-    fun submitToken(raw: CharSequence) {
-        val token = raw.toString().trim()
-        _uiState.update { it.copy(bridgeToken = token, mode = SettingsMode.Main, statusLine = null) }
-        persist(RecallPreferences.BRIDGE_TOKEN, token)
+    fun submitUsername(raw: CharSequence) =
+        submitField(RecallPreferences.SYNC_USERNAME, raw.toString().trim()) { s, v -> s.copy(username = v) }
+
+    // Password is intentionally NOT trimmed — leading/trailing chars can be significant.
+    fun submitPassword(raw: CharSequence) =
+        submitField(RecallPreferences.SYNC_PASSWORD, raw.toString()) { s, v -> s.copy(password = v) }
+
+    private fun submitField(
+        key: Preferences.Key<String>,
+        value: String,
+        apply: (SettingsUiState, String) -> SettingsUiState,
+    ) {
+        _uiState.update { apply(it, value).copy(mode = SettingsMode.Main, statusLine = null) }
+        persist(key, value)
     }
 
     private fun persist(key: Preferences.Key<String>, value: String) {
@@ -104,24 +118,22 @@ class SettingsViewModel(
         }
     }
 
-    /** Runs a live `/v1/status` call and maps the outcome onto [SettingsMessages]. */
-    fun testConnection() {
+    /** Runs a live `syncLogin` and maps the outcome onto [SettingsMessages]. */
+    fun testLogin() {
         val state = _uiState.value
         if (state.testing) return
-        val url = state.bridgeUrl
-        val token = state.bridgeToken
         _uiState.update { it.copy(testing = true, statusLine = "testing…") }
         viewModelScope.launch(Dispatchers.IO) {
-            val client = BridgeClient(baseUrl = url, token = token)
-            val line = try {
-                val status = client.status()
-                SettingsMessages.okLine(status)
-            } catch (e: BridgeError) {
-                SettingsMessages.errorLine(e, url)
-            } catch (e: Exception) {
-                SettingsMessages.errorLine(BridgeError.Unreachable, url)
-            } finally {
-                runCatching { client.close() }
+            val controller = engine.controller()
+            val line = if (!controller.configured) {
+                "fill in endpoint, username and password first"
+            } else {
+                try {
+                    controller.login()
+                    SettingsMessages.loginOkLine()
+                } catch (t: Throwable) {
+                    SettingsMessages.loginFailedLine(t.message)
+                }
             }
             updateState { it.copy(testing = false, statusLine = line) }
         }

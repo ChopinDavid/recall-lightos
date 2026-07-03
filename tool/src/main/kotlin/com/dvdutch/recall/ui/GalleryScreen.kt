@@ -8,15 +8,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import com.dvdutch.recall.api.BridgeClient
 import com.dvdutch.recall.api.BridgeJson
 import com.dvdutch.recall.api.CardPayload
 import com.dvdutch.recall.api.QueueResponse
-import com.dvdutch.recall.prefs.RecallPreferences
-import kotlinx.coroutines.flow.first
+import com.dvdutch.recall.prefs.RecallStorage
 import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.SimpleLightScreen
 import com.thelightphone.sdk.ui.LightBarButton
@@ -49,16 +46,11 @@ class GalleryScreen(sealedActivity: SealedLightActivity) : SimpleLightScreen<Uni
         val themeColors by LightThemeController.colors.collectAsState()
         val cards = remember { parseGalleryCards() }
 
-        // A real session loader built from the persisted bridge URL + token, so the
-        // gallery can render live media images (not just placeholders). Null until
-        // the prefs resolve; shares one ~16-entry LRU across all fixture cards.
-        val dataStore = lightContext.dataStore
-        val mediaLoader by produceState<MediaLoader?>(initialValue = null, dataStore) {
-            val prefs = dataStore.data.first()
-            val url = prefs[RecallPreferences.BRIDGE_URL] ?: RecallPreferences.DEFAULT_BRIDGE_URL
-            val token = prefs[RecallPreferences.BRIDGE_TOKEN].orEmpty()
-            value = MediaLoader(BridgeClient(baseUrl = url, token = token))
-        }
+        // A real session loader reading from the on-device collection.media dir, so the
+        // gallery renders live media images (not just placeholders) once a collection
+        // has been downloaded. Shares one ~16-entry LRU across all fixture cards.
+        val storage = remember { RecallStorage(lightContext.filesDir) }
+        val mediaLoader = remember(storage) { MediaLoader(storage) }
 
         LightTheme(colors = themeColors) {
             Column(

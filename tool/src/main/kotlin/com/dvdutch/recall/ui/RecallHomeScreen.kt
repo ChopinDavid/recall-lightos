@@ -45,7 +45,7 @@ class RecallHomeScreen(sealedActivity: SealedLightActivity) :
         get() = RecallHomeViewModel::class.java
 
     override fun createViewModel(): RecallHomeViewModel =
-        RecallHomeViewModel(lightContext.dataStore)
+        RecallHomeViewModel(lightContext.filesDir, lightContext.dataStore)
 
     @Composable
     override fun Content() {
@@ -56,10 +56,13 @@ class RecallHomeScreen(sealedActivity: SealedLightActivity) :
         // in-Compose initial paint too (idempotent with onScreenShow).
         LaunchedEffect(Unit) { viewModel.load() }
 
-        // Unconfigured: bounce straight to Settings so the user can add a token.
+        // Route off the engine's verdict: no collection yet → first-run download;
+        // a FULL_* divergence → the needs-attention resolution screen.
         LaunchedEffect(state.mode) {
-            if (state.mode is HomeMode.Unconfigured) {
-                navigateTo(::SettingsScreen)
+            when (state.mode) {
+                is HomeMode.NeedsFirstRun -> navigateTo(::FirstRunScreen)
+                is HomeMode.NeedsAttention -> navigateTo(::AttentionScreen)
+                else -> Unit
             }
         }
 
@@ -80,7 +83,9 @@ class RecallHomeScreen(sealedActivity: SealedLightActivity) :
                 )
 
                 when (val mode = state.mode) {
-                    is HomeMode.Loading, is HomeMode.Unconfigured -> CenteredMessage("…")
+                    is HomeMode.Loading,
+                    is HomeMode.NeedsFirstRun,
+                    is HomeMode.NeedsAttention -> CenteredMessage("…")
 
                     is HomeMode.Error -> ErrorBody(
                         message = mode.message,

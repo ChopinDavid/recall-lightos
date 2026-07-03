@@ -12,11 +12,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import com.dvdutch.recall.api.BridgeClient
 import com.dvdutch.recall.api.ImageNode
+import com.dvdutch.recall.prefs.RecallStorage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.net.URLDecoder
 
 /** The path prefix every bridge media `src` carries: `/v1/media/<url-encoded-name>`. */
@@ -75,45 +76,56 @@ class SessionLru<K, V>(private val maxEntries: Int) {
 }
 
 /**
- * Loads and decodes bridge media images for one session.
+ * Loads and decodes on-device media images for one session, reading straight from
+ * the collection's `collection.media` directory.
  *
- * [load] extracts the filename from a `/v1/media/...` src, fetches the bytes via
- * [BridgeClient.media], and decodes them to an [ImageBitmap]. Decoded images are
- * held in a small [SessionLru] (~16 entries) keyed by filename, so re-rendering the
- * same card doesn't refetch. Any failure — a non-media src, a transport/bridge
- * error, or an undecodable body — resolves to null, and the composable falls back
- * to the labelled placeholder. Nothing is ever silently dropped: a null means "show
- * the placeholder", not "show nothing".
+ * [load] extracts the bare filename from an [ImageNode] src, reads the file's bytes
+ * from disk (`<collection dir>/collection.media/<name>`), and decodes them to an
+ * [ImageBitmap]. Decoded images are held in a small [SessionLru] (~16 entries) keyed
+ * by filename, so re-rendering the same card doesn't re-read/decode. Any failure — a
+ * non-media src, a missing file, or an undecodable body — resolves to null, and the
+ * composable falls back to the labelled placeholder. Nothing is ever silently
+ * dropped: a null means "show the placeholder", not "show nothing".
  *
  * This is a session buffer, not a cache layer; durable caching is M2's concern.
  *
+ * @param mediaFileOf resolves a bare media name to its on-disk [File] (production
+ *   uses [RecallStorage.mediaFile]); injectable so tests point it at a temp dir.
  * @param decode injectable byte→bitmap step; production uses [BitmapFactory],
  *   tests substitute a pure function (the real decoder needs the Android runtime).
  */
 class MediaLoader(
-    private val client: BridgeClient,
+    private val mediaFileOf: (String) -> File,
     maxEntries: Int = DEFAULT_MAX_ENTRIES,
     private val decode: (ByteArray) -> ImageBitmap? = ::decodeImageBitmap,
 ) {
+
+    /** Convenience: resolve media files from a [RecallStorage]. */
+    constructor(
+        storage: RecallStorage,
+        maxEntries: Int = DEFAULT_MAX_ENTRIES,
+        decode: (ByteArray) -> ImageBitmap? = ::decodeImageBitmap,
+    ) : this(storage::mediaFile, maxEntries, decode)
 
     private val cache = SessionLru<String, ImageBitmap>(maxEntries)
 
     suspend fun load(src: String): ImageBitmap? {
         val name = mediaFilenameFromSrc(src) ?: return null
-        // Move fetch + decode off the caller's dispatcher: MediaImage's produceState
-        // producer runs on the composition's Main context, and a full-res WebP decode
-        // (BitmapFactory) inline there janks frames. Dispatchers.Default makes the
-        // loader off-main-safe at the source rather than at each call site.
+        // Move the file read + decode off the caller's dispatcher: MediaImage's
+        // produceState producer runs on the composition's Main context, and a full-res
+        // WebP decode (BitmapFactory) inline there janks frames. Dispatchers.Default
+        // makes the loader off-main-safe at the source rather than at each call site.
         return withContext(Dispatchers.Default) {
             cache.get(name)?.let { return@withContext it }
             val bytes = try {
-                client.media(name)
+                val file = mediaFileOf(name)
+                if (!file.isFile) return@withContext null // missing media → placeholder
+                file.readBytes()
             } catch (e: Exception) {
                 // Cancellation must propagate — swallowing it into a null would mask a
                 // cancelled load as a genuine failure (and fight structured concurrency).
                 if (e is CancellationException) throw e
-                // BridgeError (Unreachable/Unauthorized/…) and any other transport
-                // failure → placeholder. Content is preserved as a labelled fallback.
+                // Any I/O failure → placeholder. Content is preserved as a labelled fallback.
                 return@withContext null
             }
             val bitmap = decode(bytes) ?: return@withContext null

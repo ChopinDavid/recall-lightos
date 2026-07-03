@@ -37,6 +37,27 @@ object SettingsMessages {
             error.message
     }
 
+    /** Success line for the Settings "Test login" action. */
+    fun loginOkLine(): String = "login ok"
+
+    /**
+     * Failure line for "Test login": `login failed: <reason>`, collapsing to a
+     * bare `login failed` when the engine gave no usable message.
+     */
+    fun loginFailedLine(reason: String?): String {
+        val trimmed = reason?.trim().orEmpty()
+        return if (trimmed.isEmpty()) "login failed" else "login failed: $trimmed"
+    }
+
+    /**
+     * The Settings last-sync line: `last sync: <when>` where `<when>` is a
+     * relative label ([relativeSince]) or `never` when no clean sync has happened.
+     */
+    fun lastSyncLine(lastSyncMillis: Long?, now: Long = System.currentTimeMillis()): String {
+        val whenLabel = lastSyncMillis?.let { relativeSince(it, now) } ?: "never"
+        return "last sync: $whenLabel"
+    }
+
     /**
      * A coarse relative label for a past epoch-millis instant: `just now`,
      * `<n>m ago`, `<n>h ago`, `<n>d ago`. Future/zero deltas collapse to
