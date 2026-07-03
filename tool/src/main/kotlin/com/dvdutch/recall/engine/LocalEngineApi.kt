@@ -5,7 +5,7 @@ import anki.scheduler.QueuedCards
 import anki.scheduler.SchedulingStates
 import com.dvdutch.recall.api.AnswerIn
 import com.dvdutch.recall.api.AnswerResult
-import com.dvdutch.recall.api.BridgeApi
+import com.dvdutch.recall.api.EngineApi
 import com.dvdutch.recall.api.BridgeError
 import com.dvdutch.recall.api.CardPayload
 import com.dvdutch.recall.api.Counts
@@ -63,7 +63,7 @@ class LocalEngineApi(
      * via `createBackup`. Null skips the backup (e.g. sync unconfigured or no storage).
      */
     private val backupFolder: String? = null,
-) : BridgeApi {
+) : EngineApi {
 
     private companion object {
         val LABEL_KEYS = listOf("again", "hard", "good", "easy")
