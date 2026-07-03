@@ -33,6 +33,7 @@ class LightSdkPlugin : Plugin<Project> {
             "androidx.room",
             "androidx.work",
             "androidx.startup",
+            "io.github.david-allison:anki-android-backend",
         )
 
         val ALLOWED_PLUGINS = setOf(
