@@ -1,6 +1,5 @@
 package com.thelightphone.sdk.ui
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -104,7 +103,7 @@ private fun LightTopBarCenterView(center: LightTopBarCenter?) {
 
     val modifier = Modifier
         .widthIn(max = CENTER_MAX_WIDTH_UNITS.gridUnitsAsDp())
-        .let { m -> if (center.onClick != null) m.clickable { center.onClick?.invoke() } else m }
+        .let { m -> if (center.onClick != null) m.lightClickable { center.onClick?.invoke() } else m }
 
     when (center) {
         is LightTopBarCenter.Text -> {

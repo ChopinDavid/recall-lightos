@@ -1,7 +1,6 @@
 package com.thelightphone.uidemo
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,6 +25,7 @@ import com.thelightphone.sdk.ui.LightThemeTokens
 import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
+import com.thelightphone.sdk.ui.lightClickable
 
 @InitialScreen
 class UiDemoHomeScreen(sealedActivity: SealedLightActivity) :
@@ -56,28 +56,28 @@ class UiDemoHomeScreen(sealedActivity: SealedLightActivity) :
                             text = "OPEN COUNTER",
                             variant = LightTextVariant.Copy,
                             modifier = Modifier
-                                .clickable { navigateTo(::UiDemoSecondScreen) }
+                                .lightClickable { navigateTo(::UiDemoSecondScreen) }
                                 .padding(vertical = 0.75f.gridUnitsAsDp()),
                         )
                         LightText(
                             text = "SCROLLING DEMO",
                             variant = LightTextVariant.Copy,
                             modifier = Modifier
-                                .clickable { navigateTo(::UiDemoScrollScreen) }
+                                .lightClickable { navigateTo(::UiDemoScrollScreen) }
                                 .padding(vertical = 0.75f.gridUnitsAsDp()),
                         )
                         LightText(
                             text = "TEXT INPUT",
                             variant = LightTextVariant.Copy,
                             modifier = Modifier
-                                .clickable { navigateTo(::UiDemoTextInputScreen) }
+                                .lightClickable { navigateTo(::UiDemoTextInputScreen) }
                                 .padding(vertical = 0.75f.gridUnitsAsDp()),
                         )
                         LightText(
                             text = "QR CODE SCANNER",
                             variant = LightTextVariant.Copy,
                             modifier = Modifier
-                                .clickable {
+                                .lightClickable {
                                     navigateTo(
                                         screenFactory = ::UiDemoQrScannerScreen,
                                         resultCallback = { scannedResult ->
@@ -96,21 +96,21 @@ class UiDemoHomeScreen(sealedActivity: SealedLightActivity) :
                             text = "MODAL DEMO",
                             variant = LightTextVariant.Copy,
                             modifier = Modifier
-                                .clickable { showModal = true }
+                                .lightClickable { showModal = true }
                                 .padding(vertical = 0.75f.gridUnitsAsDp()),
                         )
                         LightText(
                             text = "ICONS",
                             variant = LightTextVariant.Copy,
                             modifier = Modifier
-                                .clickable { navigateTo(::UiDemoIconsScreen) }
+                                .lightClickable { navigateTo(::UiDemoIconsScreen) }
                                 .padding(vertical = 0.75f.gridUnitsAsDp()),
                         )
                         LightText(
                             text = "REVERSE THEME",
                             variant = LightTextVariant.Copy,
                             modifier = Modifier
-                                .clickable { LightThemeController.toggle() }
+                                .lightClickable { LightThemeController.toggle() }
                                 .padding(vertical = 0.75f.gridUnitsAsDp()),
                         )
                     }
