@@ -124,11 +124,6 @@ class StudyViewModel(
         audioPlayer?.play(filenames)
     }
 
-    /** Stops any in-flight card audio (e.g. when the current side has none). */
-    fun stopAudio() {
-        audioPlayer?.stop()
-    }
-
     /** Retry the whole session after a retriable failure by re-starting it. */
     fun retry() {
         val m = machine ?: return begin()

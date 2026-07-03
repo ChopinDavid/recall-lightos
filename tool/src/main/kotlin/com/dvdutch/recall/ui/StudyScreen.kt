@@ -192,7 +192,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.CardBody(
             mediaLoader = mediaLoader,
         )
     }
-    if (sideAudio.isNotEmpty()) {
+    if (sideHasAudio(card, showBack)) {
         ReplayAudioRow(onReplay = { onReplay(sideAudio) })
     }
     bottom()
