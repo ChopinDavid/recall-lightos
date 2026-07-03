@@ -17,11 +17,18 @@ import net.ankiweb.rsdroid.BackendFactory
  * single queue and the native backend is never entered re-entrantly. There is ONE
  * lane for the whole engine, not one per collection.
  *
- * The native library is loaded exactly once, lazily, on first [backend] access:
- * `System.loadLibrary("rsdroid")` then [BackendFactory.getBackend]. On the desktop
- * JVM (unit tests) the library is instead loaded by the `-testing` artifact's
- * `RustBackendLoader.ensureSetup()`; this object's own `loadLibrary` is a no-op in
- * that case (the lib is already resident) — see `EngineSmokeTest`.
+ * The native library is loaded exactly once, lazily, on first [backend] access, via
+ * the injectable [nativeLoader] seam (default `System.loadLibrary("rsdroid")`), then
+ * [BackendFactory.getBackend]. On the desktop JVM (unit tests) the library is instead
+ * loaded by the `-testing` artifact's `RustBackendLoader.ensureSetup()`, which tests
+ * install by overriding [nativeLoader] before the first [backend] call — see
+ * `EngineSmokeTest`.
+ *
+ * Thread-safety contract: [backend], [openCollection] and [closeCollection] are NOT
+ * internally synchronized. They are safe ONLY when confined to the serial [lane] —
+ * callers MUST wrap every engine interaction in `withContext(EngineHolder.lane) { ... }`.
+ * A caller that touches the native handle off-lane gets no thread-safety guarantee and
+ * can re-enter the backend concurrently (undefined behaviour in rslib).
  *
  * This is deliberately minimal; later tasks grow it (query/answer/sync helpers).
  * Callers must route through [lane]; this object does not spawn coroutines itself.
@@ -35,6 +42,17 @@ object EngineHolder {
      */
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val lane: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(1)
+
+    /**
+     * The native-load step, invoked exactly once before the backend is first created.
+     * Defaults to `System.loadLibrary("rsdroid")` for on-device use. It is a
+     * test-overridable seam: JVM unit tests set it to `RustBackendLoader.ensureSetup()`
+     * (which loads the desktop native) in place of `loadLibrary`.
+     *
+     * Set-before-first-[backend]-call only: once [backend] has run the loader (and set
+     * [libraryLoaded]), reassigning this has no effect — the library is already resident.
+     */
+    internal var nativeLoader: () -> Unit = { System.loadLibrary("rsdroid") }
 
     /** Loaded once on first [backend] access; guards against a double loadLibrary. */
     private var libraryLoaded = false
@@ -50,14 +68,14 @@ object EngineHolder {
         get() = openCollectionPath != null
 
     /**
-     * The process-wide rslib [Backend], created on first access. Loads the native
-     * library once (`System.loadLibrary("rsdroid")`) before constructing it. Not
-     * itself synchronized: all access is expected to be serialized through [lane].
+     * The process-wide rslib [Backend], created on first access. Runs [nativeLoader]
+     * once (default `System.loadLibrary("rsdroid")`) before constructing it. Not
+     * itself synchronized: all access MUST be serialized through [lane].
      */
     fun backend(): Backend {
         backendInstance?.let { return it }
         if (!libraryLoaded) {
-            System.loadLibrary("rsdroid")
+            nativeLoader()
             libraryLoaded = true
         }
         return BackendFactory.getBackend().also { backendInstance = it }
@@ -66,7 +84,8 @@ object EngineHolder {
     /**
      * Opens the collection at [path] (creating it if absent). Closes any collection
      * already open first, so this is idempotent with respect to the active
-     * collection. Must be called on [lane].
+     * collection. Lane-confined by contract: MUST be called on [lane]
+     * (`withContext(EngineHolder.lane) { ... }`); off-lane callers get no thread-safety.
      */
     fun openCollection(path: String) {
         if (openCollectionPath == path) return
@@ -77,7 +96,9 @@ object EngineHolder {
 
     /**
      * Closes the open collection, if any. The backend handle itself is retained for
-     * reuse. No-op when no collection is open. Must be called on [lane].
+     * reuse. No-op when no collection is open. Lane-confined by contract: MUST be
+     * called on [lane] (`withContext(EngineHolder.lane) { ... }`); off-lane callers get
+     * no thread-safety.
      */
     fun closeCollection() {
         if (!collectionOpen) return

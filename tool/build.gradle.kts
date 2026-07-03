@@ -80,6 +80,18 @@ dependencies {
     // here via the backend's own protobuf-javalite) are on the test *compile*
     // classpath. The app's `implementation` above still excludes javalite for the
     // APK; this test-only edition affects unit tests only.
+    //
+    // KNOWN SKEW (test scope only): this re-declaration puts BOTH protobuf-javalite
+    // 4.33.4 (from the backend, needed above) AND full protobuf-java 4.33.0 (from the
+    // SDK's unifiedpush→tink chain) on the test classpath at once. Those two artifacts
+    // share ~513 fully-qualified class names (e.g. com.google.protobuf.*) at DIFFERENT
+    // versions, so the JVM resolves each duplicated class by classpath order rather
+    // than by version — a latent hazard. It is tolerated here because it is confined
+    // to the test classpath: the shipped APK is unaffected (it excludes javalite and
+    // was verified to carry only the single protobuf-java edition). The durable fix is
+    // upstream — either allowlist a single protobuf artifact so this re-declaration can
+    // collapse to one `testImplementation`, or have the backend's `-testing` chain grow
+    // a matching protobuf so the base classes come in without pulling javalite here.
     testImplementation("io.github.david-allison:anki-android-backend:0.1.64-anki25.09.2")
     ksp(libs.androidx.room.compiler)
 }
