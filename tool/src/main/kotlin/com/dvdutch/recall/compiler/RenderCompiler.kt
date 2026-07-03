@@ -105,9 +105,15 @@ private fun mergeRuns(runs: List<Run>): List<TextRun> {
  * strictly wider set than Java/Kotlin's regex `\s` or `Char.isWhitespace()`. To
  * stay byte-identical we split/strip on exactly [isPyWhitespace].
  */
-private fun cleanWs(text: String?): String {
-    if (text.isNullOrEmpty()) return ""
-    if (pyStrip(text).isEmpty()) return " "
+private fun cleanWs(rawText: String?): String {
+    if (rawText.isNullOrEmpty()) return ""
+    if (pyStrip(rawText).isEmpty()) return " "
+    // Math delimiter regions (`\(...\)`, `\[...\]`, `[$]...[$]`, `[$$]...[$$]`)
+    // are rewritten to a Unicode subset HERE — before whitespace collapse — so
+    // the delimiters and their contents are handled as one text piece, before
+    // the content is split into styled runs. Non-math text is untouched.
+    val text = MathUnicode.transform(rawText)
+    if (text.isEmpty()) return ""
     val collapsed = pySplit(text).joinToString(" ")
     val sb = StringBuilder()
     if (text[0].isPyWhitespace()) sb.append(' ')
