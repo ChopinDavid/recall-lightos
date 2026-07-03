@@ -50,6 +50,23 @@ class MediaLoaderTest {
         assertNull(mediaFilenameFromSrc("/v1/media/"))
     }
 
+    // --- bare-filename contract (Kotlin render-compiler port) ---------------
+
+    @Test
+    fun bareFilenameIsReturnedAsIs() {
+        // The compiler now emits ImageNode.src as the bare, percent-decoded name.
+        assertEquals("dog.jpg", mediaFilenameFromSrc("dog.jpg"))
+        assertEquals("map europe.webp", mediaFilenameFromSrc("map europe.webp"))
+        assertEquals("кот.png", mediaFilenameFromSrc("кот.png"))
+    }
+
+    @Test
+    fun bareEmptyOrAbsoluteSrcIsRejected() {
+        assertNull(mediaFilenameFromSrc(""))
+        assertNull(mediaFilenameFromSrc("https://example.com/dog.jpg"))
+        assertNull(mediaFilenameFromSrc("/some/abs/path.png"))
+    }
+
     // --- LRU eviction --------------------------------------------------------
 
     @Test

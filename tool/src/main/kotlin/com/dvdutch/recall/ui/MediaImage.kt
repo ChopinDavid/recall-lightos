@@ -26,23 +26,31 @@ private const val MEDIA_PATH_PREFIX = "/v1/media/"
 private const val DEFAULT_MAX_ENTRIES = 16
 
 /**
- * Extracts the media filename from an [ImageNode] `src` of the form
- * `/v1/media/<url-encoded-name>`, reversing the percent-encoding
- * ([BridgeClient.media] re-encodes it on the way out). Returns null when the src
- * is not a media path or carries no name — the caller then renders the placeholder
- * rather than firing a doomed request.
+ * Extracts the media filename from an [ImageNode] `src`.
  *
- * Pure and unit-tested. `+` is treated literally (it is not a space in a URL path
- * segment), matching how the bridge encodes names.
+ * As of the Kotlin render-compiler port, `src` carries the BARE, percent-DECODED
+ * media filename (e.g. `map europe.webp`) rather than a `/v1/media/...` URL. This
+ * function returns that name directly. For backward compatibility with any
+ * `/v1/media/<url-encoded-name>` src still in flight (older bridge payloads /
+ * fixtures), a leading `/v1/media/` prefix is stripped and the remainder
+ * percent-decoded. Returns null when the src is empty or a non-media absolute URL
+ * — the caller then renders the placeholder rather than firing a doomed request.
+ *
+ * Pure and unit-tested.
  */
 fun mediaFilenameFromSrc(src: String): String? {
-    if (!src.startsWith(MEDIA_PATH_PREFIX)) return null
-    val encoded = src.substring(MEDIA_PATH_PREFIX.length)
-    if (encoded.isEmpty()) return null
-    // URLDecoder turns "+" into a space; media names use %20 for spaces and never
-    // contain literal "+", but guard anyway by protecting any "+" before decoding.
-    val name = URLDecoder.decode(encoded.replace("+", "%2B"), Charsets.UTF_8.name())
-    return name.ifEmpty { null }
+    if (src.startsWith(MEDIA_PATH_PREFIX)) {
+        val encoded = src.substring(MEDIA_PATH_PREFIX.length)
+        if (encoded.isEmpty()) return null
+        // URLDecoder turns "+" into a space; media names use %20 for spaces and
+        // never contain literal "+", but guard by protecting any "+" first.
+        val name = URLDecoder.decode(encoded.replace("+", "%2B"), Charsets.UTF_8.name())
+        return name.ifEmpty { null }
+    }
+    // Bare filename contract. Reject non-media absolute URLs / paths.
+    if (src.isEmpty()) return null
+    if (src.startsWith("http://") || src.startsWith("https://") || src.startsWith("/")) return null
+    return src
 }
 
 /**
