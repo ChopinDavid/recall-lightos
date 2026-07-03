@@ -38,6 +38,11 @@ data class CardPayload(
     val back: List<RenderNode>,
     val states: String,
     @SerialName("next_due_labels") val nextDueLabels: Map<String, String>,
+    // Ordered [sound:] media filenames per side (empty when the side has no audio).
+    // Additive to the frozen EngineApi contract: StudyMachine ignores these, and the
+    // defaults keep older callers/tests valid.
+    @SerialName("front_audio") val frontAudio: List<String> = emptyList(),
+    @SerialName("back_audio") val backAudio: List<String> = emptyList(),
 )
 
 @Serializable

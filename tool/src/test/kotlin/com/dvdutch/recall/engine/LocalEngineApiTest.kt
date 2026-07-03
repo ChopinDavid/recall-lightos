@@ -131,6 +131,27 @@ class LocalEngineApiTest {
     }
 
     @Test
+    fun `queue surfaces ordered sound filenames and never leaks AV markers`() {
+        // The [sound:test.mp3] reference lands on the front (question) side.
+        selectDeck(seedNote("AudioFiles", "front [sound:test.mp3]", "back"))
+        val card = runBlocking { api.queue(20) }.cards.first()
+
+        // The ordered filename is surfaced for playback...
+        assertTrue(
+            "test.mp3" in card.frontAudio,
+            "expected front_audio to contain test.mp3, got ${card.frontAudio}",
+        )
+        // ...while neither the raw [sound:] ref nor the [anki:play] rewrite reaches the
+        // compiled render nodes as literal text, on either side.
+        val allText = (card.front + card.back)
+            .filterIsInstance<TextNode>().flatMap { it.runs }.joinToString("") { it.s }
+        assertTrue(
+            "sound:" !in allText && "anki:play" !in allText,
+            "AV marker leaked into render nodes: $allText",
+        )
+    }
+
+    @Test
     fun `answer applied then re-answering the same states is stale`() {
         selectDeck(seedNote("Grading", "q", "a"))
         val q = runBlocking { api.queue(20) }
