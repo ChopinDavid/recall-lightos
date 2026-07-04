@@ -13,4 +13,13 @@ interface EngineApi {
     suspend fun queue(limit: Int = 20): QueueResponse
     suspend fun answer(answers: List<AnswerIn>): List<AnswerResult>
     suspend fun studyFinish(): SyncInfo
+
+    /**
+     * Reverts the last operation via rslib's OWN undo (the same op AnkiDroid's
+     * toolbar Undo drives) — NEVER a local reconstruction. In a review-only
+     * session the top op is the last answer, so this un-answers the last card:
+     * it returns to the queue and the due counts tick back. Idempotent-safe: an
+     * empty undo stack yields [UndoResult]`(undone = false)` rather than throwing.
+     */
+    suspend fun undo(): UndoResult
 }

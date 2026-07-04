@@ -28,7 +28,31 @@ data class DecksResponse(val decks: List<Deck>)
 data class Counts(val new: Int, val learning: Int, val review: Int)
 
 @Serializable
-data class QueueResponse(val cards: List<CardPayload>, val counts: Counts)
+data class QueueResponse(
+    val cards: List<CardPayload>,
+    val counts: Counts,
+    // True when the engine reports an undoable operation on its stack (the last
+    // answer, in a review-only session). Additive to the frozen contract with a
+    // safe default, so older callers/tests and JSON payloads lacking it stay valid.
+    // The StudyMachine uses it (AND an answered-this-session flag) to gate the
+    // UNDO control — mirrors AnkiDroid enabling Undo only when the backend has an
+    // undoable op.
+    @SerialName("undoable_answer") val undoableAnswer: Boolean = false,
+)
+
+/**
+ * The outcome of a [EngineApi.undo] call: rslib's own undo (the same op
+ * AnkiDroid's toolbar Undo drives), never a local reconstruction. [undone] is
+ * false when there was nothing on the undo stack to revert (a safe no-op).
+ * [undoableAnswer] reports whether, AFTER this undo, the engine still has an
+ * undoable op — so the UI can keep the UNDO control visible for a further tap
+ * (multi-step) or hide it once the stack is exhausted.
+ */
+@Serializable
+data class UndoResult(
+    val undone: Boolean,
+    @SerialName("undoable_answer") val undoableAnswer: Boolean = false,
+)
 
 @Serializable
 data class CardPayload(

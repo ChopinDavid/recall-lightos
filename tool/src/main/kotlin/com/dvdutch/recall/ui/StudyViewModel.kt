@@ -119,6 +119,18 @@ class StudyViewModel(
         viewModelScope.launch(driver) { m.grade(rating) }
     }
 
+    /**
+     * Undoes the last grade via the machine (rslib's own undo). Routed through the
+     * same serial [driver] lane as grade/reveal so the undo can never interleave
+     * with an in-flight grade mutating the buffer/state. Stops any playing audio
+     * first, exactly as [grade] does, so the reverted card starts clean.
+     */
+    fun undo() {
+        val m = machine ?: return
+        audioPlayer?.stop()
+        viewModelScope.launch(driver) { m.undo() }
+    }
+
     /** Plays [filenames] for the current side; a no-op empty list clears playback. */
     fun playAudio(filenames: List<String>) {
         audioPlayer?.play(filenames)

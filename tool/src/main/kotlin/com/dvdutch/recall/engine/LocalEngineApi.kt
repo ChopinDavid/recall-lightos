@@ -17,6 +17,7 @@ import com.dvdutch.recall.api.TextNode
 import com.dvdutch.recall.api.TextRun
 import com.dvdutch.recall.api.StudyStartResponse
 import com.dvdutch.recall.api.SyncInfo
+import com.dvdutch.recall.api.UndoResult
 import com.dvdutch.recall.api.UnsupportedNode
 import com.dvdutch.recall.compiler.compileHtml
 import com.google.protobuf.InvalidProtocolBufferException
@@ -124,8 +125,25 @@ class LocalEngineApi(
                 learning = queued.learningCount,
                 review = queued.reviewCount,
             ),
+            // True only when the TOP undo op is an Answer Card op — the gate for the
+            // UNDO control. A non-empty undo stack is NOT sufficient: opening a deck
+            // pushes a "Select Deck" config op, so `undo.isNotEmpty()` would falsely
+            // report undoability before any card was answered (and would offer to undo
+            // the deck selection). We compare the localized op label against rslib's
+            // own `actionsAnswerCard()` translation so this stays correct in any locale
+            // and is exactly the op AnkiDroid's toolbar Undo would revert here.
+            undoableAnswer = isAnswerUndoable(backend),
         )
     }
+
+    /**
+     * Whether rslib's top undo op is an Answer Card op (vs. a "Select Deck" config op
+     * or an empty stack). Compares the localized undo label to [Backend]'s own
+     * `actionsAnswerCard()` translation, so it is locale-correct and matches the exact
+     * op the toolbar Undo would revert. MUST be called on [EngineHolder.lane].
+     */
+    private fun isAnswerUndoable(backend: Backend): Boolean =
+        backend.getUndoStatus().undo == backend.tr.actionsAnswerCard()
 
     /** MUST be called on [EngineHolder.lane]. */
     private fun cardPayload(backend: Backend, entry: QueuedCards.QueuedCard): CardPayload {
@@ -305,6 +323,35 @@ class LocalEngineApi(
             }
             results
         }
+
+    /**
+     * Reverts the last ANSWER via rslib's OWN undo (`Backend.undo()` — the same op
+     * AnkiDroid's toolbar Undo drives), NEVER a local reconstruction: rslib pops its
+     * own undo stack, un-answers the card, and restores the due counts.
+     *
+     * This is a REVIEW-ONLY undo: it pops the stack only when the top op is an Answer
+     * Card op (see [isAnswerUndoable]). Anything else — an empty stack, or a lingering
+     * "Select Deck" config op from opening the session — is a safe no-op yielding
+     * [UndoResult]`(undone = false)`, so undo can never revert the deck selection or
+     * any non-answer op. After a successful undo we re-check [isAnswerUndoable] to
+     * report whether a FURTHER answer remains undoable, so the caller can keep
+     * offering multi-step undo (or hide the control once the answers are exhausted).
+     */
+    override suspend fun undo(): UndoResult = withContext(holder.lane) {
+        val backend = holder.backend()
+        // Guard at the engine boundary: only an answer is undoable here. If the top op
+        // is not an Answer Card op, do NOT pop the stack — a no-op, not a deck-undo.
+        if (!isAnswerUndoable(backend)) {
+            return@withContext UndoResult(undone = false, undoableAnswer = false)
+        }
+        try {
+            backend.undo()
+        } catch (_: net.ankiweb.rsdroid.BackendException.BackendUndoEmptyException) {
+            // Defensive: the stack emptied between the check and the call.
+            return@withContext UndoResult(undone = false, undoableAnswer = false)
+        }
+        UndoResult(undone = true, undoableAnswer = isAnswerUndoable(backend))
+    }
 
     /** Applies one answer; MUST be called on [EngineHolder.lane]. */
     private fun applyOne(backend: Backend, ans: AnswerIn): String {

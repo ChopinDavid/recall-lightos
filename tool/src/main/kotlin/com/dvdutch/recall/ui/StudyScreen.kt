@@ -86,6 +86,15 @@ class StudyScreen(
 
                 CountsHeader(state.currentCounts())
 
+                // Unobtrusive UNDO control just below the counts header, shown only
+                // when the machine reports the last grade is undoable (an answer was
+                // given this session AND the engine holds an undoable op). One tap
+                // reverts the last grade via rslib's own undo; the card returns and
+                // the counts tick back.
+                if (state.undoAvailable()) {
+                    UndoRow(onUndo = viewModel::undo)
+                }
+
                 when (val s = state) {
                     is StudyState.Loading -> CenteredMessage("…")
 
@@ -146,6 +155,36 @@ private fun StudyState.currentCounts(): Counts? = when (this) {
     is StudyState.ShowingBack -> counts
     is StudyState.Finished -> counts
     else -> null
+}
+
+/** Whether the UNDO control should be shown for the current review state. */
+private fun StudyState.undoAvailable(): Boolean = when (this) {
+    is StudyState.ShowingFront -> undoAvailable
+    is StudyState.ShowingBack -> undoAvailable
+    else -> false
+}
+
+/**
+ * A tappable "↶ UNDO" row shown only when the last grade is undoable; a tap reverts
+ * it via rslib's own undo. Monochrome LightText matching [ReplayAudioRow] — sits
+ * under the counts header, discoverable but unobtrusive.
+ */
+@Composable
+private fun UndoRow(onUndo: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onUndo)
+            .padding(horizontal = 1f.gridUnitsAsDp(), vertical = 0.25f.gridUnitsAsDp()),
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        LightText(
+            text = "↶ UNDO",
+            variant = LightTextVariant.Fine,
+            lighten = true,
+            align = TextAlign.Center,
+        )
+    }
 }
 
 /** Slim `new · learning · review` header sitting under the top bar. */

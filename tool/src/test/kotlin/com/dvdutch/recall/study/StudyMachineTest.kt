@@ -11,6 +11,7 @@ import com.dvdutch.recall.api.StudyStartResponse
 import com.dvdutch.recall.api.SyncInfo
 import com.dvdutch.recall.api.TextNode
 import com.dvdutch.recall.api.TextRun
+import com.dvdutch.recall.api.UndoResult
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -33,10 +34,12 @@ private class FakeBridge : EngineApi {
     val queueScript = ArrayDeque<Outcome<QueueResponse>>()
     val answerScript = ArrayDeque<Outcome<List<AnswerResult>>>()
     val finishScript = ArrayDeque<Outcome<SyncInfo>>()
+    val undoScript = ArrayDeque<Outcome<UndoResult>>()
 
     var startCalls = 0
     var queueCalls = 0
     var finishCalls = 0
+    var undoCalls = 0
     val answerArgs = mutableListOf<List<AnswerIn>>()
 
     private fun <T> ArrayDeque<Outcome<T>>.next(): T = when (val o = removeFirst()) {
@@ -62,6 +65,11 @@ private class FakeBridge : EngineApi {
     override suspend fun studyFinish(): SyncInfo {
         finishCalls++
         return finishScript.next()
+    }
+
+    override suspend fun undo(): UndoResult {
+        undoCalls++
+        return undoScript.next()
     }
 }
 
@@ -544,5 +552,142 @@ class StudyMachineTest {
         val state = m.state.value
         assertTrue(state is StudyState.Finished, "was $state")
         assertNull(state.sync)
+    }
+
+    // --- Undo (rslib's own undo, backend-computed) --------------------------------
+
+    // answer a card -> undo -> the SAME card is shown again on its FRONT, with counts
+    // matching the engine's post-undo counts. undo() is called and the engine re-queried.
+    @Test
+    fun undoBringsBackTheAnsweredCardOnItsFront() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 2), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(
+                QueueResponse(listOf(card(1, "s1"), card(2, "s2")), counts(new = 2)),
+            ),
+        )
+        // Post-grade counts-only refresh (buffer 1 < 5 -> prefetch path).
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(emptyList(), counts(new = 1))),
+        )
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u1", "applied"))))
+        val m = machine(bridge, now = clock(1_000L, 1_200L), uuid = uuids("u1"))
+        m.start()
+        m.reveal()
+        m.grade("good") // advanced off card 1
+
+        // The engine reverts the answer: card 1 returns to the top of the queue, counts restored.
+        bridge.undoScript.add(FakeBridge.Outcome.Ok(UndoResult(undone = true, undoableAnswer = false)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(
+                QueueResponse(listOf(card(1, "s1"), card(2, "s2")), counts(new = 2)),
+            ),
+        )
+
+        m.undo()
+
+        assertEquals(1, bridge.undoCalls, "undo must call the engine's own undo")
+        val state = m.state.value
+        assertTrue(state is StudyState.ShowingFront, "was $state") // FRONT side, not back
+        assertEquals(1L, state.card.cardId) // the SAME card returns
+        assertEquals(2, state.counts.new) // counts ticked back to the pre-answer value
+    }
+
+    // undo with nothing to undo must be safe: no crash, state uncorrupted, and it does
+    // NOT re-query the queue (nothing changed).
+    @Test
+    fun undoWithNothingToUndoIsSafe() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 1), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(listOf(card(1, "s1")), counts(new = 1))),
+        )
+        val m = machine(bridge)
+        m.start()
+        val before = m.state.value
+
+        bridge.undoScript.add(FakeBridge.Outcome.Ok(UndoResult(undone = false)))
+        m.undo()
+
+        assertEquals(1, bridge.undoCalls)
+        assertEquals(1, bridge.queueCalls, "no re-query when nothing was undone")
+        val after = m.state.value
+        assertTrue(after is StudyState.ShowingFront, "was $after")
+        assertEquals(1L, after.card.cardId) // unchanged
+    }
+
+    // answer -> undo -> answer again works: the buffer is coherent (no duplicate/skipped
+    // cards), and the second answer targets the card the undo brought back.
+    @Test
+    fun answerUndoAnswerAgainKeepsBufferCoherent() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 2), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(
+                QueueResponse(listOf(card(1, "s1"), card(2, "s2")), counts(new = 2)),
+            ),
+        )
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(emptyList(), counts(new = 1))))
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u1", "applied"))))
+        val m = machine(bridge, now = clock(1_000L, 1_200L), uuid = uuids("u1", "u2"))
+        m.start()
+        m.reveal()
+        m.grade("good") // off card 1
+
+        // Undo: card 1 comes back at the top.
+        bridge.undoScript.add(FakeBridge.Outcome.Ok(UndoResult(undone = true)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(
+                QueueResponse(listOf(card(1, "s1"), card(2, "s2")), counts(new = 2)),
+            ),
+        )
+        m.undo()
+        assertEquals(1L, (m.state.value as StudyState.ShowingFront).card.cardId)
+
+        // Answer card 1 AGAIN: it grades cleanly and advances to card 2 (no dup, no skip).
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u2", "applied"))))
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(emptyList(), counts(new = 1))))
+        m.reveal()
+        m.grade("good")
+
+        assertEquals(1L, bridge.answerArgs.last().single().cardId) // re-answered card 1
+        val state = m.state.value
+        assertTrue(state is StudyState.ShowingFront, "was $state")
+        assertEquals(2L, state.card.cardId) // advanced to card 2, not a duplicate of 1
+    }
+
+    // The UNDO control gate: ShowingFront exposes undoAvailable = true only once an
+    // answer was given this session AND the engine reports an undoable op. Before any
+    // answer it is false (queue reports undoableAnswer = false).
+    @Test
+    fun undoAvailableTracksEngineAndSessionAnswer() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 2), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(
+                QueueResponse(
+                    listOf(card(1, "s1"), card(2, "s2")),
+                    counts(new = 2),
+                    undoableAnswer = false,
+                ),
+            ),
+        )
+        val m = machine(bridge, now = clock(1_000L, 1_200L), uuid = uuids("u1"))
+        m.start()
+        // No answer yet -> the control must be hidden.
+        assertEquals(false, (m.state.value as StudyState.ShowingFront).undoAvailable)
+
+        // After answering, the post-grade fetch reports an undoable op.
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(emptyList(), counts(new = 1), undoableAnswer = true)),
+        )
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u1", "applied"))))
+        m.reveal()
+        m.grade("good")
+
+        val state = m.state.value
+        assertTrue(state is StudyState.ShowingFront, "was $state")
+        assertEquals(true, state.undoAvailable) // answered this session AND engine has an undoable op
     }
 }
