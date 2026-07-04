@@ -40,9 +40,11 @@ import com.thelightphone.sdk.ui.gridUnitsAsDp
 private const val OCCLUSION_TAG = "OcclusionImage"
 
 /**
- * Solid mask fill for [ShapeState.MASKED] shapes. On the black theme a mid/light grey
- * block reads clearly as "something is hidden here" while staying monochrome. Fully
- * opaque so the answer region underneath is genuinely covered.
+ * Solid mask fill for masked shapes ([ShapeState.MASKED] / [ShapeState.MASKED_TESTED]).
+ * On the black theme a mid/light grey block reads clearly as "something is hidden here"
+ * while staying monochrome. Fully opaque so the answer region underneath is genuinely
+ * covered — this is identical for tested and inactive masks; the tested one is set apart
+ * by its border, never by a lighter/translucent fill.
  */
 private val MASK_FILL = Color(0xFFBBBBBB)
 
@@ -55,6 +57,60 @@ private val OUTLINE_COLOR = Color.White
 
 /** Outline stroke width, in natural-image pixels (scaled with the image). */
 private const val OUTLINE_STROKE_PX = 2f
+
+// --- Mask styling (the single point a future COLOR mode would swap) -----------
+
+/**
+ * A two-tone ring drawn around the tested mask: a thick [outerColor] stroke with a
+ * thinner [innerColor] stroke inset on top of it. Two contrasting tones (black outer,
+ * white inner) guarantee the ring pops against BOTH light and dark image regions in
+ * monochrome — a single-tone border would vanish where the base image matches it.
+ * Widths are in natural-image pixels (scaled with the image, like [OUTLINE_STROKE_PX]).
+ */
+data class MaskBorder(
+    val outerColor: Color,
+    val outerWidthPx: Float,
+    val innerColor: Color,
+    val innerWidthPx: Float,
+)
+
+/**
+ * The complete draw spec for one occlusion shape: whether to [fill] the geometry, in
+ * what [fill] colour (when filled) or stroke colour (when not), and an optional
+ * distinguishing [border] ring drawn on top. `null` means "draw nothing" (CONTEXT).
+ */
+data class MaskStyle(
+    val filled: Boolean,
+    val fill: Color,
+    val border: MaskBorder? = null,
+)
+
+/** Border for the tested front mask: heavy black outer ring + white inner ring. */
+private val TESTED_BORDER = MaskBorder(
+    outerColor = Color.Black,
+    outerWidthPx = 6f,
+    innerColor = Color.White,
+    innerWidthPx = 2f,
+)
+
+/**
+ * The SINGLE pure mapping from a resolved [ShapeState] to how it must be drawn. Every
+ * mask/outline styling decision lives here, so a future COLOR mode (pink tested / tan
+ * inactive, behind a settings toggle) is a one-function swap. Returns `null` for
+ * [ShapeState.CONTEXT] (draw nothing).
+ *
+ *  - [ShapeState.MASKED]        → plain solid grey block (inactive, hide-all).
+ *  - [ShapeState.MASKED_TESTED] → same solid grey block PLUS a heavy two-tone ring so the
+ *    asked region is unmistakable among many masks (monochrome default).
+ *  - [ShapeState.REVEALED_OUTLINE] → stroke-only white outline (tested answer, back).
+ *  - [ShapeState.CONTEXT]       → null (shows through, drawn nothing).
+ */
+fun maskStyle(state: ShapeState): MaskStyle? = when (state) {
+    ShapeState.CONTEXT -> null
+    ShapeState.MASKED -> MaskStyle(filled = true, fill = MASK_FILL)
+    ShapeState.MASKED_TESTED -> MaskStyle(filled = true, fill = MASK_FILL, border = TESTED_BORDER)
+    ShapeState.REVEALED_OUTLINE -> MaskStyle(filled = false, fill = OUTLINE_COLOR)
+}
 
 // --- Base-image load state (why this exists) ----------------------------------
 
@@ -313,20 +369,19 @@ private fun DrawScope.drawBaseImage(image: ImageBitmap) {
 }
 
 /**
- * Draws one already-scaled shape per its [ScaledShape.state]:
- * MASKED → opaque fill; REVEALED_OUTLINE → stroke only; CONTEXT → nothing.
+ * Draws one already-scaled shape per the [maskStyle] of its [ScaledShape.state]:
+ * a `null` style (CONTEXT) draws nothing; a filled style paints the geometry solid; a
+ * stroke-only style paints its outline; and a style carrying a [MaskStyle.border] adds
+ * the distinguishing two-tone ring on top (the tested front mask).
  */
 private fun DrawScope.drawScaledShape(shape: ScaledShape) {
-    when (shape.state) {
-        ShapeState.CONTEXT -> return // shape shows through — draw nothing
-        ShapeState.MASKED -> drawShapeGeometry(shape, filled = true)
-        ShapeState.REVEALED_OUTLINE -> drawShapeGeometry(shape, filled = false)
-    }
+    val style = maskStyle(shape.state) ?: return // CONTEXT → shows through, draw nothing
+    drawShapeGeometry(shape, color = style.fill, filled = style.filled)
+    style.border?.let { drawMaskBorder(shape, it) }
 }
 
-/** Emits the geometry of [shape] as a fill (mask) or stroke-only outline. */
-private fun DrawScope.drawShapeGeometry(shape: ScaledShape, filled: Boolean) {
-    val color = if (filled) MASK_FILL else OUTLINE_COLOR
+/** Emits the geometry of [shape] as a fill (mask) or stroke-only outline in [color]. */
+private fun DrawScope.drawShapeGeometry(shape: ScaledShape, color: Color, filled: Boolean) {
     val stroke = Stroke(width = OUTLINE_STROKE_PX)
     when (shape) {
         is ScaledShape.Rect ->
@@ -365,6 +420,38 @@ private fun DrawScope.drawShapeGeometry(shape: ScaledShape, filled: Boolean) {
             val path = polygonPath(shape.points)
             if (filled) drawPath(path, color) else drawPath(path, color, style = stroke)
         }
+    }
+}
+
+/**
+ * Strokes the two-tone distinguishing ring of [border] around [shape]: the thick outer
+ * colour first, then the thinner inner colour on top, so together they read as an
+ * outer/inner double ring that contrasts against any base-image region.
+ */
+private fun DrawScope.drawMaskBorder(shape: ScaledShape, border: MaskBorder) {
+    drawShapeStroke(shape, border.outerColor, border.outerWidthPx)
+    drawShapeStroke(shape, border.innerColor, border.innerWidthPx)
+}
+
+/** Strokes only the outline of [shape] in [color] at [widthPx] (natural-image pixels). */
+private fun DrawScope.drawShapeStroke(shape: ScaledShape, color: Color, widthPx: Float) {
+    val stroke = Stroke(width = widthPx)
+    when (shape) {
+        is ScaledShape.Rect -> drawRect(
+            color = color,
+            topLeft = Offset(shape.left, shape.top),
+            size = Size(shape.width, shape.height),
+            style = stroke,
+        )
+
+        is ScaledShape.Ellipse -> drawOval(
+            color = color,
+            topLeft = Offset(shape.left, shape.top),
+            size = Size(shape.width, shape.height),
+            style = stroke,
+        )
+
+        is ScaledShape.Polygon -> drawPath(polygonPath(shape.points), color, style = stroke)
     }
 }
 

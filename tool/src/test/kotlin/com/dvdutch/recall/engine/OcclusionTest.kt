@@ -87,14 +87,15 @@ class OcclusionTest {
     // ---- resolveState (the table) --------------------------------------------
     // tested ordinal = card.ord + 1. A shape's ordinal is the tested one when equal.
 
-    // Front, tested shape → always MASKED (both hide modes).
+    // Front, tested shape → MASKED_TESTED (both hide modes): the tested mask must be
+    // visually distinct from inactive masks so the studier knows WHICH region to recall.
     @Test
-    fun `front tested is masked hide-one`() =
-        assertEquals(ShapeState.MASKED, resolveState(tested = 1, shape = 1, isBack = false, occludeInactive = false))
+    fun `front tested is masked-tested hide-one`() =
+        assertEquals(ShapeState.MASKED_TESTED, resolveState(tested = 1, shape = 1, isBack = false, occludeInactive = false))
 
     @Test
-    fun `front tested is masked hide-all`() =
-        assertEquals(ShapeState.MASKED, resolveState(tested = 1, shape = 1, isBack = false, occludeInactive = true))
+    fun `front tested is masked-tested hide-all`() =
+        assertEquals(ShapeState.MASKED_TESTED, resolveState(tested = 1, shape = 1, isBack = false, occludeInactive = true))
 
     // Front, inactive shape → CONTEXT (hide-one) / MASKED (hide-all).
     @Test
@@ -135,12 +136,16 @@ class OcclusionTest {
     )
 
     @Test
-    fun `resolveShapes front hide-all masks tested and inactive`() {
+    fun `resolveShapes front hide-all marks tested distinct from inactive masks`() {
         val out = resolveShapes(note(), testedOrdinal = 2, isBack = false)
         assertEquals(3, out.size)
-        // ordinal 2 is the ellipse (tested) → masked; others masked (hide-all).
-        assertTrue(out.all { it.state == ShapeState.MASKED }, "hide-all front: all masked, got $out")
-        assertTrue(out.any { it is OcclusionShapeState.Ellipse })
+        // ordinal 2 is the ellipse (tested) → MASKED_TESTED (distinct); others MASKED (hide-all).
+        val ellipse = out.filterIsInstance<OcclusionShapeState.Ellipse>().single()
+        assertEquals(ShapeState.MASKED_TESTED, ellipse.state)
+        assertTrue(
+            out.filter { it !is OcclusionShapeState.Ellipse }.all { it.state == ShapeState.MASKED },
+            "hide-all front: inactive masks stay plain MASKED, got $out",
+        )
     }
 
     @Test
@@ -166,7 +171,7 @@ class OcclusionTest {
         val out = resolveShapes(n, testedOrdinal = 2, isBack = false)
         // The text shape is skipped, so only the rect survives, and it is the tested one.
         assertEquals(1, out.size)
-        assertEquals(ShapeState.MASKED, out.single().state)
+        assertEquals(ShapeState.MASKED_TESTED, out.single().state)
     }
 
     // ---- fractional-vs-pixel coordinate normalisation -------------------------
