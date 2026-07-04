@@ -88,8 +88,13 @@ sealed interface FailCause {
  * to keep every transition deterministic under test.
  *
  * The buffer is topped up eagerly: whenever it drops below [PREFETCH_THRESHOLD]
- * cards a second `queue()` fetch is appended. The session is [StudyState.Finished]
- * once the buffer is exhausted and the server reports no cards remain.
+ * cards a full `queue()` fetch is appended, and that fetch re-queries the engine
+ * for whatever is due NOW. There is NO fixed session cap (AnkiDroid's model):
+ * grading keeps pulling more due cards until a `queue()` fetch returns ZERO cards
+ * — i.e. the engine's queue is genuinely exhausted — and only then is the session
+ * [StudyState.Finished]. Cards held back because they are scheduled a few minutes
+ * out (intraday learning past the learn-ahead window) are not "done"; they surface
+ * in the Finished [Counts] so the UI can say they are due again later today.
  */
 class StudyMachine(
     private val client: EngineApi,

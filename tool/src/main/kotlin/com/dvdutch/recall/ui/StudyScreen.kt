@@ -453,6 +453,32 @@ private fun GradeBar(buttons: List<GradeButton>, onGrade: (String) -> Unit) {
     }
 }
 
+/**
+ * The pure done-screen copy. The session serves cards until the engine's queue is
+ * TRULY exhausted (AnkiDroid's serve-until-done model), so [StudyState.Finished] is
+ * only ever reached at real exhaustion — never a fixed batch cap. The copy must
+ * therefore be truthful about what, if anything, returns later today:
+ *   - always the reviewed count;
+ *   - if learning cards remain, they were held back only because they are scheduled a
+ *     few minutes out, so they WILL be due again later today (pluralized on count);
+ *   - otherwise a plain "all caught up".
+ *
+ * Kept as a plain object (no Compose) so the copy is unit-tested on the JVM.
+ */
+object FinishedCopy {
+    fun lines(reviewed: Int, counts: Counts?): List<String> {
+        val head = "session done — $reviewed reviewed"
+        val learning = counts?.learning ?: 0
+        val tail = if (learning > 0) {
+            val noun = if (learning == 1) "card" else "cards"
+            "$learning $noun will be due again later today"
+        } else {
+            "all caught up"
+        }
+        return listOf(head, tail)
+    }
+}
+
 @Composable
 private fun androidx.compose.foundation.layout.ColumnScope.FinishedBody(
     reviewed: Int,
@@ -460,6 +486,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.FinishedBody(
     counts: Counts?,
     onBack: () -> Unit,
 ) {
+    val lines = FinishedCopy.lines(reviewed, counts)
     Column(
         modifier = Modifier
             .weight(1f)
@@ -467,21 +494,17 @@ private fun androidx.compose.foundation.layout.ColumnScope.FinishedBody(
             .padding(horizontal = 1f.gridUnitsAsDp()),
     ) {
         LightText(
-            text = "session done — $reviewed reviewed",
+            text = lines[0],
             variant = LightTextVariant.Heading,
             modifier = Modifier.padding(top = 1f.gridUnitsAsDp()),
         )
 
-        // "more due later today" when the queue emptied but counts remain.
-        val remaining = counts?.let { it.new + it.learning + it.review } ?: 0
-        if (remaining > 0) {
-            LightText(
-                text = "$remaining more due later today",
-                variant = LightTextVariant.Copy,
-                lighten = true,
-                modifier = Modifier.padding(top = 0.5f.gridUnitsAsDp()),
-            )
-        }
+        LightText(
+            text = lines[1],
+            variant = LightTextVariant.Copy,
+            lighten = true,
+            modifier = Modifier.padding(top = 0.5f.gridUnitsAsDp()),
+        )
 
         sync?.let {
             LightText(
