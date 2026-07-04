@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.viewModelScope
 import com.dvdutch.recall.engine.RecallEngine
 import com.dvdutch.recall.prefs.RecallPreferences
+import com.dvdutch.recall.prefs.TextSanitizer
 import com.thelightphone.sdk.LightViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,12 +52,13 @@ class FirstRunViewModel(
     }
 
     fun submitField(field: FirstRunField, raw: CharSequence) {
-        val value = if (field == FirstRunField.Password) raw.toString() else raw.toString().trim()
+        // The SDK editor inserts a newline for the return key and never trims; sanitize
+        // at our boundary so a stray return or edge whitespace can't break sync login.
         _state.update {
             when (field) {
-                FirstRunField.Endpoint -> it.copy(endpoint = value)
-                FirstRunField.Username -> it.copy(username = value)
-                FirstRunField.Password -> it.copy(password = value)
+                FirstRunField.Endpoint -> it.copy(endpoint = TextSanitizer.sanitizeEndpoint(raw))
+                FirstRunField.Username -> it.copy(username = TextSanitizer.sanitizeCredential(raw))
+                FirstRunField.Password -> it.copy(password = TextSanitizer.sanitizeCredential(raw))
             }
         }
         _editing.value = null

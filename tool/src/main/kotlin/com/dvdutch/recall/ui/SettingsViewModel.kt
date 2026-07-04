@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.viewModelScope
 import com.dvdutch.recall.engine.RecallEngine
 import com.dvdutch.recall.prefs.RecallPreferences
+import com.dvdutch.recall.prefs.TextSanitizer
 import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SimpleLightScreen
 import kotlinx.coroutines.Dispatchers
@@ -93,15 +94,16 @@ class SettingsViewModel(
         _uiState.update { it.copy(mode = SettingsMode.Main) }
     }
 
+    // The SDK editor inserts a newline for the return key and never trims; sanitize
+    // at our boundary so a stray return or edge whitespace can't break sync login.
     fun submitEndpoint(raw: CharSequence) =
-        submitField(RecallPreferences.SYNC_ENDPOINT, raw.toString().trim()) { s, v -> s.copy(endpoint = v) }
+        submitField(RecallPreferences.SYNC_ENDPOINT, TextSanitizer.sanitizeEndpoint(raw)) { s, v -> s.copy(endpoint = v) }
 
     fun submitUsername(raw: CharSequence) =
-        submitField(RecallPreferences.SYNC_USERNAME, raw.toString().trim()) { s, v -> s.copy(username = v) }
+        submitField(RecallPreferences.SYNC_USERNAME, TextSanitizer.sanitizeCredential(raw)) { s, v -> s.copy(username = v) }
 
-    // Password is intentionally NOT trimmed — leading/trailing chars can be significant.
     fun submitPassword(raw: CharSequence) =
-        submitField(RecallPreferences.SYNC_PASSWORD, raw.toString()) { s, v -> s.copy(password = v) }
+        submitField(RecallPreferences.SYNC_PASSWORD, TextSanitizer.sanitizeCredential(raw)) { s, v -> s.copy(password = v) }
 
     private fun submitField(
         key: Preferences.Key<String>,
