@@ -69,6 +69,11 @@ class RecallEngine(
      */
     suspend fun openCollection(): String {
         val path = storage.ensureCollectionDir()
+        // Journaling recovery BEFORE opening: an orphaned `.guard-backup` means the
+        // download guard's roll-back was interrupted (crash/kill/OOM mid-copy), leaving
+        // the collection half-overwritten. Recover from the backup — the last known-good
+        // pre-download state — so the backend never opens a torn file (finding #2).
+        GuardBackupRecovery.recover(storage.collectionFile)
         withContext(holder.lane) { holder.openCollection(path) }
         return path
     }

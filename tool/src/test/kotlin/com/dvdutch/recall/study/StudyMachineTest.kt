@@ -823,6 +823,173 @@ class StudyMachineTest {
         assertEquals(1, state.counts.new)
     }
 
+    // Burying the LAST due card must finish the session: the empty re-query settles to
+    // Finished, carrying the engine's latest counts (e.g. cards due later today) and the
+    // reviewed count (bury posts no answer, so reviewed stays 0).
+    @Test
+    fun buryingTheLastDueCardFinishes() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 1), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(listOf(card(1, "s1")), counts(new = 1))),
+        )
+        val m = machine(bridge)
+        m.start()
+
+        // Bury card 1 (the only card): the fresh re-query returns NOTHING but reports 2
+        // learning cards due later today.
+        bridge.buryScript.add(FakeBridge.Outcome.Ok(Unit))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(emptyList(), counts(learning = 2))),
+        )
+
+        m.buryCurrent()
+
+        assertEquals(listOf(1L), bridge.buryArgs)
+        val state = m.state.value
+        assertTrue(state is StudyState.Finished, "was $state") // no cards left -> Finished
+        assertEquals(0, state.reviewed) // bury is not a review
+        assertEquals(2, state.counts?.learning) // "2 more due later today"
+    }
+
+    // Suspending the LAST due card finishes likewise (same empty-re-query -> Finished path).
+    @Test
+    fun suspendingTheLastDueCardFinishes() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 1), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(listOf(card(1, "s1")), counts(new = 1))),
+        )
+        val m = machine(bridge)
+        m.start()
+
+        bridge.suspendScript.add(FakeBridge.Outcome.Ok(Unit))
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(emptyList(), counts())))
+
+        m.suspendCurrent()
+
+        assertEquals(listOf(1L), bridge.suspendArgs)
+        val state = m.state.value
+        assertTrue(state is StudyState.Finished, "was $state")
+        assertEquals(0, state.reviewed)
+    }
+
+    // The UNDO gate stays tied to ANSWER ops, not bury: after a bury (no answer posted)
+    // undoAvailable is false, calling undo() anyway is a safe no-op, and a subsequent grade
+    // re-arms undo so it works again.
+    @Test
+    fun undoAfterBuryIsGuardedToAnswerOps() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 3), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(
+                QueueResponse(
+                    listOf(card(1, "s1"), card(2, "s2"), card(3, "s3")),
+                    counts(new = 3),
+                    undoableAnswer = false,
+                ),
+            ),
+        )
+        val m = machine(bridge, now = clock(1_000L, 1_200L), uuid = uuids("u1"))
+        m.start()
+
+        // Bury card 1 -> advance drops the head, buffer [2,3] (< 5) -> prefetch returns
+        // nothing new (engine exhausted). Even though the engine now holds an undoable bury
+        // op, no ANSWER was posted this session, so the control stays hidden.
+        bridge.buryScript.add(FakeBridge.Outcome.Ok(Unit))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(
+                QueueResponse(
+                    emptyList(),
+                    counts(new = 2),
+                    undoableAnswer = true, // engine has an op, but it's a bury, not our answer
+                ),
+            ),
+        )
+        m.buryCurrent()
+        assertEquals(false, (m.state.value as StudyState.ShowingFront).undoAvailable)
+
+        // Defensive: calling undo() anyway is safe — the engine reports nothing to bring
+        // back as an answer; state stays coherent on card 2.
+        bridge.undoScript.add(FakeBridge.Outcome.Ok(UndoResult(undone = false, undoableAnswer = true)))
+        m.undo()
+        val afterStrayUndo = m.state.value
+        assertTrue(afterStrayUndo is StudyState.ShowingFront, "was $afterStrayUndo")
+        assertEquals(2L, afterStrayUndo.card.cardId) // uncorrupted
+
+        // Now GRADE card 2: an answer is posted this session, re-arming the undo gate.
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u1", "applied"))))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(emptyList(), counts(new = 1), undoableAnswer = true)),
+        )
+        m.reveal()
+        m.grade("good")
+
+        val afterGrade = m.state.value
+        assertTrue(afterGrade is StudyState.ShowingFront, "was $afterGrade")
+        assertEquals(3L, afterGrade.card.cardId)
+        assertEquals(true, afterGrade.undoAvailable) // undo works again after an answer
+
+        // And undo now brings the graded card 2 back on its front.
+        bridge.undoScript.add(FakeBridge.Outcome.Ok(UndoResult(undone = true, undoableAnswer = false)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(listOf(card(2, "s2"), card(3, "s3")), counts(new = 2))),
+        )
+        m.undo()
+        val afterUndo = m.state.value
+        assertTrue(afterUndo is StudyState.ShowingFront, "was $afterUndo")
+        assertEquals(2L, afterUndo.card.cardId) // the graded card returned
+    }
+
+    // Serve-until-done across a prefetch-refill boundary INTERLEAVED with a bury: the
+    // buffer stays coherent (no card is duplicated or skipped) as a bury drops a card, a
+    // grade drives a refill, and study serves right through to the last engine card.
+    @Test
+    fun serveUntilDoneAcrossRefillWithBuryStaysCoherent() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 6), sync)))
+        // Initial batch of 5 (threshold is 5): [1,2,3,4,5].
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse((1L..5L).map { card(it, "s$it") }, counts(new = 6))),
+        )
+        val m = machine(bridge)
+        m.start()
+        assertEquals(1L, (m.state.value as StudyState.ShowingFront).card.cardId)
+
+        // Bury card 1 -> advance drops the head (1) -> [2,3,4,5] size 4 (< 5) -> a full
+        // prefetch appends only the genuinely-new due card 6 (the engine lists what remains
+        // to fetch, not the already-buffered cards) -> buffer [2,3,4,5,6]. No duplicate.
+        bridge.buryScript.add(FakeBridge.Outcome.Ok(Unit))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(listOf(card(6, "s6")), counts(new = 5))),
+        )
+        m.buryCurrent()
+        assertEquals(listOf(1L), bridge.buryArgs)
+        assertEquals(2L, (m.state.value as StudyState.ShowingFront).card.cardId) // card 1 gone, no dup
+
+        // Grade the buffer down. Buffer is now [2,3,4,5,6] (size 5). Grading 2 -> size 4
+        // (< 5) triggers a prefetch that returns nothing new (engine exhausted): [3,4,5,6].
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u2", "applied"))))
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(emptyList(), counts(new = 4))))
+        val seen = mutableListOf<Long>()
+        seen.add((m.state.value as StudyState.ShowingFront).card.cardId) // 2
+        m.reveal(); m.grade("good")
+
+        // Now serve the rest until Finished, recording every distinct card id shown.
+        // Remaining after that grade: [3,4,5,6]; each grade returns empty (exhausted).
+        repeat(4) { bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("g", "applied")))) }
+        repeat(4) { bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(emptyList(), counts()))) }
+        while (m.state.value is StudyState.ShowingFront) {
+            seen.add((m.state.value as StudyState.ShowingFront).card.cardId)
+            m.reveal(); m.grade("good")
+        }
+
+        assertTrue(m.state.value is StudyState.Finished, "was ${m.state.value}")
+        // Coherent buffer: exactly cards 2..6 served once each, in order, card 1 (buried)
+        // never surfaced, none duplicated or skipped.
+        assertEquals(listOf(2L, 3L, 4L, 5L, 6L), seen)
+    }
+
     // Mark the current note: state reflects nowMarked, the SAME card stays shown (no
     // advance, no re-query), toggling again unmarks it.
     @Test

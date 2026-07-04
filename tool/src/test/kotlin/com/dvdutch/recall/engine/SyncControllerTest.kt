@@ -81,7 +81,7 @@ class SyncControllerTest {
     }
 
     @Test
-    fun `FULL_* latch persists needs-attention true via the callback`() {
+    fun `FULL_ latch persists needs-attention true via the callback`() {
         org.junit.Assume.assumeTrue("sync server not reachable", serverReachable())
         // Establish a known server state by full-uploading THIS collection.
         runBlocking { SyncController(config(), EngineHolder).fullSync(upload = true) }
@@ -235,7 +235,7 @@ class SyncControllerTest {
             )
             val result = runBlocking { controller.fullDownload(force = false) }
             assertIs<FullDownloadResult.GuardTripped>(result)
-            assertEquals(before, (result as FullDownloadResult.GuardTripped).localCardCount)
+            assertEquals(before, result.localCardCount)
             val after = runBlocking { withContext(EngineHolder.lane) { cardCount() } }
             assertEquals(before, after, "the guard must NOT wipe the populated phone")
         } finally {

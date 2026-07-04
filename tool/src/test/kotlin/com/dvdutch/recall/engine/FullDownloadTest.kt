@@ -31,6 +31,7 @@ class FullDownloadTest {
         initialLocalCount: Int,
         private val downloadedCount: Int,
         private val downloadThrows: Throwable? = null,
+        private val restoreThrows: Throwable? = null,
     ) : FullDownloadOps {
         var liveCount: Int = initialLocalCount
         private var backup: Int? = null
@@ -52,6 +53,7 @@ class FullDownloadTest {
         }
 
         override suspend fun restoreCollection() {
+            restoreThrows?.let { throw it } // a crash/kill mid-roll-back
             liveCount = backup ?: error("restore with no backup")
             restored = true
         }
@@ -111,5 +113,41 @@ class FullDownloadTest {
         assertTrue("connection reset" in failed.reason, "the failure reason must surface: ${failed.reason}")
         assertEquals(14_046, ops.liveCount, "a mid-download failure must leave the old collection intact")
         assertTrue(ops.restored, "a mid-download failure must restore the backup")
+    }
+
+    // --- Backup lifecycle (finding #3): a restore that THROWS must not crash the app ---
+
+    // A restore that throws on the mid-download-failure path must NOT propagate: the
+    // download already failed, and now roll-back was interrupted too — but the guard's
+    // open-time recovery ([GuardBackupRecovery]) restores from the still-present backup on
+    // the next launch, so the flow surfaces the retriable Failed error state, never crashes.
+    @Test
+    fun `a restore that throws on a failed download yields a retriable failure, not a crash`() {
+        val ops = FakeOps(
+            initialLocalCount = 14_046,
+            downloadedCount = 0,
+            downloadThrows = RuntimeException("connection reset mid-transfer"),
+            restoreThrows = RuntimeException("disk full during roll-back"),
+        )
+        val result = runBlocking { FullDownloadFlow.run(ops, force = false) }
+
+        assertIs<FullDownloadResult.Failed>(result) // surfaced, not thrown
+        assertFalse(ops.restored, "restore threw — the backup is LEFT for open-time recovery")
+    }
+
+    // A restore that throws on the guard-tripped path (empty server, populated phone) must
+    // likewise surface a retriable Failed rather than propagate: the backup is left intact
+    // and recovered on the next open, and the UI re-decides.
+    @Test
+    fun `a restore that throws on a guard trip yields a retriable failure, not a crash`() {
+        val ops = FakeOps(
+            initialLocalCount = 14_046,
+            downloadedCount = 0,
+            restoreThrows = RuntimeException("process killed mid-roll-back"),
+        )
+        val result = runBlocking { FullDownloadFlow.run(ops, force = false) }
+
+        assertIs<FullDownloadResult.Failed>(result) // NOT GuardTripped, NOT a thrown crash
+        assertFalse(ops.restored, "restore threw — the backup is LEFT for open-time recovery")
     }
 }
