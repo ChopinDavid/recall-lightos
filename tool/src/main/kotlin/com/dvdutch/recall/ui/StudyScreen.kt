@@ -266,7 +266,9 @@ private fun androidx.compose.foundation.layout.ColumnScope.ActionsMenu(
         ActionRow(label = "BURY CARD", onClick = onBury)
         ActionRow(label = "SUSPEND CARD", onClick = onSuspend)
         ActionRow(label = if (marked) "UNMARK NOTE" else "MARK NOTE", onClick = onToggleMark)
-        ActionRow(label = "CANCEL", onClick = onCancel, lighten = true)
+        // Full-white like every other row: in a monochrome text UI a greyed row reads as
+        // DISABLED, not "secondary" (and AttentionScreen's CANCEL is white — consistency).
+        ActionRow(label = "CANCEL", onClick = onCancel)
     }
 }
 
