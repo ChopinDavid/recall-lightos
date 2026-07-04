@@ -2,6 +2,7 @@ package com.dvdutch.recall.ui
 
 import com.thelightphone.sdk.ui.LightScrollBarPosition
 import com.thelightphone.sdk.ui.scrollBarGutterUnits
+import com.thelightphone.sdk.ui.scrollViewContentWidthUnits
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -33,5 +34,26 @@ class ScrollBarGutterTest {
     fun insideReservesNoGutter() {
         // Inside overlays the bar, so no horizontal space is taken from content.
         assertEquals(0f, scrollBarGutterUnits(LightScrollBarPosition.Inside), 0f)
+    }
+
+    /**
+     * The definitive invariant for the aspect-ratio flicker: content width is `total − gutter`
+     * and is IDENTICAL whether or not the scrollbar is shown. The original flicker's toggling
+     * metric was exactly this width (measured 1000px bar-hidden ⇄ 920px bar-shown) because the
+     * bar was a Row sibling consuming its own width only while visible. There is no bar-visibility
+     * parameter here by design — the fix draws the bar as a zero-layout overlay — so the width
+     * cannot swing and the overflow decision cannot oscillate.
+     */
+    @Test
+    fun contentWidthIsInvariantToBarVisibility() {
+        val total = 50f
+        // Outside: exactly one constant gutter is removed, once, no matter the (absent) bar state.
+        assertEquals(
+            total - scrollBarGutterUnits(LightScrollBarPosition.Outside),
+            scrollViewContentWidthUnits(total, LightScrollBarPosition.Outside),
+            0f,
+        )
+        // Inside: the bar overlays content, so content keeps the full width.
+        assertEquals(total, scrollViewContentWidthUnits(total, LightScrollBarPosition.Inside), 0f)
     }
 }
