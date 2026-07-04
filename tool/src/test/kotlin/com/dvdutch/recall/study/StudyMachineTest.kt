@@ -227,6 +227,57 @@ class StudyMachineTest {
         assertEquals(1, state.reviewed) // one applied answer counted
     }
 
+    // SERVE-UNTIL-DONE: grading through the ENTIRE initial batch when the engine
+    // still has more due cards must KEEP SERVING (never Finished at the batch
+    // boundary). The old model capped the session at the first batch; here the
+    // prefetch keeps topping up from the engine until it is truly exhausted, so
+    // after answering all 20 initial cards we are still ShowingFront on a fresh card.
+    @Test
+    fun servesPastInitialBatchWhenEngineHasMoreDue() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 29), sync)))
+        // The initial batch is the full queue() default (20 cards) with 29 due total.
+        val batchA = (1L..20L).map { card(it, "a$it") }
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(batchA, counts(new = 29))))
+        // Every grade posts an applied answer.
+        repeat(20) { i ->
+            bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u$i", "applied"))))
+        }
+        // advance() drops the head then, while the buffer holds >= 5 cards, does a
+        // counts-only queue(1) whose card is DISCARDED (bait). Grades 1..15 keep the
+        // buffer at >= 5 (20 - 15 = 5), so they each consume one bait refresh.
+        val batchB = (21L..29L).map { card(it, "b$it") }
+        repeat(15) {
+            bridge.queueScript.add(
+                FakeBridge.Outcome.Ok(QueueResponse(listOf(card(99, "bait")), counts(new = 14))),
+            )
+        }
+        // Grade 16 drops the buffer to 4 (< 5) -> full prefetch: the engine STILL has
+        // due cards and hands back the remaining nine (ids 21..29), proving serve-until-done.
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(batchB, counts(new = 9))))
+        // Grades 17..20 keep the buffer >= 5 again (4 + 9 = 13, down to ~9), so they
+        // each consume a bait counts-only refresh.
+        repeat(10) {
+            bridge.queueScript.add(
+                FakeBridge.Outcome.Ok(QueueResponse(listOf(card(99, "bait")), counts(new = 9))),
+            )
+        }
+        val m = machine(bridge, now = clock(1_000L, 1_200L), uuid = uuids(*Array(20) { "u$it" }))
+        m.start()
+
+        // Grade all 20 initial cards. If the old batch cap were in force, the session
+        // would go Finished after the 20th; serve-until-done keeps a card in hand.
+        repeat(20) {
+            m.reveal()
+            m.grade("good")
+        }
+
+        val state = m.state.value
+        assertTrue(state is StudyState.ShowingFront, "expected still serving, was $state")
+        // The card in hand comes from the engine's later batch, not the initial one.
+        assertTrue(state.card.cardId in 21L..29L, "was card ${state.card.cardId}")
+    }
+
     // Finished carries the counts from the MOST RECENT queue() response even when
     // the buffer is now empty: learning cards may be due later today.
     @Test
