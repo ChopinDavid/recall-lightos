@@ -39,7 +39,16 @@ android {
             signingConfig = signingConfigs.getByName("lightsdkDev")
         }
         release {
+            // R8: shrink + minify. Real keystore is a later publishing step; for
+            // now the release is signed with the same dev key as debug so it can
+            // install on the emulator (no signature-mismatch reinstall needed).
             signingConfig = signingConfigs.getByName("lightsdkDev")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 
