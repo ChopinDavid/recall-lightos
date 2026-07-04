@@ -59,6 +59,20 @@ fun scrollBarGutterUnits(position: LightScrollBarPosition): Float = when (positi
     LightScrollBarPosition.Inside -> 0f
 }
 
+/**
+ * The width (grid units) available to [LightScrollView] content given the view's [totalWidthUnits]
+ * and scrollbar [position]. It is `total − gutter` and — critically — takes NO bar-visibility
+ * parameter: whether the scrollbar is currently shown must not change the content width.
+ *
+ * This is the invariant that kills the occlusion flicker. The scrollbar is drawn as a CenterEnd
+ * overlay (consuming no layout space) rather than a Row sibling (which consumed the bar's width
+ * only while visible). Were content width to depend on bar visibility, `fillMaxWidth().aspectRatio()`
+ * content would change height with the bar, flipping viewport overflow and oscillating the bar
+ * forever. Pure, so the invariant is unit-testable without a Compose runtime.
+ */
+fun scrollViewContentWidthUnits(totalWidthUnits: Float, position: LightScrollBarPosition): Float =
+    totalWidthUnits - scrollBarGutterUnits(position)
+
 @Composable
 fun LightScrollView(
     modifier: Modifier = Modifier,
@@ -68,56 +82,46 @@ fun LightScrollView(
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
     val showScrollBar = scrollState.maxValue > 0
-    // Reserve the Outside scrollbar gutter UNCONDITIONALLY (see [scrollBarGutterUnits]):
-    // if the reserved width tracked `showScrollBar`, toggling the bar would change the
-    // content's available width, and for aspect-ratio content a narrower box means a
-    // shorter image, which can flip viewport overflow — making the bar oscillate forever.
+    // Reserve the scrollbar gutter UNCONDITIONALLY (see [scrollBarGutterUnits]) AND draw
+    // the bar as a CenterEnd OVERLAY that consumes no layout space — for BOTH positions.
+    //
+    // Why an overlay and not a Row sibling: a sibling bar occupies horizontal space in the
+    // Row only while it is visible, so the weighted content Column's width toggled with bar
+    // visibility (measured: 1000px bar-hidden ⇄ 920px bar-shown). For fillMaxWidth()
+    // .aspectRatio() content (the occlusion image) a narrower box means a proportionally
+    // shorter image, which flips whether total content overflows the viewport, which toggles
+    // the bar again — an infinite show/hide layout loop that flickered the screen and pinned
+    // the CPU. Commit 4e78a2a made the gutter PADDING unconditional but left the bar as a Row
+    // sibling, so the width still swung by the bar's own width; overlaying the bar is what
+    // finally makes the content width invariant to bar visibility. The Outside gutter padding
+    // keeps the bar clear of content; Inside reserves no gutter so the bar overlays content.
     val contentPaddingEnd = scrollBarGutterUnits(scrollBarPosition)
 
-    if (scrollBarPosition == LightScrollBarPosition.Inside) {
-        Box(modifier = modifier) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(scrollState),
-                content = content,
-            )
-            if (showScrollBar) {
-                LightScrollBar(
-                    scrollValue = scrollState.value.toFloat(),
-                    maxScrollValue = scrollState.maxValue.toFloat(),
-                    onScrollTo = { target ->
-                        scope.launch { scrollState.scrollTo(target.roundToInt()) }
-                    },
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .fillMaxHeight()
-                        .padding(
-                            vertical = SCROLLBAR_INSIDE_VERTICAL_PADDING_UNITS.gridUnitsAsDp(),
-                        ),
-                )
+    Box(modifier = modifier) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(end = contentPaddingEnd.gridUnitsAsDp())
+                .verticalScroll(scrollState),
+            content = content,
+        )
+        if (showScrollBar) {
+            val verticalPadding = if (scrollBarPosition == LightScrollBarPosition.Inside) {
+                SCROLLBAR_INSIDE_VERTICAL_PADDING_UNITS.gridUnitsAsDp()
+            } else {
+                0.dp
             }
-        }
-    } else {
-        Row(modifier = modifier) {
-            Column(
+            LightScrollBar(
+                scrollValue = scrollState.value.toFloat(),
+                maxScrollValue = scrollState.maxValue.toFloat(),
+                onScrollTo = { target ->
+                    scope.launch { scrollState.scrollTo(target.roundToInt()) }
+                },
                 modifier = Modifier
-                    .weight(1f)
+                    .align(Alignment.CenterEnd)
                     .fillMaxHeight()
-                    .padding(end = contentPaddingEnd.gridUnitsAsDp())
-                    .verticalScroll(scrollState),
-                content = content,
+                    .padding(vertical = verticalPadding),
             )
-            if (showScrollBar) {
-                LightScrollBar(
-                    scrollValue = scrollState.value.toFloat(),
-                    maxScrollValue = scrollState.maxValue.toFloat(),
-                    onScrollTo = { target ->
-                        scope.launch { scrollState.scrollTo(target.roundToInt()) }
-                    },
-                    modifier = Modifier.fillMaxHeight(),
-                )
-            }
         }
     }
 }
