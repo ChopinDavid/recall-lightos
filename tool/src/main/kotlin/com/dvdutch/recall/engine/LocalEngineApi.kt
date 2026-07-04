@@ -1,5 +1,6 @@
 package com.dvdutch.recall.engine
 
+import anki.scheduler.BuryOrSuspendCardsRequest
 import anki.scheduler.CardAnswer
 import anki.scheduler.QueuedCards
 import anki.scheduler.SchedulingStates
@@ -71,6 +72,12 @@ class LocalEngineApi(
 
     private companion object {
         val LABEL_KEYS = listOf("again", "hard", "good", "easy")
+
+        /**
+         * The tag AnkiDroid (and desktop Anki) uses for a marked note. Toggling this tag
+         * on the note IS "Mark Note"; a note carrying it renders with the star indicator.
+         */
+        const val MARK_TAG = "marked"
     }
 
     /**
@@ -169,8 +176,17 @@ class LocalEngineApi(
             nextDueLabels = LABEL_KEYS.zip(labels).toMap(),
             frontAudio = front.audio,
             backAudio = back.audio,
+            marked = isMarked(backend, card.noteId),
         )
     }
+
+    /**
+     * Whether [noteId]'s note carries the [MARK_TAG] "marked" tag — i.e. AnkiDroid's Mark
+     * Note state. Reads the note's structured tag list (never a string search), so it stays
+     * correct regardless of tag order/spacing. MUST be called on [EngineHolder.lane].
+     */
+    private fun isMarked(backend: Backend, noteId: Long): Boolean =
+        backend.getNote(noteId).tagsList.any { it == MARK_TAG }
 
     /**
      * If [entry]'s card belongs to an Image Occlusion notetype, builds its self-contained
@@ -247,6 +263,8 @@ class LocalEngineApi(
             nextDueLabels = LABEL_KEYS.zip(labels).toMap(),
             frontAudio = emptyList(),
             backAudio = emptyList(),
+            // The note was already fetched above for notetype detection; reuse its tags.
+            marked = note.tagsList.any { it == MARK_TAG },
         )
     }
 
@@ -351,6 +369,50 @@ class LocalEngineApi(
             return@withContext UndoResult(undone = false, undoableAnswer = false)
         }
         UndoResult(undone = true, undoableAnswer = isAnswerUndoable(backend))
+    }
+
+    /**
+     * Buries [cardId] via rslib's `buryOrSuspendCards` in BURY_USER mode (the exact op
+     * AnkiDroid's Bury Card drives) — the card leaves the queue until tomorrow and the
+     * change is recorded for sync. Confined to [EngineHolder.lane]. The empty noteIds list
+     * is deliberate: we bury the single card, not the whole note.
+     */
+    override suspend fun buryCard(cardId: Long): Unit = withContext(holder.lane) {
+        holder.backend().buryOrSuspendCards(
+            listOf(cardId),
+            emptyList(),
+            BuryOrSuspendCardsRequest.Mode.BURY_USER,
+        )
+    }
+
+    /**
+     * Suspends [cardId] via rslib's `buryOrSuspendCards` in SUSPEND mode (the exact op
+     * AnkiDroid's Suspend Card drives) — the card leaves the queue until it is unsuspended
+     * (on desktop) and the change is recorded for sync. Confined to [EngineHolder.lane].
+     */
+    override suspend fun suspendCard(cardId: Long): Unit = withContext(holder.lane) {
+        holder.backend().buryOrSuspendCards(
+            listOf(cardId),
+            emptyList(),
+            BuryOrSuspendCardsRequest.Mode.SUSPEND,
+        )
+    }
+
+    /**
+     * Toggles the [MARK_TAG] "marked" tag on [noteId]'s note (the exact op AnkiDroid's Mark
+     * Note drives) and returns whether the note is NOW marked. Reads the current tags via
+     * `getNote`, then `removeNoteTags`/`addNoteTags` for the single note; the change is
+     * recorded for sync. Confined to [EngineHolder.lane].
+     */
+    override suspend fun toggleMark(noteId: Long): Boolean = withContext(holder.lane) {
+        val backend = holder.backend()
+        val wasMarked = isMarked(backend, noteId)
+        if (wasMarked) {
+            backend.removeNoteTags(listOf(noteId), MARK_TAG)
+        } else {
+            backend.addNoteTags(listOf(noteId), MARK_TAG)
+        }
+        !wasMarked
     }
 
     /** Applies one answer; MUST be called on [EngineHolder.lane]. */

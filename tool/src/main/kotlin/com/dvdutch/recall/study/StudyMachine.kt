@@ -29,6 +29,7 @@ sealed interface StudyState {
         val card: CardPayload,
         val counts: Counts,
         val undoAvailable: Boolean = false,
+        val marked: Boolean = false,
     ) : StudyState
 
     /**
@@ -40,6 +41,7 @@ sealed interface StudyState {
         val counts: Counts,
         val shownAtMs: Long,
         val undoAvailable: Boolean = false,
+        val marked: Boolean = false,
     ) : StudyState
 
     /**
@@ -111,6 +113,14 @@ class StudyMachine(
     private var shownAtMs: Long = 0L
 
     /**
+     * Whether the CURRENT note is marked. Seeded from the head card's
+     * [CardPayload.marked] whenever the visible card changes ([settle]/[reveal]) and
+     * flipped in place by [toggleMarkCurrent] from the engine's returned truth — so the
+     * indicator reflects the latest toggle without a queue re-fetch.
+     */
+    private var currentMarked: Boolean = false
+
+    /**
      * True once at least one answer has been posted this session. Half of the
      * UNDO gate: even if the engine reports an undoable op, we only offer undo
      * for an answer THIS session gave, never a stray op from before study opened.
@@ -167,7 +177,9 @@ class StudyMachine(
         val current = _state.value
         if (current !is StudyState.ShowingFront) return
         shownAtMs = nowMs()
-        _state.value = StudyState.ShowingBack(current.card, current.counts, shownAtMs, undoAvailable())
+        _state.value = StudyState.ShowingBack(
+            current.card, current.counts, shownAtMs, undoAvailable(), currentMarked,
+        )
     }
 
     /**
@@ -321,6 +333,81 @@ class StudyMachine(
     }
 
     /**
+     * Buries the CURRENT card via rslib's own bury (never local logic): the card leaves
+     * the queue until tomorrow. It advances exactly like a grade — drop the head, re-query
+     * from the engine (the source of truth for the buried card's removal and the fresh
+     * counts) and show the next card's front — but posts NO answer, so the review counter
+     * does not move. The buried card must not reappear from the buffer; [advance]'s
+     * re-query supplies the coherent remaining session. No-op unless a card is showing.
+     */
+    suspend fun buryCurrent() {
+        val card = currentCard() ?: return
+        guard {
+            client.buryCard(card.cardId)
+            advanceAfterAction()
+        }
+    }
+
+    /**
+     * Suspends the CURRENT card via rslib's own suspend (never local logic): the card
+     * leaves the queue until unsuspended on desktop. Same advance/re-query discipline as
+     * [buryCurrent] — the engine is the truth for the removal and refreshed counts.
+     * No-op unless a card is showing.
+     */
+    suspend fun suspendCurrent() {
+        val card = currentCard() ?: return
+        guard {
+            client.suspendCard(card.cardId)
+            advanceAfterAction()
+        }
+    }
+
+    /**
+     * Toggles the "marked" tag on the CURRENT note via rslib (never local logic). Unlike
+     * bury/suspend this does NOT advance: the same card stays shown, and only the mark
+     * indicator flips — from the engine's returned truth ([currentMarked]) — so no queue
+     * re-fetch is needed. No-op unless a card is showing.
+     */
+    suspend fun toggleMarkCurrent() {
+        val card = currentCard() ?: return
+        guard {
+            currentMarked = client.toggleMark(card.noteId)
+            reflectMark()
+        }
+    }
+
+    /**
+     * The current visible card (front or back), or null if we are not in a settled review
+     * state — so a stray action tap mid-load/mid-failure is a safe no-op.
+     */
+    private fun currentCard(): CardPayload? = when (val s = _state.value) {
+        is StudyState.ShowingFront -> s.card
+        is StudyState.ShowingBack -> s.card
+        else -> null
+    }
+
+    /**
+     * Shared advance for bury/suspend: drop the acted-on head card and refresh from the
+     * engine, exactly like a grade's [advance] but WITHOUT counting a review. The buried/
+     * suspended card is gone from the queue, so the re-query returns the coherent remaining
+     * session and the buffer never re-surfaces it.
+     */
+    private suspend fun advanceAfterAction() = advance()
+
+    /**
+     * Re-emits the current visible state with the refreshed [currentMarked] flag, keeping
+     * the same side (front/back) and every other field — so a mark toggle updates only the
+     * indicator and never advances or re-reveals.
+     */
+    private fun reflectMark() {
+        when (val s = _state.value) {
+            is StudyState.ShowingFront -> _state.value = s.copy(marked = currentMarked)
+            is StudyState.ShowingBack -> _state.value = s.copy(marked = currentMarked)
+            else -> Unit
+        }
+    }
+
+    /**
      * Emits [StudyState.ShowingFront] for the head card, or [StudyState.Finished]
      * when the buffer is exhausted (session complete). Grading resets to the
      * front of the next card by design.
@@ -332,7 +419,10 @@ class StudyMachine(
             // more are due later today. No re-polling: anti-loop behavior intact.
             StudyState.Finished(reviewed, sync = null, counts = counts)
         } else {
-            StudyState.ShowingFront(next, counts, undoAvailable())
+            // Seed the mark indicator from the (now current) head card's payload; a
+            // subsequent toggle updates currentMarked in place without a re-query.
+            currentMarked = next.marked
+            StudyState.ShowingFront(next, counts, undoAvailable(), currentMarked)
         }
     }
 

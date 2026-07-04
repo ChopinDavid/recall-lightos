@@ -67,6 +67,11 @@ data class CardPayload(
     // defaults keep older callers/tests valid.
     @SerialName("front_audio") val frontAudio: List<String> = emptyList(),
     @SerialName("back_audio") val backAudio: List<String> = emptyList(),
+    // Whether the card's note currently carries the "marked" tag (AnkiDroid's Mark Note).
+    // Additive with a safe default: the StudyMachine surfaces it as a subtle indicator and
+    // toggling it via toggleMark never advances the card. Older payloads lacking it read
+    // false (unmarked).
+    val marked: Boolean = false,
 )
 
 @Serializable
