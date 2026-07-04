@@ -24,8 +24,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
@@ -81,7 +83,26 @@ fun LightScrollView(
 ) {
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
-    val showScrollBar = scrollState.maxValue > 0
+    // Debounce the scrollbar SHOW by one frame. When a scroll view's content is swapped
+    // (e.g. an occlusion card's front→back reveal), the new subtree's first layout pass can
+    // momentarily measure taller than the viewport — a spurious one-frame `maxValue > 0`
+    // that settles to 0 the next frame once `fillMaxWidth().aspectRatio()` content resolves.
+    // Reading maxValue directly rendered the bar for exactly that one settling frame, a
+    // visible scrollbar flash on every reveal. Requiring the overflow to persist to the NEXT
+    // frame (via withFrameNanos) suppresses that transient while still showing the bar for
+    // genuinely-scrollable content (one frame later — imperceptible). SHOW is delayed; HIDE
+    // stays immediate, and the content width is already invariant to bar visibility (see
+    // [scrollViewContentWidthUnits]), so this can never drive a show/hide layout loop.
+    val overflowing = scrollState.maxValue > 0
+    val showScrollBar by produceState(initialValue = false, overflowing) {
+        if (!overflowing) {
+            value = false
+        } else {
+            // Confirm the overflow survives to the next frame before showing the bar.
+            withFrameNanos { }
+            if (scrollState.maxValue > 0) value = true
+        }
+    }
     // Reserve the scrollbar gutter UNCONDITIONALLY (see [scrollBarGutterUnits]) AND draw
     // the bar as a CenterEnd OVERLAY that consumes no layout space — for BOTH positions.
     //
