@@ -2,6 +2,7 @@ package com.dvdutch.recall.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import com.dvdutch.recall.api.BridgeError
 import com.dvdutch.recall.api.CardPayload
@@ -32,7 +36,6 @@ import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightIcons
-import com.thelightphone.sdk.ui.LightScrollView
 import com.thelightphone.sdk.ui.LightText
 import com.thelightphone.sdk.ui.LightTextVariant
 import com.thelightphone.sdk.ui.LightTheme
@@ -41,6 +44,7 @@ import com.thelightphone.sdk.ui.LightThemeTokens
 import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
+import kotlin.math.roundToInt
 
 /**
  * The study session screen for one deck. It renders whichever [StudyState] the
@@ -322,15 +326,69 @@ private fun androidx.compose.foundation.layout.ColumnScope.CardBody(
         onAutoPlay(sideAudio)
     }
 
-    LightScrollView(
+    // We own the card body's scroll offset (via our CardScrollView, since the SDK's
+    // LightScrollView keeps its scrollState private) so we can auto-scroll a TALL card's
+    // answer into view on reveal. Anchor: the window-space top of the scroll viewport and of
+    // the answer-boundary node (the first back node past the {{FrontSide}} prefix — the <hr>
+    // rule when present, else the first answer node), captured via onGloballyPositioned; their
+    // difference plus the current scroll gives that boundary's position in content space,
+    // which revealScrollTarget turns into a scroll offset.
+    val scrollState = rememberScrollState()
+    val density = LocalDensity.current
+    // The gap left above the divider after an auto-scroll (one grid unit). Resolved here in
+    // composable scope; gridUnitsAsDp is @Composable and cannot be called inside the effect.
+    val topMargin = with(density) { 1f.gridUnitsAsDp().toPx() }.roundToInt()
+    var viewportTopY by remember { mutableStateOf(0f) }
+    var viewportH by remember { mutableStateOf(0) }
+    var dividerWindowY by remember(card.cardId) { mutableStateOf<Float?>(null) }
+
+    // On the front→back transition (and only then), if the divider sits below the fold,
+    // smooth-scroll it to a small margin below the viewport top. Keyed on (card, showBack)
+    // so it fires once per reveal, never on plain recomposition; a short card whose divider
+    // is already visible yields a null target and does not move (the common case, no motion).
+    // A quick animated scroll (not an instant jump) reads best on the Light aesthetic: the
+    // small, deliberate motion signals "the answer continues below" without the jarring
+    // teleport of an instant jump. It runs after the answer subtree has been positioned
+    // (dividerWindowY non-null), so it composes with — never fights — the scrollbar's
+    // one-frame show debounce.
+    LaunchedEffect(card.cardId, showBack, dividerWindowY, viewportH) {
+        if (!showBack) return@LaunchedEffect
+        val dividerY = dividerWindowY ?: return@LaunchedEffect
+        if (viewportH <= 0) return@LaunchedEffect
+        val dividerContentY = (dividerY - viewportTopY).roundToInt() + scrollState.value
+        val target = revealScrollTarget(
+            dividerY = dividerContentY,
+            viewportH = viewportH,
+            currentScroll = scrollState.value,
+            maxScroll = scrollState.maxValue,
+            topMargin = topMargin,
+        )
+        if (target != null) scrollState.animateScrollTo(target)
+    }
+
+    CardScrollView(
+        scrollState = scrollState,
         modifier = Modifier
             .weight(1f)
             .fillMaxWidth()
-            .padding(horizontal = 1f.gridUnitsAsDp()),
+            .padding(horizontal = 1f.gridUnitsAsDp())
+            .onGloballyPositioned { coords ->
+                viewportTopY = coords.positionInWindow().y
+                viewportH = coords.size.height
+            },
     ) {
         RenderNodeColumn(
             nodes = if (showBack) card.back else card.front,
             mediaLoader = mediaLoader,
+            // The answer boundary is the first back node past the {{FrontSide}} prefix, i.e.
+            // index == the number of front nodes (the <hr> rule if the template has one, else
+            // the first answer node). Only meaningful on the back; −1 on the front never fires.
+            dividerIndex = if (showBack) card.front.size else -1,
+            onNodePositioned = if (showBack) {
+                { coords -> dividerWindowY = coords.positionInWindow().y }
+            } else {
+                null
+            },
         )
     }
     if (sideHasAudio(card, showBack)) {
