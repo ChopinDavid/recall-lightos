@@ -163,6 +163,12 @@ class LocalEngineApi(
         // (mirrors TemplateManager.applyCustomFilters(anodes, frontSide = qout.text)).
         // Without this the whole front line vanishes from the revealed answer.
         val frontHtml = assembleCardSide(rendered.questionNodesList)
+        // Detect the type-answer marker on the QUESTION side (rslib emits a literal
+        // [[type:Field]] there). If present, resolve the expected answer from the
+        // referenced note field, HTML/media-stripped; the marker itself is stripped from
+        // both sides by compileSide so it never renders as garbage text. Normal cards have
+        // no marker, so typeAnswer stays null and the card behaves exactly as before.
+        val typeAnswer = TypeAnswerMarker.find(frontHtml)
         val front = compileSide(backend, frontHtml, "front", css, isQuestion = true)
         val backHtml = assembleCardSide(rendered.answerNodesList, frontSide = frontHtml)
         val back = compileSide(backend, backHtml, "back", css, isQuestion = false)
@@ -177,7 +183,24 @@ class LocalEngineApi(
             frontAudio = front.audio,
             backAudio = back.audio,
             marked = isMarked(backend, card.noteId),
+            typeAnswerExpected = typeAnswer?.let { expectedAnswer(backend, card.noteId, it.field) },
+            typeAnswerNoCase = typeAnswer?.noCase ?: false,
         )
+    }
+
+    /**
+     * Resolves the expected type-answer: the referenced note [field]'s stored HTML, reduced
+     * to plain comparison text via [fieldTextForCompare] (tags removed, entities decoded,
+     * media dropped, whitespace trimmed). Returns null if the field is not on the note, so a
+     * broken `{{type:Missing}}` degrades to "no expected answer" rather than crashing the
+     * queue. MUST be called on [EngineHolder.lane].
+     */
+    private fun expectedAnswer(backend: Backend, noteId: Long, field: String): String? {
+        val note = backend.getNote(noteId)
+        val notetype = backend.getNotetype(note.notetypeId)
+        val idx = notetype.fieldsList.indexOfFirst { it.name == field }
+        if (idx < 0 || idx >= note.fieldsList.size) return null
+        return fieldTextForCompare(note.getFields(idx))
     }
 
     /**
@@ -305,10 +328,16 @@ class LocalEngineApi(
         css: String,
         isQuestion: Boolean,
     ): CompiledSide {
-        val stripped = backend.stripAvTags(html)
+        // Strip any [[type:Field]] marker BEFORE compiling so it never renders as garbage
+        // text (the expected answer is resolved separately in cardPayload). Marker-free
+        // HTML is unaffected. This is engine-level pre-processing; the parity compiler is
+        // untouched. Cloze type markers ([[type:cloze:Field]]) are stripped the same way —
+        // v1 offers no cloze type-answer affordance (documented out of scope).
+        val markerFree = TypeAnswerMarker.strip(html)
+        val stripped = backend.stripAvTags(markerFree)
         val nodes = compileHtml(stripped, side, css).toMutableList()
-        val audio = soundFilenames(backend.extractAvTags(html, isQuestion).avTagsList)
-        if (stripped != html) {
+        val audio = soundFilenames(backend.extractAvTags(markerFree, isQuestion).avTagsList)
+        if (stripped != markerFree) {
             nodes.add(UnsupportedNode("audio"))
         }
         return CompiledSide(nodes, audio)
@@ -413,6 +442,23 @@ class LocalEngineApi(
             backend.addNoteTags(listOf(noteId), MARK_TAG)
         }
         !wasMarked
+    }
+
+    /**
+     * Computes the type-answer grading diff via rslib's own `compareAnswer` (never a local
+     * diff). The third `combining` arg is false: we do the standard NFC comparison Anki
+     * uses by default. For an `[[type:nc:Field]]` marker ([noCase] true) both sides are
+     * lowercased first, so the comparison — and therefore the diff — is case-insensitive
+     * (mirrors AnkiDroid's no-case handling). Confined to [EngineHolder.lane].
+     */
+    override suspend fun compareTypedAnswer(
+        expected: String,
+        provided: String,
+        noCase: Boolean,
+    ): String = withContext(holder.lane) {
+        val exp = if (noCase) expected.lowercase() else expected
+        val prov = if (noCase) provided.lowercase() else provided
+        holder.backend().compareAnswer(exp, prov, false)
     }
 
     /** Applies one answer; MUST be called on [EngineHolder.lane]. */

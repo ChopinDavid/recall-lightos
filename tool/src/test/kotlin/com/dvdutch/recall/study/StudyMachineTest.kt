@@ -92,6 +92,18 @@ private class FakeBridge : EngineApi {
         markArgs.add(noteId)
         return markScript.next()
     }
+
+    val compareArgs = mutableListOf<Triple<String, String, Boolean>>()
+    val compareScript = ArrayDeque<Outcome<String>>()
+
+    override suspend fun compareTypedAnswer(
+        expected: String,
+        provided: String,
+        noCase: Boolean,
+    ): String {
+        compareArgs.add(Triple(expected, provided, noCase))
+        return compareScript.next()
+    }
 }
 
 class StudyMachineTest {
@@ -1041,5 +1053,109 @@ class StudyMachineTest {
         assertEquals(1L, state.card.cardId)
         assertEquals(true, state.marked)
         assertEquals(1_000L, state.shownAtMs) // reveal time preserved
+    }
+
+    // --- Type-answer cards -------------------------------------------------------
+
+    private fun typeCard(id: Long, states: String, expected: String, noCase: Boolean = false) =
+        card(id, states).copy(typeAnswerExpected = expected, typeAnswerNoCase = noCase)
+
+    private fun startWith(bridge: FakeBridge, card: CardPayload, now: () -> Long = clock(1_000L)): StudyMachine {
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 1), sync)))
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(listOf(card), counts(new = 1))))
+        val m = machine(bridge, now = now)
+        runBlocking { m.start() }
+        return m
+    }
+
+    @Test
+    fun `a normal card exposes no type-answer affordance on the front`() = runBlocking {
+        val bridge = FakeBridge()
+        val m = startWith(bridge, card(1, "s1"))
+        val front = m.state.value as StudyState.ShowingFront
+        assertNull(front.typeAnswerExpected, "a normal card must expose no type-answer prompt")
+    }
+
+    @Test
+    fun `a type-answer card exposes the expected answer prompt on the front`() = runBlocking {
+        val bridge = FakeBridge()
+        val m = startWith(bridge, typeCard(1, "s1", "Paris"))
+        val front = m.state.value as StudyState.ShowingFront
+        assertEquals("Paris", front.typeAnswerExpected)
+    }
+
+    @Test
+    fun `typing then revealing carries the backend diff nodes on the back`() = runBlocking {
+        val bridge = FakeBridge()
+        val m = startWith(bridge, typeCard(1, "s1", "Paris"))
+        bridge.compareScript.add(
+            FakeBridge.Outcome.Ok(
+                "<code id=typeans><span class=typeBad>p</span><span class=typeGood>aris</span></code>",
+            ),
+        )
+        m.setTypedAnswer("paris")
+        m.reveal()
+
+        // The machine called compareTypedAnswer with the expected + typed value.
+        assertEquals(Triple("Paris", "paris", false), bridge.compareArgs.single())
+
+        val back = m.state.value as StudyState.ShowingBack
+        val reveal = back.typeAnswer
+        assertTrue(reveal is TypeAnswerReveal.Diff, "typed reveal must carry a diff, was $reveal")
+        // The diff node preserves the wrong-char flag (the parsed 'p' is struck).
+        val runs = (reveal.node as TextNode).runs
+        assertTrue(runs.any { it.strike }, "the diff must flag the wrong char: $runs")
+    }
+
+    @Test
+    fun `an nc type-answer card lowers case in the compare call`() = runBlocking {
+        val bridge = FakeBridge()
+        val m = startWith(bridge, typeCard(1, "s1", "Paris", noCase = true))
+        bridge.compareScript.add(FakeBridge.Outcome.Ok("<code id=typeans></code>"))
+        m.setTypedAnswer("paris")
+        m.reveal()
+        assertEquals(Triple("Paris", "paris", true), bridge.compareArgs.single())
+    }
+
+    @Test
+    fun `revealing WITHOUT typing shows the expected answer never a fake diff`() = runBlocking {
+        val bridge = FakeBridge()
+        val m = startWith(bridge, typeCard(1, "s1", "Paris"))
+        m.reveal()
+
+        // No compare call is made when nothing was typed.
+        assertTrue(bridge.compareArgs.isEmpty(), "no compare call without a typed answer")
+        val back = m.state.value as StudyState.ShowingBack
+        val reveal = back.typeAnswer
+        assertTrue(reveal is TypeAnswerReveal.Expected, "untyped reveal must show the expected answer")
+        assertEquals("Paris", reveal.answer)
+    }
+
+    @Test
+    fun `the typed answer is cleared after advancing to the next card`() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 2), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(
+                QueueResponse(listOf(typeCard(1, "s1", "Paris"), typeCard(2, "s2", "Berlin")), counts(new = 2)),
+            ),
+        )
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(emptyList(), counts(new = 1))))
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u1", "applied"))))
+        bridge.compareScript.add(FakeBridge.Outcome.Ok("<code id=typeans><span class=typeGood>Paris</span></code>"))
+        val m = machine(bridge, now = clock(1_000L, 1_200L), uuid = uuids("u1"))
+        m.start()
+        m.setTypedAnswer("Paris")
+        m.reveal()
+        m.grade("good")
+
+        // Now on card 2's front: the previous typed answer must NOT leak in.
+        val front = m.state.value as StudyState.ShowingFront
+        assertEquals(2L, front.card.cardId)
+        // Revealing card 2 without typing shows its expected answer, proving the input reset.
+        m.reveal()
+        assertTrue(bridge.compareArgs.size == 1, "card 2 was not typed, so no second compare call")
+        val back = m.state.value as StudyState.ShowingBack
+        assertTrue(back.typeAnswer is TypeAnswerReveal.Expected, "card 2 back must show expected, not a stale diff")
     }
 }

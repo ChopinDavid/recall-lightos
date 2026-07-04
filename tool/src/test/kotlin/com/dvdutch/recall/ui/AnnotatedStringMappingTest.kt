@@ -70,6 +70,13 @@ class AnnotatedStringMappingTest {
     }
 
     @Test
+    fun `underline run maps to Underline decoration`() {
+        val result = textNodeToAnnotatedString(TextNode(listOf(TextRun("miss", underline = true))))
+        val span = result.spanStyles.single()
+        assertEquals(TextDecoration.Underline, span.item.textDecoration)
+    }
+
+    @Test
     fun `small run maps to a reduced relative font size`() {
         val result = textNodeToAnnotatedString(TextNode(listOf(TextRun("tiny", small = true))))
         val span = result.spanStyles.single()
