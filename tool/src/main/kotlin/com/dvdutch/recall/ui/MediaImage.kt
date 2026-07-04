@@ -140,10 +140,57 @@ private fun decodeImageBitmap(bytes: ByteArray): ImageBitmap? =
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
 
 /**
+ * How a decoded `<img>` bitmap is sized on screen. This is the pure sizing decision;
+ * the caller maps it to a Compose modifier.
+ */
+sealed interface ImageDisplayMode {
+    /**
+     * Scale the image to fill the available content width, keeping this [aspectRatio]
+     * (width / height). A small image scales UP to the width and a large one scales
+     * DOWN — matching Anki/AnkiDroid, where `<img>` is fit to the column width.
+     */
+    data class FitToWidth(val aspectRatio: Float) : ImageDisplayMode
+
+    /** Draw the image at its intrinsic size (last-resort fallback for unmeasurable input). */
+    data object Wrap : ImageDisplayMode
+}
+
+/**
+ * Decides how to size an `<img>` node given the decoded bitmap's natural pixels
+ * ([naturalW]/[naturalH]) and any explicit HTML `width`/`height` attributes
+ * ([explicitW]/[explicitH], null when the source tag omitted them).
+ *
+ * Matches Anki/AnkiDroid: an `<img>` is fit to the available content width regardless
+ * of its native size (a 32px element GIF scales UP so it is legible; a 2000px photo
+ * scales DOWN). The only question is which aspect ratio to preserve while doing so:
+ *   - explicit `width` AND `height` present (both > 0) → honour that intended aspect,
+ *     so a deck author's `<img width=200 height=100>` renders 2:1 even if the bitmap
+ *     isn't. It is still clamped into the width (never blown past screen edge).
+ *   - otherwise → the bitmap's own natural aspect ratio.
+ * Degenerate natural dimensions (≤ 0, e.g. an unmeasurable decode) can't yield an
+ * aspect, so we fall back to [ImageDisplayMode.Wrap] rather than dividing by zero.
+ *
+ * Pure and unit-tested.
+ */
+fun imageDisplayMode(
+    naturalW: Int,
+    naturalH: Int,
+    explicitW: Int?,
+    explicitH: Int?,
+): ImageDisplayMode {
+    if (explicitW != null && explicitH != null && explicitW > 0 && explicitH > 0) {
+        return ImageDisplayMode.FitToWidth(aspectRatio = explicitW.toFloat() / explicitH.toFloat())
+    }
+    if (naturalW <= 0 || naturalH <= 0) return ImageDisplayMode.Wrap
+    return ImageDisplayMode.FitToWidth(aspectRatio = naturalW.toFloat() / naturalH.toFloat())
+}
+
+/**
  * Renders an [ImageNode]: the decoded image once [loader] resolves it, otherwise
- * the shared labelled placeholder (both while loading and on any failure). When the
- * node declares intrinsic `w`/`h`, the image fills the available width and keeps
- * that aspect ratio; otherwise it wraps its content.
+ * the shared labelled placeholder (both while loading and on any failure). The image
+ * is fit to the available content width (scaling small images up and large images
+ * down, like Anki), preserving the explicit-HTML aspect when the node carries `w`/`h`
+ * and otherwise the bitmap's natural aspect. See [imageDisplayMode].
  */
 @Composable
 fun MediaImage(node: ImageNode, loader: MediaLoader) {
@@ -157,12 +204,16 @@ fun MediaImage(node: ImageNode, loader: MediaLoader) {
         return
     }
 
-    val w = node.w
-    val h = node.h
-    val modifier = if (w != null && h != null && w > 0 && h > 0) {
-        Modifier.fillMaxWidth().aspectRatio(w.toFloat() / h.toFloat())
-    } else {
-        Modifier.wrapContentSize()
+    val modifier = when (
+        val mode = imageDisplayMode(
+            naturalW = image.width,
+            naturalH = image.height,
+            explicitW = node.w,
+            explicitH = node.h,
+        )
+    ) {
+        is ImageDisplayMode.FitToWidth -> Modifier.fillMaxWidth().aspectRatio(mode.aspectRatio)
+        ImageDisplayMode.Wrap -> Modifier.wrapContentSize()
     }
     Image(
         bitmap = image,
