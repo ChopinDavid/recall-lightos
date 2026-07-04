@@ -1,11 +1,34 @@
 package com.dvdutch.recall.ui
 
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.ImageBitmapConfig
+import androidx.compose.ui.graphics.colorspace.ColorSpace
+import androidx.compose.ui.graphics.colorspace.ColorSpaces
 import com.dvdutch.recall.prefs.RecallStorage
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+
+/** Minimal [ImageBitmap] stub for cache-identity assertions (no Android runtime). */
+private val FakeBitmap: ImageBitmap = object : ImageBitmap {
+    override val width: Int = 1
+    override val height: Int = 1
+    override val colorSpace: ColorSpace = ColorSpaces.Srgb
+    override val hasAlpha: Boolean = false
+    override val config: ImageBitmapConfig = ImageBitmapConfig.Argb8888
+    override fun prepareToDraw() = Unit
+    override fun readPixels(
+        buffer: IntArray,
+        startX: Int,
+        startY: Int,
+        width: Int,
+        height: Int,
+        bufferOffset: Int,
+        stride: Int,
+    ) = Unit
+}
 
 /**
  * Unit coverage for the pure, Android-runtime-free parts of media loading:
@@ -139,6 +162,53 @@ class MediaLoaderTest {
         assertNull(loader.load(""))
         assertEquals(0, decodeCalls, "a non-media src never reaches the file/decoder")
         storage.collectionDir.deleteRecursively()
+    }
+
+    // --- peek() synchronous cache probe -------------------------------------
+
+    @Test
+    fun peekReturnsNullBeforeAnyLoad(): Unit = runBlocking {
+        // A filename never loaded is not in the session cache: peek is a pure probe
+        // that never touches disk, so it must report a miss (null) synchronously.
+        val storage = tmpMediaDir()
+        storage.mediaFile("dog.jpg").writeBytes(ByteArray(4))
+        var decodeCalls = 0
+        val loader = MediaLoader(storage) { bytes -> decodeCalls++; FakeBitmap }
+        assertNull(loader.peek("dog.jpg"))
+        assertEquals(0, decodeCalls, "peek must never read or decode a file")
+        storage.collectionDir.deleteRecursively()
+    }
+
+    @Test
+    fun peekReturnsCachedBitmapAfterLoad(): Unit = runBlocking {
+        // Once load() has cached a bitmap for a name, peek returns that same bitmap
+        // synchronously — this is the front→back reveal seed that avoids the flash.
+        val storage = tmpMediaDir()
+        storage.mediaFile("dog.jpg").writeBytes(ByteArray(4))
+        val loader = MediaLoader(storage) { FakeBitmap }
+        assertNull(loader.peek("dog.jpg"))
+        loader.load("dog.jpg")
+        assertEquals(FakeBitmap, loader.peek("dog.jpg"))
+        storage.collectionDir.deleteRecursively()
+    }
+
+    @Test
+    fun peekResolvesFilenameSameWayAsLoad(): Unit = runBlocking {
+        // load() caches by the extracted bare filename; peek must apply the same
+        // extraction so a `/v1/media/...` src hits the cache the bare name populated.
+        val storage = tmpMediaDir()
+        storage.mediaFile("dog.jpg").writeBytes(ByteArray(4))
+        val loader = MediaLoader(storage) { FakeBitmap }
+        loader.load("dog.jpg")
+        assertEquals(FakeBitmap, loader.peek("/v1/media/dog.jpg"))
+    }
+
+    @Test
+    fun peekReturnsNullForNonMediaSrc(): Unit = runBlocking {
+        val storage = tmpMediaDir()
+        val loader = MediaLoader(storage) { FakeBitmap }
+        assertNull(loader.peek(""))
+        assertNull(loader.peek("https://example.com/dog.jpg"))
     }
 
     @Test

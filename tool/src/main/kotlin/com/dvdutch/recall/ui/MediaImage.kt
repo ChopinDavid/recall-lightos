@@ -109,6 +109,22 @@ class MediaLoader(
 
     private val cache = SessionLru<String, ImageBitmap>(maxEntries)
 
+    /**
+     * Synchronous, disk-free probe of the session cache. Returns the already-decoded
+     * bitmap for [src] if a prior [load] cached it, else null — never reads a file or
+     * decodes. This lets a composable seed its initial state with a cache hit so an
+     * image already in memory renders on the first frame instead of flashing the
+     * Loading placeholder (the front→back occlusion reveal swaps composable instances,
+     * restarting [produceState] from its initial value; without this seed that initial
+     * value is a null bitmap even for a just-loaded image). A miss returns null and the
+     * caller falls back to the normal load path. Mirrors [load]'s filename extraction so
+     * a `/v1/media/...` src probes the same key the bare name populated.
+     */
+    fun peek(src: String): ImageBitmap? {
+        val name = mediaFilenameFromSrc(src) ?: return null
+        return cache.get(name)
+    }
+
     suspend fun load(src: String): ImageBitmap? {
         val name = mediaFilenameFromSrc(src) ?: return null
         // Move the file read + decode off the caller's dispatcher: MediaImage's
@@ -194,7 +210,11 @@ fun imageDisplayMode(
  */
 @Composable
 fun MediaImage(node: ImageNode, loader: MediaLoader) {
-    val bitmap by produceState<ImageBitmap?>(initialValue = null, node.src, loader) {
+    // Seed from the session cache so an already-decoded image renders on the first frame
+    // instead of flashing the placeholder when a reveal (or any recomposition that swaps
+    // this composable instance) restarts produceState. Cache miss → null, unchanged
+    // loading behaviour. See [MediaLoader.peek].
+    val bitmap by produceState<ImageBitmap?>(initialValue = loader.peek(node.src), node.src, loader) {
         value = loader.load(node.src)
     }
 

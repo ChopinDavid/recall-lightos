@@ -240,8 +240,15 @@ fun OcclusionImage(node: OcclusionNode, mediaLoader: MediaLoader?) {
     // Two signals distinguish Loading from Failed: `completed` flips true only after the
     // producer returns, so a still-loading null (Loading) is never confused with a
     // resolved null (Failed). See [occlusionImageState].
+    //
+    // Seed the initial value from the session cache: on a REVEAL the FRONT and BACK sides
+    // are distinct composable instances over the SAME image, so swapping them restarts
+    // produceState from its initial value. Seeding a cache hit (already-decoded bitmap,
+    // marked completed) makes the back side draw the image on frame 1 — no ~2-frame drop
+    // to the Loading placeholder (and the transient scrollbar it caused). A cache miss
+    // (genuinely-not-yet-loaded image) seeds null/false → unchanged Loading behaviour.
     val loaded by produceState<Pair<ImageBitmap?, Boolean>>(
-        initialValue = null to false,
+        initialValue = mediaLoader.peek(node.image)?.let { it to true } ?: (null to false),
         node.image,
         mediaLoader,
     ) {
