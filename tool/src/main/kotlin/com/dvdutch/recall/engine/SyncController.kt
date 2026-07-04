@@ -247,7 +247,7 @@ class SyncController(
      * touches the native backend directly.
      */
     private inner class RealFullDownloadOps(private val file: () -> File) : FullDownloadOps {
-        private val backup: File get() = File(file().parentFile, file().name + ".guard-backup")
+        private val backup: File get() = GuardBackupRecovery.backupOf(file())
 
         override suspend fun localCardCount(): Int =
             holder.backend().searchCards("", anki.search.SortOrder.getDefaultInstance()).size
@@ -269,11 +269,14 @@ class SyncController(
         }
 
         override suspend fun restoreCollection() {
+            // Crash-safe roll-back: recover from the backup with the SAME journaling copy
+            // (copy → fsync → atomic rename → delete backup) that [GuardBackupRecovery]
+            // runs at open time, so a crash mid-restore leaves the backup intact for the
+            // next-open recovery instead of a torn file (findings #2/#3).
             val path = file().absolutePath
             holder.closeCollection()
-            backup.copyTo(file(), overwrite = true)
+            GuardBackupRecovery.recover(file())
             holder.reopenCollection(path)
-            backup.delete()
         }
 
         /** Remove the safety copy after a kept download (nothing to roll back to any more). */

@@ -72,15 +72,40 @@ object FullDownloadFlow {
         try {
             ops.download()
         } catch (t: Throwable) {
-            ops.restoreCollection()
-            return FullDownloadResult.Failed(t.message ?: t.toString())
+            // Roll back. If the roll-back ITSELF throws (crash/kill/disk-full mid-copy),
+            // do NOT propagate: the `.guard-backup` is left on disk and the guard's
+            // open-time recovery ([GuardBackupRecovery]) restores from it on the next
+            // launch. Surface the retriable Failed state so the app never crashes (#3).
+            return FullDownloadResult.Failed(restoreOrLeaveBackup(ops, t.message ?: t.toString()))
         }
 
         val downloadedCount = ops.localCardCount()
         if (!force && FullDownloadGuard.tripsOn(localCount, downloadedCount)) {
-            ops.restoreCollection()
-            return FullDownloadResult.GuardTripped(localCount)
+            // Guard tripped: roll back the empty download. A throw here likewise leaves
+            // the backup for open-time recovery and yields a retriable Failed rather than
+            // GuardTripped — the on-disk state is the (empty) download until recovery runs.
+            return try {
+                ops.restoreCollection()
+                FullDownloadResult.GuardTripped(localCount)
+            } catch (t: Throwable) {
+                FullDownloadResult.Failed(
+                    "roll-back interrupted (recovered on next open): ${t.message ?: t}",
+                )
+            }
         }
         return FullDownloadResult.Downloaded
     }
+
+    /**
+     * Rolls back on a failed download, returning the reason to surface. If the roll-back
+     * throws, the backup is LEFT on disk (open-time recovery finishes it) and the original
+     * download-failure [reason] is returned with a recovery note appended — never rethrown.
+     */
+    private suspend fun restoreOrLeaveBackup(ops: FullDownloadOps, reason: String): String =
+        try {
+            ops.restoreCollection()
+            reason
+        } catch (t: Throwable) {
+            "$reason (roll-back interrupted, recovered on next open: ${t.message ?: t})"
+        }
 }
