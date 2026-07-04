@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -110,17 +111,23 @@ class StudyScreen(
                             // white (tappable) after a grade — so the control teaches
                             // that undo exists before it's needed. Fires rslib's own
                             // undo; the card returns and the counts tick back.
+                            // The ↶ glyph's ink hangs low in its line box (arrow glyphs sit
+                            // near the baseline), so its visual center lands ~0.35 grid units
+                            // below the bar's other elements; the offset re-centers the INK
+                            // against "Study"/"MORE" (measured on-device).
                             LightText(
                                 text = "↶",
                                 variant = LightTextVariant.Copy,
                                 lighten = !undoable,
-                                modifier = if (undoable) {
-                                    Modifier
-                                        .clickable(onClick = viewModel::undo)
-                                        .padding(horizontal = 0.5f.gridUnitsAsDp())
-                                } else {
-                                    Modifier.padding(horizontal = 0.5f.gridUnitsAsDp())
-                                },
+                                modifier = (
+                                    if (undoable) {
+                                        Modifier.clickable(onClick = viewModel::undo)
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                                    .offset(y = (-0.35f).gridUnitsAsDp())
+                                    .padding(horizontal = 0.5f.gridUnitsAsDp()),
                             )
                             // "MORE" opens the card-actions menu, only over a live card.
                             if (state.hasCard()) {
