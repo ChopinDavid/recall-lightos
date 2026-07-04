@@ -199,7 +199,24 @@ class StudyMachine(
 
     /**
      * Drops the answered head card, tops up the buffer when it falls below
-     * [PREFETCH_THRESHOLD], then re-derives the visible state.
+     * [PREFETCH_THRESHOLD], and refreshes [counts] from the engine on EVERY grade
+     * so the study-screen header ticks live instead of freezing at session-start
+     * values until the buffer drains. Then re-derives the visible state.
+     *
+     * Two distinct fetch paths, one of which always runs:
+     *   - Prefetch (buffer below threshold): a full `queue()` whose cards refill
+     *     the buffer AND whose counts refresh the header — unchanged behaviour.
+     *   - Counts-only refresh (buffer still full): a `queue(limit = 1)` from which
+     *     we take ONLY `.counts`; its card(s) are deliberately DISCARDED so they
+     *     never duplicate or reorder the still-buffered cards.
+     *
+     * This mirrors AnkiDroid, which re-queries `getQueuedCards(fetchLimit = 1)`
+     * after every answer to keep its counts current. On-device this is an
+     * in-process JNI call (microseconds), so refreshing every grade is cheap;
+     * `queue(1)` compiles a single card payload we throw away, an acceptable cost
+     * that avoids widening the frozen [EngineApi] contract with a counts-only
+     * method. The card BUFFER cadence is unchanged: we do NOT fetch cards more
+     * often, and [PREFETCH_THRESHOLD] is untouched.
      */
     private suspend fun advance() {
         if (buffer.isNotEmpty()) buffer.removeFirst()
@@ -207,6 +224,10 @@ class StudyMachine(
             val response = client.queue()
             buffer.addAll(response.cards)
             counts = response.counts
+        } else {
+            // Buffer still full: refresh ONLY the counts, discarding fetched cards
+            // so they cannot pollute (duplicate/reorder) the buffer.
+            counts = client.queue(limit = 1).counts
         }
         settle()
     }

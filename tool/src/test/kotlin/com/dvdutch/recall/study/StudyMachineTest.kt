@@ -365,6 +365,96 @@ class StudyMachineTest {
         assertEquals(7L, bridge.answerArgs.last().single().cardId)
     }
 
+    // Grading a card while the buffer is well above the prefetch threshold must
+    // STILL refresh the visible counts from the engine: the engine reports fresh
+    // counts on the post-grade fetch and the next ShowingFront reflects them.
+    // (Regression: counts froze at session start until the buffer drained below 5.)
+    @Test
+    fun gradeRefreshesCountsWithFullBuffer() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 20), sync)))
+        // 20 cards: buffer stays >= threshold after answering one -> no prefetch,
+        // but counts must still refresh from the engine.
+        val initial = (1L..20L).map { card(it, "s$it") }
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(initial, counts(new = 20))))
+        // The post-grade counts-only fetch (limit=1) reports the ticked-down count.
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(listOf(card(99, "s99")), counts(new = 19))),
+        )
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u1", "applied"))))
+        val m = machine(bridge, now = clock(1_000L, 1_200L), uuid = uuids("u1"))
+        m.start()
+        m.reveal()
+
+        m.grade("good")
+
+        val state = m.state.value
+        assertTrue(state is StudyState.ShowingFront, "was $state")
+        assertEquals(19, state.counts.new) // counts ticked, not frozen at 20
+    }
+
+    // An "Again" that moves a new card to learning shows the updated learning
+    // count on the very next emitted state, even with a full buffer.
+    @Test
+    fun againMovesNewToLearningOnNextState() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 20), sync)))
+        val initial = (1L..20L).map { card(it, "s$it") }
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(initial, counts(new = 20))))
+        // After "again": one new became a learning card.
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(
+                QueueResponse(listOf(card(99, "s99")), counts(new = 19, learning = 1)),
+            ),
+        )
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u1", "applied"))))
+        val m = machine(bridge, now = clock(1_000L, 1_200L), uuid = uuids("u1"))
+        m.start()
+        m.reveal()
+
+        m.grade("again")
+
+        val state = m.state.value
+        assertTrue(state is StudyState.ShowingFront, "was $state")
+        assertEquals(19, state.counts.new)
+        assertEquals(1, state.counts.learning) // moved to learning immediately
+    }
+
+    // The counts-only refresh must NOT pollute the buffer: grading with a full
+    // buffer advances to the expected buffered card (card 2), and the card the
+    // refresh fetch returned (card 99) is never surfaced. A second grade advances
+    // to card 3 (still a buffered card, never the refresh's bait card 99).
+    @Test
+    fun countsRefreshDoesNotPolluteBuffer() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 20), sync)))
+        val initial = (1L..20L).map { card(it, "s$it") }
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(initial, counts(new = 20))))
+        // Each refresh fetch returns bait card 99; it must be ignored, not buffered.
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(listOf(card(99, "s99")), counts(new = 19))),
+        )
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(listOf(card(99, "s99")), counts(new = 18))),
+        )
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u1", "applied"))))
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u2", "applied"))))
+        val m = machine(bridge, now = clock(1_000L, 1_200L), uuid = uuids("u1", "u2"))
+        m.start()
+        m.reveal()
+
+        m.grade("good") // advance off card 1
+        val afterFirst = m.state.value
+        assertTrue(afterFirst is StudyState.ShowingFront, "was $afterFirst")
+        assertEquals(2L, afterFirst.card.cardId) // expected buffered card, not 99
+
+        m.reveal()
+        m.grade("good") // advance off card 2
+        val afterSecond = m.state.value
+        assertTrue(afterSecond is StudyState.ShowingFront, "was $afterSecond")
+        assertEquals(3L, afterSecond.card.cardId) // still buffered order, not 99
+    }
+
     // prefetch triggers a second queue() call when buffer drops below 5.
     @Test
     fun prefetchWhenBufferBelowFive() = runBlocking {
@@ -384,10 +474,11 @@ class StudyMachineTest {
 
         m.grade("good")
 
-        assertEquals(2, bridge.queueCalls) // prefetch fired
+        assertEquals(2, bridge.queueCalls) // prefetch fired (single fetch, not doubled)
         val state = m.state.value
         assertTrue(state is StudyState.ShowingFront, "was $state")
-        assertEquals(2L, state.card.cardId)
+        assertEquals(2L, state.card.cardId) // prefetched card 6 appended behind card 2
+        assertEquals(4, state.counts.new) // prefetch also refreshed counts (5 -> 4)
     }
 
     // 401 mid-session -> Failed(retriable=false).
