@@ -97,17 +97,101 @@ fun resolveState(tested: Int, shape: Int, isBack: Boolean, occludeInactive: Bool
     }
 }
 
+/** The numeric-coordinate prop keys that define a shape's geometry (per shape kind). */
+private val COORD_KEYS = listOf("left", "top", "width", "height", "rx", "ry")
+
 /**
- * Resolves every shape in [note] for one side into typed, state-carrying shapes.
+ * Collects every geometry coordinate in [note] (rect/ellipse props + polygon point
+ * components), used to decide fractional-vs-pixel for the whole note at once.
+ */
+private fun allCoords(note: ParsedOcclusion): List<Double> =
+    note.occlusions.flatMap { occ ->
+        occ.shapes.flatMap { sh ->
+            val fromProps = COORD_KEYS.mapNotNull { sh.props.num(it) }
+            val fromPoints = parsePoints(sh.props["points"]).flatMap { listOf(it.x, it.y) }
+            fromProps + fromPoints
+        }
+    }
+
+/**
+ * Decides whether a note's shape coordinates are FRACTIONAL ratios (0..1 of the image)
+ * rather than absolute natural pixels.
+ *
+ * The "Image Occlusion Enhanced" / "Image Occlusion+" notetype (the format the med-student
+ * majority actually uses) stores every coordinate as a fraction of the image dimension
+ * (e.g. `left=.1363 width=.1882`), whereas Anki's modern built-in "Image Occlusion"
+ * notetype stores absolute pixels (e.g. `left=150 width=200`).
+ *
+ * Detection is per-note (a note is uniformly one or the other) and evidence-based: across
+ * real IO+ decks the maximum coordinate observed was 0.9439 — i.e. every fractional coord
+ * is `<= 1.0`, while a pixel coord for any real image is far larger. So: **if every numeric
+ * coordinate in the note is `<= 1.0`, the note is fractional.** A note with no coordinates
+ * (all shapes malformed/text) is treated as non-fractional (nothing to scale anyway).
+ *
+ * Ambiguity note: the only case this misclassifies is a genuine pixel shape whose every
+ * coordinate is `<= 1` — i.e. a shape confined to the top-left 1×1 pixel of the image.
+ * That is absurd for any real occlusion image, and a fractional coordinate is never `> 1`,
+ * so the rule is safe in practice. (Theoretical corner: a 1×1-pixel base image, which no
+ * occlusion deck contains.)
+ */
+private fun isFractional(note: ParsedOcclusion): Boolean {
+    val coords = allCoords(note)
+    return coords.isNotEmpty() && coords.all { it <= 1.0 }
+}
+
+/**
+ * Multiplies a fractional-ratio [shape] up to natural pixels: x-axis metrics
+ * (`left/width/rx`, polygon `x`) by [nW]; y-axis metrics (`top/height/ry`, polygon `y`)
+ * by [nH]. Only called for notes classified fractional with known natural dims.
+ */
+private fun scaleToPixels(shape: OcclusionShapeState, nW: Int, nH: Int): OcclusionShapeState =
+    when (shape) {
+        is OcclusionShapeState.Rect -> shape.copy(
+            left = shape.left * nW, top = shape.top * nH,
+            width = shape.width * nW, height = shape.height * nH,
+        )
+        is OcclusionShapeState.Ellipse -> shape.copy(
+            left = shape.left * nW, top = shape.top * nH,
+            width = shape.width * nW, height = shape.height * nH,
+            rx = shape.rx * nW, ry = shape.ry * nH,
+        )
+        is OcclusionShapeState.Polygon -> shape.copy(
+            points = shape.points.map { Pt(it.x * nW, it.y * nH) },
+        )
+    }
+
+/**
+ * Resolves every shape in [note] for one side into typed, state-carrying shapes, in
+ * NATURAL PIXELS.
+ *
  * Unparseable shapes (text/unknown/malformed) are dropped. The resulting order follows
  * the note's occlusion order (which is NOT guaranteed sorted by ordinal from rslib), but
  * ordering is irrelevant to correctness since each shape carries its own state.
+ *
+ * If the note's coordinates are FRACTIONAL ratios (see [isFractional] — the Image
+ * Occlusion Enhanced format) and the natural image dimensions ([naturalW]/[naturalH]) are
+ * known (`> 0`), each coordinate is multiplied up to pixels here so the UI layer can stay
+ * pixel-only. Pixel-format notes (the modern built-in notetype) pass through unchanged.
+ * When natural dims are unknown, fractional coords are left as-is (the UI already declines
+ * to draw masks without known dims).
  */
-fun resolveShapes(note: ParsedOcclusion, testedOrdinal: Int, isBack: Boolean): List<OcclusionShapeState> =
-    note.occlusions.flatMap { occ ->
+fun resolveShapes(
+    note: ParsedOcclusion,
+    testedOrdinal: Int,
+    isBack: Boolean,
+    naturalW: Int = 0,
+    naturalH: Int = 0,
+): List<OcclusionShapeState> {
+    val scale = naturalW > 0 && naturalH > 0 && isFractional(note)
+    return note.occlusions.flatMap { occ ->
         val state = resolveState(testedOrdinal, occ.ordinal, isBack, note.occludeInactive)
-        occ.shapes.mapNotNull { parseShape(it.kind, it.props, state) }
+        occ.shapes.mapNotNull { raw ->
+            parseShape(raw.kind, raw.props, state)?.let {
+                if (scale) scaleToPixels(it, naturalW, naturalH) else it
+            }
+        }
     }
+}
 
 /** Natural pixel dimensions of a raster image. */
 data class ImageDims(val width: Int, val height: Int)
