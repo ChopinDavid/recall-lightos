@@ -32,6 +32,14 @@ class LocalEngineApiTest {
     private lateinit var tmpDir: java.nio.file.Path
     private lateinit var api: LocalEngineApi
 
+    /**
+     * A throwaway sync server for the live sync cases, spun up lazily via [requireServer]
+     * (which SKIPs when no server is available). NEVER the dev hub on :18080.
+     */
+    private var syncServer: ThrowawaySyncServer? = null
+    private fun requireServer(): ThrowawaySyncServer =
+        syncServer ?: ThrowawaySyncServer.start().also { syncServer = it }
+
     @BeforeTest
     fun setUp() {
         EngineHolder.nativeLoader = { RustBackendLoader.ensureSetup() }
@@ -45,6 +53,7 @@ class LocalEngineApiTest {
     fun tearDown() {
         runBlocking { withContext(EngineHolder.lane) { EngineHolder.closeCollection() } }
         tmpDir.toFile().deleteRecursively()
+        syncServer?.close()
     }
 
     /** On-lane access to the raw backend for test fixture seeding only. */
@@ -478,25 +487,16 @@ class LocalEngineApiTest {
         val MINIMAL_PNG: ByteArray = java.util.Base64.getDecoder().decode(
             "iVBORw0KGgoAAAANSUhEUgAAAoAAAAHgCAIAAAC6s0uzAAADk0lEQVR42u3BAQEAAACCIP+vbkhAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwaBKyAAEWSyeZAAAAAElFTkSuQmCC",
         )
-        const val SYNC_ENDPOINT = "http://127.0.0.1:18080/"
-        const val SYNC_USER = "test"
-        const val SYNC_PW = "test123"
+        /** Only used to build a [SyncConfig] for the pure (no-network) latched case. */
+        const val PURE_SYNC_ENDPOINT = "http://127.0.0.1:18080/"
+        const val SYNC_USER = ThrowawaySyncServer.USER
+        const val SYNC_PW = ThrowawaySyncServer.PW
     }
-
-    private fun syncReachable(): Boolean =
-        try {
-            val c = (java.net.URI(SYNC_ENDPOINT).toURL().openConnection() as java.net.HttpURLConnection)
-            c.connectTimeout = 500; c.readTimeout = 500; c.requestMethod = "GET"; c.connect()
-            c.responseCode; c.disconnect(); true
-        } catch (_: Exception) {
-            false
-        }
-
-    private fun syncConfig() = SyncConfig(SYNC_ENDPOINT, SYNC_USER, SYNC_PW)
 
     @Test
     fun `studyStart throws NeedsAttention when the controller is latched`() {
-        val controller = SyncController(syncConfig(), EngineHolder).apply {
+        // Pure/no-network: a latched controller short-circuits before any server call.
+        val controller = SyncController(SyncConfig(PURE_SYNC_ENDPOINT, SYNC_USER, SYNC_PW), EngineHolder).apply {
             setNeedsAttentionForTest(true)
         }
         val syncApi = LocalEngineApi(EngineHolder, controller)
@@ -510,8 +510,7 @@ class LocalEngineApiTest {
 
     @Test
     fun `studyStart with a configured controller syncs and reports synced live`() {
-        org.junit.Assume.assumeTrue("sync server not reachable", syncReachable())
-        val controller = SyncController(syncConfig(), EngineHolder)
+        val controller = SyncController(requireServer().config(), EngineHolder)
         // Establish lineage so the study-start sync is a clean normal sync.
         runBlocking { controller.fullSync(upload = true) }
         val syncApi = LocalEngineApi(EngineHolder, controller)
@@ -523,8 +522,7 @@ class LocalEngineApiTest {
 
     @Test
     fun `studyFinish syncs and writes a best-effort backup file live`() {
-        org.junit.Assume.assumeTrue("sync server not reachable", syncReachable())
-        val controller = SyncController(syncConfig(), EngineHolder)
+        val controller = SyncController(requireServer().config(), EngineHolder)
         runBlocking { controller.fullSync(upload = true) }
         val backupDir = tmpDir.resolve("backups")
         Files.createDirectories(backupDir)

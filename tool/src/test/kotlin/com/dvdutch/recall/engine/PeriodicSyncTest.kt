@@ -19,21 +19,23 @@ import kotlin.test.assertTrue
 class PeriodicSyncTest {
 
     private companion object {
-        const val ENDPOINT = "http://127.0.0.1:18080/"
-        const val USER = "test"
-        const val PW = "test123"
+        const val USER = ThrowawaySyncServer.USER
+        const val PW = ThrowawaySyncServer.PW
     }
 
     private lateinit var tmpDir: java.nio.file.Path
 
-    private fun reachable(): Boolean =
-        try {
-            val c = (java.net.URI(ENDPOINT).toURL().openConnection() as java.net.HttpURLConnection)
-            c.connectTimeout = 500; c.readTimeout = 500; c.requestMethod = "GET"; c.connect()
-            c.responseCode; c.disconnect(); true
-        } catch (_: Exception) {
-            false
-        }
+    /**
+     * A throwaway sync server for the live cases, or null when the pure cases run
+     * without a server available (they need no network). The live cases pull it via
+     * [requireServer], which SKIPs the test when no server could be spun up.
+     */
+    private var server: ThrowawaySyncServer? = null
+    private fun requireServer(): ThrowawaySyncServer =
+        server ?: ThrowawaySyncServer.start().also { server = it }
+
+    /** Endpoint used only to build a [SyncConfig] for the pure (no-network) cases. */
+    private val pureEndpoint = "http://127.0.0.1:18080/"
 
     @BeforeTest
     fun setUp() {
@@ -50,6 +52,7 @@ class PeriodicSyncTest {
     fun tearDown() {
         runBlocking { withContext(EngineHolder.lane) { EngineHolder.closeCollection() } }
         tmpDir.toFile().deleteRecursively()
+        server?.close()
     }
 
     @Test
@@ -60,7 +63,7 @@ class PeriodicSyncTest {
 
     @Test
     fun `runOnce short-circuits to success when needsAttention is latched`() {
-        val controller = SyncController(SyncConfig(ENDPOINT, USER, PW), EngineHolder).apply {
+        val controller = SyncController(SyncConfig(pureEndpoint, USER, PW), EngineHolder).apply {
             setNeedsAttentionForTest(true)
         }
         val result = runBlocking { PeriodicSync.runOnce(controller) }
@@ -70,8 +73,7 @@ class PeriodicSyncTest {
 
     @Test
     fun `runOnce maps a clean sync to success live`() {
-        org.junit.Assume.assumeTrue("sync server not reachable", reachable())
-        val controller = SyncController(SyncConfig(ENDPOINT, USER, PW), EngineHolder)
+        val controller = SyncController(requireServer().config(), EngineHolder)
         runBlocking { controller.fullSync(upload = true) } // establish lineage
         val result = runBlocking { PeriodicSync.runOnce(controller) }
         assertTrue(result is LightJobResult.Success, "a clean sync must map to Success")
@@ -79,10 +81,9 @@ class PeriodicSyncTest {
 
     @Test
     fun `runOnce maps a transient sync failure to retry live`() {
-        org.junit.Assume.assumeTrue("sync server not reachable", reachable())
         // A bad password is a login/sync failure — non-fatal and transient from the
         // job's view — so runOnce must ask WorkManager to Retry with backoff.
-        val controller = SyncController(SyncConfig(ENDPOINT, USER, "wrong-password"), EngineHolder)
+        val controller = SyncController(requireServer().config(password = "wrong-password"), EngineHolder)
         val result = runBlocking { PeriodicSync.runOnce(controller) }
         assertTrue(result is LightJobResult.Retry, "a transient sync failure must map to Retry")
     }
