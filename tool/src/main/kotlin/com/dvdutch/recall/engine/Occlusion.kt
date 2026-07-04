@@ -15,8 +15,9 @@ import com.dvdutch.recall.api.ShapeState
  * ## Semantics (verified against Anki 25.09.x, see occlusion-investigation.md)
  * A note with K shapes yields K cards; `card.ord` (0-based) tests occlusion
  * `ordinal = card.ord + 1`. Per side:
- *   - Front: the tested shape is MASKED. Inactive shapes are CONTEXT in hide-one mode
- *     (`occludeInactive == false`) or MASKED in hide-all mode (`occludeInactive == true`).
+ *   - Front: the tested shape is MASKED_TESTED (hidden but drawn distinct from inactive
+ *     masks). Inactive shapes are CONTEXT in hide-one mode (`occludeInactive == false`)
+ *     or MASKED in hide-all mode (`occludeInactive == true`).
  *   - Back: the tested shape is REVEALED_OUTLINE. Inactive shapes are CONTEXT (hide-one)
  *     or MASKED (hide-all).
  */
@@ -89,9 +90,11 @@ private fun Map<String, String>.num(key: String): Double? = this[key]?.trim()?.t
 fun resolveState(tested: Int, shape: Int, isBack: Boolean, occludeInactive: Boolean): ShapeState {
     val isTested = shape == tested
     return when {
-        isTested && !isBack -> ShapeState.MASKED
+        // Front tested → MASKED_TESTED: hidden but visually distinct from inactive masks,
+        // so the studier can tell WHICH region is being asked on a many-mask card.
+        isTested && !isBack -> ShapeState.MASKED_TESTED
         isTested && isBack -> ShapeState.REVEALED_OUTLINE
-        // Inactive shape: hide-all keeps it masked on both sides; hide-one shows context.
+        // Inactive shape: hide-all keeps it plainly masked on both sides; hide-one shows context.
         occludeInactive -> ShapeState.MASKED
         else -> ShapeState.CONTEXT
     }

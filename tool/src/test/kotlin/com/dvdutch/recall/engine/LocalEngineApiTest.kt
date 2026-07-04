@@ -131,11 +131,15 @@ class LocalEngineApiTest {
         assertEquals("front", occ.side)
         assertEquals(3, occ.shapes.size)
 
-        // The tested shape (ordinal 1 = rect) is MASKED on the front.
+        // The tested shape (ordinal 1 = rect) is MASKED_TESTED on the front — the asked
+        // region, drawn distinct from the other (inactive) hide-all masks.
         val rect = occ.shapes.filterIsInstance<OcclusionShapeState.Rect>().single()
-        assertEquals(ShapeState.MASKED, rect.state)
-        // Hide-all: the inactive ellipse/polygon are also masked on the front.
-        assertTrue(occ.shapes.all { it.state == ShapeState.MASKED }, "hide-all front all masked: ${occ.shapes}")
+        assertEquals(ShapeState.MASKED_TESTED, rect.state)
+        // Hide-all: the inactive ellipse/polygon are plainly MASKED on the front.
+        assertTrue(
+            occ.shapes.filter { it !is OcclusionShapeState.Rect }.all { it.state == ShapeState.MASKED },
+            "hide-all front inactive masks plain MASKED: ${occ.shapes}",
+        )
 
         // Header is a text node, present before the image on both sides.
         val frontText = card.front.filterIsInstance<TextNode>().flatMap { it.runs }.joinToString("") { it.s }

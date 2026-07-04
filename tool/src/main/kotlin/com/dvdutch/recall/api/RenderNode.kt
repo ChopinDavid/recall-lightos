@@ -83,8 +83,20 @@ data class OcclusionNode(
 
 /** How a single occlusion shape must be drawn on the resolved side. */
 enum class ShapeState {
-    /** Solid opaque mask — the shape is hidden. */
+    /**
+     * Solid opaque mask for an INACTIVE (not-being-asked) shape — the hide-all case
+     * where a non-tested region is also hidden as context.
+     */
     MASKED,
+
+    /**
+     * Solid opaque mask for the TESTED shape on the FRONT — the region being asked. Drawn
+     * with a distinguishing high-contrast border so that, among many hide-all masks, the
+     * studier can tell exactly WHICH hidden region they must recall. Still fully opaque:
+     * the answer stays covered. (AnkiDroid renders this pink vs. tan; we do it in
+     * monochrome — see [maskStyle].)
+     */
+    MASKED_TESTED,
 
     /** Outline only — the tested shape revealed on the answer side. */
     REVEALED_OUTLINE,
