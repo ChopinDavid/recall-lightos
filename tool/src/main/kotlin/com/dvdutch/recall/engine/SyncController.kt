@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /**
  * Where to sync and as whom. Passed in by the caller (this task does NOT read prefs —
@@ -53,6 +54,14 @@ class SyncController(
      * no-op keeps the seam optional for callers that don't need durability.
      */
     private val persistNeedsAttention: suspend (Boolean) -> Unit = {},
+    /**
+     * The on-disk collection file, for the empty-server download guard ([fullDownload]):
+     * a guarded download backs this file up before the transfer so a wipe-to-empty or a
+     * mid-transfer failure can be rolled back. Null disables the guard (the caller has no
+     * file to protect — e.g. a controller built only for upload/normal sync), in which
+     * case [fullDownload] falls back to a bare, unguarded [fullSync] download.
+     */
+    private val collectionFile: (() -> File)? = null,
 ) {
 
     private companion object {
@@ -189,6 +198,87 @@ class SyncController(
             // the resolved divergence clears both the in-memory and the durable latch.
             _needsAttention.value = false
             persistNeedsAttention(false)
+        }
+    }
+
+    /**
+     * A guarded full DOWNLOAD (`fullUploadOrDownload(upload=false)`) that will not silently
+     * wipe a populated phone with an EMPTY server collection.
+     *
+     * rsdroid exposes no cheap pre-check for the server's collection size (the sync protos
+     * carry only `required`/USN; rslib's `SyncMeta empty`/`collection_bytes` are not
+     * surfaced — verified via javap on the backend), so the guard validates the RESULT and
+     * rolls back: it backs up the collection FILE, downloads, and if a substantial local
+     * collection was replaced by an empty one (and the caller did not [force]) it restores
+     * the backup so the phone is left intact. A mid-download failure restores likewise. See
+     * [FullDownloadFlow] for the orchestration and [FullDownloadGuard] for the decision.
+     *
+     * On a kept download (server non-empty, or [force]d) this clears the needs-attention
+     * latch exactly like [fullSync]. On a trip or failure the latch is untouched — the
+     * divergence is unresolved and the UI must re-decide.
+     *
+     * When [collectionFile] is null the guard cannot protect a file, so this degrades to a
+     * bare [fullSync] download and returns [FullDownloadResult.Downloaded]/[FullDownloadResult.Failed].
+     */
+    suspend fun fullDownload(force: Boolean): FullDownloadResult {
+        val fileProvider = collectionFile ?: run {
+            return try {
+                fullSync(upload = false)
+                FullDownloadResult.Downloaded
+            } catch (t: Throwable) {
+                FullDownloadResult.Failed(t.message ?: t.toString())
+            }
+        }
+        return withContext(holder.lane) {
+            val ops = RealFullDownloadOps(fileProvider)
+            FullDownloadFlow.run(ops, force).also { result ->
+                if (result is FullDownloadResult.Downloaded) {
+                    ops.discardBackup() // kept the download — the safety copy is no longer needed
+                    _needsAttention.value = false
+                    persistNeedsAttention(false)
+                }
+            }
+        }
+    }
+
+    /**
+     * The real, lane-confined [FullDownloadOps] over rslib + the collection file. Every
+     * method here is already on [holder.lane] (the caller wraps the whole flow), so it
+     * touches the native backend directly.
+     */
+    private inner class RealFullDownloadOps(private val file: () -> File) : FullDownloadOps {
+        private val backup: File get() = File(file().parentFile, file().name + ".guard-backup")
+
+        override suspend fun localCardCount(): Int =
+            holder.backend().searchCards("", anki.search.SortOrder.getDefaultInstance()).size
+
+        override suspend fun backupCollection() {
+            // Close for a consistent on-disk snapshot (flush WAL), copy, then reopen.
+            val path = file().absolutePath
+            holder.closeCollection()
+            file().copyTo(backup, overwrite = true)
+            holder.reopenCollection(path)
+        }
+
+        override suspend fun download() {
+            val request = FullUploadOrDownloadRequest.newBuilder()
+                .setAuth(loginOnLane())
+                .setUpload(false)
+                .build()
+            holder.backend().fullUploadOrDownload(request) // backend reopens internally
+        }
+
+        override suspend fun restoreCollection() {
+            val path = file().absolutePath
+            holder.closeCollection()
+            backup.copyTo(file(), overwrite = true)
+            holder.reopenCollection(path)
+            backup.delete()
+        }
+
+        /** Remove the safety copy after a kept download (nothing to roll back to any more). */
+        fun discardBackup() {
+            backup.delete()
         }
     }
 

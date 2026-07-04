@@ -10,6 +10,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -201,6 +202,100 @@ class SyncControllerTest {
         assertTrue(info.detail.startsWith("sync failed"), "detail must be a sync-failed message: ${info.detail}")
         // Auth was dropped, not cached: the controller has no cached auth to reuse.
         assertNull(controller.cachedAuthForTest(), "failed login must drop the cached auth")
+    }
+
+    @Test
+    fun `fullDownload guards a populated phone against an EMPTY server and does not wipe it`() {
+        org.junit.Assume.assumeTrue("sync server not reachable", serverReachable())
+        // 1) Establish an EMPTY server: full-UPLOAD a throwaway empty collection so the
+        //    server's collection is empty (0 review cards beyond scaffolding).
+        val emptyDir = Files.createTempDirectory("recall-empty-server")
+        val emptyCol = emptyDir.resolve("collection.anki2").toString()
+        runBlocking { withContext(EngineHolder.lane) { EngineHolder.openCollection(emptyCol) } }
+        runBlocking { SyncController(config(), EngineHolder).fullSync(upload = true) }
+
+        // 2) Open a POPULATED local collection with real cards. It has never synced with
+        //    this server, so a full download would replace it with the empty server copy.
+        val liveDir = Files.createTempDirectory("recall-populated-phone")
+        val liveCol = liveDir.resolve("collection.anki2").toString()
+        runBlocking {
+            withContext(EngineHolder.lane) {
+                EngineHolder.openCollection(liveCol)
+                seedCards(24)
+            }
+        }
+        val before = runBlocking { withContext(EngineHolder.lane) { cardCount() } }
+        assertTrue(before >= 24, "the populated phone must have its seeded cards, got $before")
+
+        try {
+            val controller = SyncController(
+                config(),
+                EngineHolder,
+                collectionFile = { java.io.File(liveCol) },
+            )
+            val result = runBlocking { controller.fullDownload(force = false) }
+            assertIs<FullDownloadResult.GuardTripped>(result)
+            assertEquals(before, (result as FullDownloadResult.GuardTripped).localCardCount)
+            val after = runBlocking { withContext(EngineHolder.lane) { cardCount() } }
+            assertEquals(before, after, "the guard must NOT wipe the populated phone")
+        } finally {
+            runBlocking {
+                withContext(EngineHolder.lane) {
+                    EngineHolder.openCollection(tmpDir.resolve("collection.anki2").toString())
+                }
+            }
+            emptyDir.toFile().deleteRecursively()
+            liveDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `a failed fullDownload leaves the populated collection intact and is retriable`() {
+        org.junit.Assume.assumeTrue("sync server not reachable", serverReachable())
+        // A populated local collection + a config whose LOGIN fails (wrong password) means
+        // the download throws before/at transfer. The guard must restore and report Failed —
+        // never a corrupt/half state.
+        val liveDir = Files.createTempDirectory("recall-fail-intact")
+        val liveCol = liveDir.resolve("collection.anki2").toString()
+        runBlocking {
+            withContext(EngineHolder.lane) {
+                EngineHolder.openCollection(liveCol)
+                seedCards(12)
+            }
+        }
+        val before = runBlocking { withContext(EngineHolder.lane) { cardCount() } }
+        try {
+            val badConfig = SyncConfig(endpoint = ENDPOINT, username = USER, password = "wrong-password")
+            val controller = SyncController(badConfig, EngineHolder, collectionFile = { java.io.File(liveCol) })
+            val result = runBlocking { controller.fullDownload(force = false) }
+            assertIs<FullDownloadResult.Failed>(result)
+            val after = runBlocking { withContext(EngineHolder.lane) { cardCount() } }
+            assertEquals(before, after, "a failed download must leave the collection intact")
+        } finally {
+            runBlocking {
+                withContext(EngineHolder.lane) {
+                    EngineHolder.openCollection(tmpDir.resolve("collection.anki2").toString())
+                }
+            }
+            liveDir.toFile().deleteRecursively()
+        }
+    }
+
+    /** Cards in the open collection (an empty search matches every card). */
+    private fun cardCount(): Int =
+        EngineHolder.backend().searchCards("", anki.search.SortOrder.getDefaultInstance()).size
+
+    /** Adds [n] Basic notes to the open collection so it is non-empty and real. */
+    private fun seedCards(n: Int) {
+        val backend = EngineHolder.backend()
+        val notetype = backend.getNotetypeNames().first { it.name.contains("Basic") }.id
+        val deckId = 1L // Default deck id is 1 in a fresh collection
+        repeat(n) { i ->
+            val note = backend.newNote(notetype)
+            val fields = note.toBuilder().clearFields()
+                .addFields("front $i").addFields("back $i").build()
+            backend.addNote(fields, deckId)
+        }
     }
 
     @Test

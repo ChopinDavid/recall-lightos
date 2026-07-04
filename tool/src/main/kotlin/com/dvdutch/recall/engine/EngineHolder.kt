@@ -95,6 +95,19 @@ object EngineHolder {
     }
 
     /**
+     * Forces a close+reopen of the collection at [path], even when it is already the open
+     * path. [openCollection] short-circuits when the path is unchanged, but the empty-server
+     * download guard ([FullDownloadFlow]) restores a backup file OVER the same path and must
+     * make the backend re-read the swapped bytes; a plain reopen would no-op. Lane-confined by
+     * contract: MUST be called on [lane].
+     */
+    fun reopenCollection(path: String) {
+        if (collectionOpen) closeCollection()
+        backend().openCollection(path)
+        openCollectionPath = path
+    }
+
+    /**
      * Closes the open collection, if any. The backend handle itself is retained for
      * reuse. No-op when no collection is open. Lane-confined by contract: MUST be
      * called on [lane] (`withContext(EngineHolder.lane) { ... }`); off-lane callers get

@@ -36,6 +36,16 @@ sealed interface AttentionPhase {
     /** A `fullSync(direction)` is in flight. */
     data class Running(val direction: AttentionDirection) : AttentionPhase
 
+    /**
+     * The empty-server download guard tripped: the operator confirmed a Download, but the
+     * server's collection turned out to be EMPTY while this phone holds [localCardCount]
+     * real cards. The destructive download was rolled back (the phone is intact); this is a
+     * distinct, harder confirm — "the server is EMPTY but this phone has N cards" — because
+     * it is almost always a wrong/reset endpoint, not an intended wipe. Confirming forces
+     * the erase; CANCEL keeps the phone's cards.
+     */
+    data class GuardConfirm(val localCardCount: Int?) : AttentionPhase
+
     /** Resolved: the divergence is cleared; the screen goes back. */
     data object Done : AttentionPhase
 
@@ -73,6 +83,13 @@ object AttentionReducer {
     /** The destructive sync is now in flight for [direction]. */
     fun running(state: AttentionUiState, direction: AttentionDirection): AttentionUiState =
         state.copy(phase = AttentionPhase.Running(direction))
+
+    /**
+     * The empty-server guard tripped during a Download: surface the second, harder confirm
+     * with the real phone card count that was about to be wiped. [cancel] backs out safely.
+     */
+    fun guardTripped(state: AttentionUiState, localCardCount: Int?): AttentionUiState =
+        state.copy(phase = AttentionPhase.GuardConfirm(localCardCount))
 
     /** The sync resolved the divergence. */
     fun done(state: AttentionUiState): AttentionUiState =

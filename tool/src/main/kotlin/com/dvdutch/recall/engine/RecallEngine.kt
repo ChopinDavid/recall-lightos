@@ -44,7 +44,15 @@ class RecallEngine(
      * the divergence is long gone.
      */
     suspend fun controller(): SyncController =
-        SyncController(syncConfig(), holder, persistNeedsAttention = ::writeNeedsAttention)
+        SyncController(
+            syncConfig(),
+            holder,
+            persistNeedsAttention = ::writeNeedsAttention,
+            // The collection file for the empty-server download guard: a guarded
+            // fullDownload backs this up before the transfer so a wipe-to-empty (or a
+            // mid-transfer failure) rolls back instead of silently erasing the phone.
+            collectionFile = { storage.collectionFile },
+        )
 
     /** The durable "collections have diverged" latch (defaults false when never written). */
     suspend fun needsAttention(): Boolean =

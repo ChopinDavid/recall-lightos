@@ -68,6 +68,12 @@ class AttentionScreen(sealedActivity: SealedLightActivity) :
                         onCancel = viewModel::cancel,
                     )
 
+                    is AttentionPhase.GuardConfirm -> GuardConfirmBody(
+                        localCardCount = phase.localCardCount,
+                        onConfirm = viewModel::forceDownload,
+                        onCancel = viewModel::cancel,
+                    )
+
                     else -> Column(modifier = Modifier.fillMaxSize()) {
                         LightTopBar(
                             leftButton = LightBarButton.LightIcon(
@@ -180,6 +186,67 @@ private fun ConfirmBody(
             ),
         )
     }
+}
+
+/**
+ * The empty-server guard screen. Reached only when a Download was confirmed but the
+ * server's collection came back EMPTY while this phone is populated — almost always a
+ * wrong/reset endpoint, so this is a harder, second confirm with the concrete numbers.
+ * The transfer was already rolled back; nothing is lost unless the user erases anyway.
+ * CANCEL is the thumb-default; the erase sits above it and takes a deliberate reach.
+ */
+@Composable
+private fun GuardConfirmBody(
+    localCardCount: Int?,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        LightTopBar(
+            leftButton = LightBarButton.LightIcon(
+                icon = LightIcons.BACK,
+                onClick = onCancel,
+            ),
+            center = LightTopBarCenter.Text("Server is empty"),
+            modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
+        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = 1f.gridUnitsAsDp()),
+        ) {
+            LightText(
+                text = guardConsequence(localCardCount),
+                variant = LightTextVariant.Copy,
+                modifier = Modifier.padding(bottom = 1.5f.gridUnitsAsDp()),
+            )
+            LightText(
+                text = "Continue — erase this phone",
+                variant = LightTextVariant.Heading,
+                underline = true,
+                modifier = Modifier
+                    .clickable(onClick = onConfirm)
+                    .padding(vertical = 1f.gridUnitsAsDp()),
+            )
+        }
+        LightBottomBar(
+            items = listOf(
+                LightBarButton.Text(text = "CANCEL", onClick = onCancel),
+            ),
+        )
+    }
+}
+
+/**
+ * The empty-server consequence copy, with the real phone count where known. Names the
+ * likely cause (wrong/reset endpoint) so the user recognises the mistake instead of
+ * confirming past it.
+ */
+private fun guardConsequence(localCardCount: Int?): String {
+    val cards = localCardCount?.let { "$it cards" } ?: "cards"
+    return "The server's collection is EMPTY but this phone has $cards. Downloading will " +
+        "erase this phone's cards. This is usually a wrong endpoint or a reset server."
 }
 
 private fun confirmTitle(direction: AttentionDirection): String = when (direction) {
