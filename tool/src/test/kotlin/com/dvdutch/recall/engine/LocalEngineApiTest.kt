@@ -252,6 +252,58 @@ class LocalEngineApiTest {
     }
 
     @Test
+    fun `undo reverts the last answer restoring the card and counts`() {
+        selectDeck(seedNote("Undoable", "q", "a"))
+        val before = runBlocking { api.queue(20) }
+        val newBefore = before.counts.new
+        val card = before.cards.first()
+        // Before answering, nothing is undoable.
+        assertEquals(false, before.undoableAnswer, "a fresh queue must report no undoable op")
+
+        val ans = AnswerIn(
+            uuid = "undo-uuid-0001",
+            cardId = card.cardId,
+            rating = "good",
+            states = card.states,
+            msTaken = 1500,
+            answeredAt = 1_700_000_000_000,
+        )
+        assertEquals("applied", runBlocking { api.answer(listOf(ans)) }.single().status)
+
+        // The card left the new queue and the engine now reports an undoable op.
+        val afterAnswer = runBlocking { api.queue(20) }
+        assertTrue(afterAnswer.counts.new < newBefore, "new count should drop after answering")
+        assertTrue(afterAnswer.undoableAnswer, "the engine must report the answer as undoable")
+
+        // rslib's own undo un-answers the card.
+        val result = runBlocking { api.undo() }
+        assertTrue(result.undone, "undo must revert the answer")
+
+        // The same card is queued again and counts are restored to the pre-answer state.
+        val afterUndo = runBlocking { api.queue(20) }
+        assertEquals(newBefore, afterUndo.counts.new, "new count restored after undo")
+        assertTrue(
+            afterUndo.cards.any { it.cardId == card.cardId },
+            "the un-answered card must be queued again",
+        )
+    }
+
+    @Test
+    fun `undo with no answer on the stack is a safe no-op`() {
+        selectDeck(seedNote("NoUndo", "q", "a"))
+        // Nothing has been answered. The stack is NOT empty — opening the deck pushes a
+        // "Select Deck" config op — so this also proves undo refuses to revert a
+        // non-answer op: it must be a review-only undo, never a deck-selection undo.
+        val result = runBlocking { api.undo() }
+        assertEquals(false, result.undone, "no answer on the stack must yield undone = false")
+        // And the deck is still selected: the queue still returns the card.
+        assertTrue(
+            runBlocking { api.queue(20) }.cards.isNotEmpty(),
+            "undo must not have reverted the deck selection",
+        )
+    }
+
+    @Test
     fun `answer on a missing card is gone`() {
         selectDeck(seedNote("Gone", "q", "a"))
         val q = runBlocking { api.queue(20) }

@@ -20,11 +20,27 @@ sealed interface StudyState {
     /** Session is starting: `studyStart` + first `queue` fetch in flight. */
     data object Loading : StudyState
 
-    /** A card's front is up; [counts] reflect the most recent server report. */
-    data class ShowingFront(val card: CardPayload, val counts: Counts) : StudyState
+    /**
+     * A card's front is up; [counts] reflect the most recent server report.
+     * [undoAvailable] gates the UNDO control: true only when an answer was given
+     * this session AND the engine reports an undoable answer op (see [StudyMachine]).
+     */
+    data class ShowingFront(
+        val card: CardPayload,
+        val counts: Counts,
+        val undoAvailable: Boolean = false,
+    ) : StudyState
 
-    /** The back is revealed; [shownAtMs] is when the reveal happened. */
-    data class ShowingBack(val card: CardPayload, val counts: Counts, val shownAtMs: Long) : StudyState
+    /**
+     * The back is revealed; [shownAtMs] is when the reveal happened.
+     * [undoAvailable] gates the UNDO control (see [ShowingFront]).
+     */
+    data class ShowingBack(
+        val card: CardPayload,
+        val counts: Counts,
+        val shownAtMs: Long,
+        val undoAvailable: Boolean = false,
+    ) : StudyState
 
     /**
      * No cards remain NOW (or the session was finished); [reviewed] answers
@@ -95,6 +111,20 @@ class StudyMachine(
     private var shownAtMs: Long = 0L
 
     /**
+     * True once at least one answer has been posted this session. Half of the
+     * UNDO gate: even if the engine reports an undoable op, we only offer undo
+     * for an answer THIS session gave, never a stray op from before study opened.
+     */
+    private var answeredThisSession: Boolean = false
+
+    /**
+     * The engine's latest report of whether it holds an undoable op, refreshed
+     * from every `queue()` response ([QueueResponse.undoableAnswer]). Combined
+     * with [answeredThisSession] to derive the visible [StudyState.undoAvailable].
+     */
+    private var engineHasUndoableOp: Boolean = false
+
+    /**
      * The revealed card retained across a retriable grade failure, so a follow-up
      * [grade] call can re-post the same answer. Cleared once a grade advances.
      */
@@ -114,11 +144,17 @@ class StudyMachine(
         _state.value = StudyState.Loading
         buffer.clear()
         retainedBack = null
+        // A fresh (or retried) session has posted no answers YET, so the UNDO
+        // control starts hidden regardless of any stale engine op; the first
+        // grade this session re-arms it.
+        answeredThisSession = false
+        engineHasUndoableOp = false
         guard {
             client.studyStart(deckId)
             val response = client.queue()
             buffer.addAll(response.cards)
             counts = response.counts
+            engineHasUndoableOp = response.undoableAnswer
             settle()
         }
     }
@@ -131,7 +167,7 @@ class StudyMachine(
         val current = _state.value
         if (current !is StudyState.ShowingFront) return
         shownAtMs = nowMs()
-        _state.value = StudyState.ShowingBack(current.card, current.counts, shownAtMs)
+        _state.value = StudyState.ShowingBack(current.card, current.counts, shownAtMs, undoAvailable())
     }
 
     /**
@@ -173,6 +209,10 @@ class StudyMachine(
             // the retained card, so a serialized double-tap grade becomes a true
             // no-op instead of re-posting the previous card as a ghost answer.
             retainedBack = null
+            // An answer was posted this session: arm the UNDO gate. (The engine
+            // side of the gate — engineHasUndoableOp — refreshes on the queue
+            // fetch inside advance() below.)
+            answeredThisSession = true
             when (result) {
                 // applied / duplicate: the review counted.
                 "applied", "duplicate" -> reviewed++
@@ -224,12 +264,60 @@ class StudyMachine(
             val response = client.queue()
             buffer.addAll(response.cards)
             counts = response.counts
+            engineHasUndoableOp = response.undoableAnswer
         } else {
-            // Buffer still full: refresh ONLY the counts, discarding fetched cards
-            // so they cannot pollute (duplicate/reorder) the buffer.
-            counts = client.queue(limit = 1).counts
+            // Buffer still full: refresh ONLY the counts (and the undo flag),
+            // discarding fetched cards so they cannot pollute (duplicate/reorder)
+            // the buffer.
+            val response = client.queue(limit = 1)
+            counts = response.counts
+            engineHasUndoableOp = response.undoableAnswer
         }
         settle()
+    }
+
+    /**
+     * Reverts the last grade via rslib's OWN undo — the same op AnkiDroid's toolbar
+     * Undo drives — NEVER a local reconstruction. On success the just-answered card
+     * returns to the top of the engine's queue and the due counts tick back; the
+     * machine re-derives its whole visible state from a FRESH `queue()` fetch
+     * (the correct post-undo order/counts come from the engine, not local
+     * bookkeeping) and shows that card on its FRONT.
+     *
+     * The buffer is cleared and re-fetched because undo invalidates the buffered
+     * order — the undone card jumps back to the head — so any locally buffered
+     * cards are stale. Clearing + re-fetching is the simplest coherent choice and
+     * keeps this component free of scheduling reasoning.
+     *
+     * Multi-step by construction: each call pops one op off the engine's undo
+     * stack, and the refreshed [QueueResponse.undoableAnswer] tells the UI whether
+     * a further undo remains. A no-op undo ([UndoResult.undone] false — empty
+     * stack) leaves state untouched. Safe to call in ANY state (it early-returns
+     * unless we hold a resolved front/back), so a stray tap can never corrupt the
+     * session.
+     */
+    suspend fun undo() {
+        // Only undo from a settled review state; never mid-load or mid-failure.
+        val current = _state.value
+        if (current !is StudyState.ShowingFront && current !is StudyState.ShowingBack) return
+        guard {
+            val result = client.undo()
+            if (!result.undone) {
+                // Nothing was on the stack: keep the flag honest and do NOT re-query.
+                engineHasUndoableOp = result.undoableAnswer
+                settle()
+                return@guard
+            }
+            // The engine reverted the answer. Its queue order/counts are now the
+            // source of truth: drop the stale buffer and re-fetch from the top.
+            buffer.clear()
+            retainedBack = null
+            val response = client.queue()
+            buffer.addAll(response.cards)
+            counts = response.counts
+            engineHasUndoableOp = response.undoableAnswer
+            settle()
+        }
     }
 
     /**
@@ -244,9 +332,18 @@ class StudyMachine(
             // more are due later today. No re-polling: anti-loop behavior intact.
             StudyState.Finished(reviewed, sync = null, counts = counts)
         } else {
-            StudyState.ShowingFront(next, counts)
+            StudyState.ShowingFront(next, counts, undoAvailable())
         }
     }
+
+    /**
+     * The UNDO gate: offer undo ONLY when an answer was given THIS session AND the
+     * engine currently reports an undoable op. The session clause keeps undo tied
+     * to a grade the user just made (never a stale pre-study op); the engine clause
+     * keeps it honest as the undo stack empties and avoids offering undo for
+     * non-answer ops the engine never accumulates during a review-only session.
+     */
+    private fun undoAvailable(): Boolean = answeredThisSession && engineHasUndoableOp
 
     /**
      * Runs [block], mapping any [BridgeError] onto [StudyState.Failed]:
