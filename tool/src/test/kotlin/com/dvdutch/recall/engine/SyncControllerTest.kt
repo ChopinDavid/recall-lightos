@@ -20,13 +20,11 @@ import kotlin.test.assertTrue
  * against a REAL local `anki-sync-server`, exactly as Task 5 acceptance will on
  * device — no fakes for network behaviour.
  *
- * The server is expected at [ENDPOINT] with account [USER]/[PW]. Launch it with:
- * ```
- * SYNC_USER1=test:test123 SYNC_BASE=<tmp> SYNC_HOST=127.0.0.1 SYNC_PORT=18080 \
- *   python -m anki.syncserver
- * ```
- * When the server is unreachable these tests are skipped (assumeTrue), so the suite
- * stays green in CI without a hub; the on-device sync path is validated in Task 5.
+ * The server is a THROWAWAY [ThrowawaySyncServer] spun up per test on a random free
+ * port in a temp dir (NEVER the dev hub on :18080). When no anki-carrying python is
+ * available the tests SKIP (assumeTrue in [ThrowawaySyncServer.start]), so the suite
+ * stays green in CI without any external deps; the on-device sync path is validated
+ * in Task 5.
  *
  * Bootstrap parity with the bridge's `_operator_bootstrap` (test_study_sync.py): a
  * fresh empty server has no collection, so the first `syncCollection` returns
@@ -35,27 +33,8 @@ import kotlin.test.assertTrue
  */
 class SyncControllerTest {
 
-    private companion object {
-        const val ENDPOINT = "http://127.0.0.1:18080/"
-        const val USER = "test"
-        const val PW = "test123"
-    }
-
     private lateinit var tmpDir: java.nio.file.Path
-
-    private fun serverReachable(): Boolean =
-        try {
-            val c = (java.net.URI(ENDPOINT).toURL().openConnection() as java.net.HttpURLConnection)
-            c.connectTimeout = 500
-            c.readTimeout = 500
-            c.requestMethod = "GET"
-            c.connect()
-            c.responseCode // any HTTP response means it's up
-            c.disconnect()
-            true
-        } catch (_: Exception) {
-            false
-        }
+    private lateinit var server: ThrowawaySyncServer
 
     @BeforeTest
     fun setUp() {
@@ -63,15 +42,19 @@ class SyncControllerTest {
         tmpDir = Files.createTempDirectory("recall-sync")
         val colPath = tmpDir.resolve("collection.anki2").toString()
         runBlocking { withContext(EngineHolder.lane) { EngineHolder.openCollection(colPath) } }
+        // Started AFTER the collection is open so a clean skip here (no python available)
+        // still leaves a well-formed state for tearDown. Skips without clobbering a server.
+        server = ThrowawaySyncServer.start()
     }
 
     @AfterTest
     fun tearDown() {
         runBlocking { withContext(EngineHolder.lane) { EngineHolder.closeCollection() } }
         tmpDir.toFile().deleteRecursively()
+        if (::server.isInitialized) server.close()
     }
 
-    private fun config() = SyncConfig(endpoint = ENDPOINT, username = USER, password = PW)
+    private fun config() = server.config()
 
     /** Records every durable needs-attention write the controller makes. */
     private class RecordingPersist {
@@ -82,7 +65,6 @@ class SyncControllerTest {
 
     @Test
     fun `FULL_ latch persists needs-attention true via the callback`() {
-        org.junit.Assume.assumeTrue("sync server not reachable", serverReachable())
         // Establish a known server state by full-uploading THIS collection.
         runBlocking { SyncController(config(), EngineHolder).fullSync(upload = true) }
 
@@ -109,7 +91,6 @@ class SyncControllerTest {
 
     @Test
     fun `fullSync success persists needs-attention false via the callback`() {
-        org.junit.Assume.assumeTrue("sync server not reachable", serverReachable())
         val persist = RecordingPersist()
         val controller = SyncController(config(), EngineHolder, persistNeedsAttention = persist.callback)
         runBlocking { controller.fullSync(upload = true) }
@@ -119,7 +100,6 @@ class SyncControllerTest {
 
     @Test
     fun `login caches auth and a repeat login reuses the cached SyncAuth`() {
-        org.junit.Assume.assumeTrue("sync server not reachable", serverReachable())
         val controller = SyncController(config(), EngineHolder)
         val first = runBlocking { controller.login() }
         assertNotNull(first, "login against the live server must return a SyncAuth")
@@ -131,7 +111,6 @@ class SyncControllerTest {
 
     @Test
     fun `fullSync upload establishes lineage so the next normal sync is clean and stamps lastSync`() {
-        org.junit.Assume.assumeTrue("sync server not reachable", serverReachable())
         // Order-independent by construction: we full-UPLOAD our own collection first,
         // so the server's collection now shares our lineage regardless of what any
         // other test left behind (a full upload replaces server state). This is the
@@ -157,7 +136,6 @@ class SyncControllerTest {
 
     @Test
     fun `a divergent never-synced collection requires full sync and latches needsAttention live`() {
-        org.junit.Assume.assumeTrue("sync server not reachable", serverReachable())
         // Establish a known server state by full-uploading THIS collection.
         runBlocking { SyncController(config(), EngineHolder).fullSync(upload = true) }
 
@@ -194,8 +172,7 @@ class SyncControllerTest {
 
     @Test
     fun `login failure drops the cached auth so the next attempt re-logs in`() {
-        org.junit.Assume.assumeTrue("sync server not reachable", serverReachable())
-        val badConfig = SyncConfig(endpoint = ENDPOINT, username = USER, password = "wrong-password")
+        val badConfig = server.config(password = "wrong-password")
         val controller = SyncController(badConfig, EngineHolder)
         val info = runBlocking { controller.sync(media = false) }
         assertFalse(info.synced, "a bad-password sync must fail non-fatally")
@@ -206,7 +183,6 @@ class SyncControllerTest {
 
     @Test
     fun `fullDownload guards a populated phone against an EMPTY server and does not wipe it`() {
-        org.junit.Assume.assumeTrue("sync server not reachable", serverReachable())
         // 1) Establish an EMPTY server: full-UPLOAD a throwaway empty collection so the
         //    server's collection is empty (0 review cards beyond scaffolding).
         val emptyDir = Files.createTempDirectory("recall-empty-server")
@@ -251,7 +227,6 @@ class SyncControllerTest {
 
     @Test
     fun `a failed fullDownload leaves the populated collection intact and is retriable`() {
-        org.junit.Assume.assumeTrue("sync server not reachable", serverReachable())
         // A populated local collection + a config whose LOGIN fails (wrong password) means
         // the download throws before/at transfer. The guard must restore and report Failed —
         // never a corrupt/half state.
@@ -265,7 +240,7 @@ class SyncControllerTest {
         }
         val before = runBlocking { withContext(EngineHolder.lane) { cardCount() } }
         try {
-            val badConfig = SyncConfig(endpoint = ENDPOINT, username = USER, password = "wrong-password")
+            val badConfig = server.config(password = "wrong-password")
             val controller = SyncController(badConfig, EngineHolder, collectionFile = { java.io.File(liveCol) })
             val result = runBlocking { controller.fullDownload(force = false) }
             assertIs<FullDownloadResult.Failed>(result)
