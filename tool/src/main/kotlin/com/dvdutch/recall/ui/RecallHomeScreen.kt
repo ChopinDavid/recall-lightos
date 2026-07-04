@@ -14,6 +14,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextAlign
 import com.thelightphone.sdk.InitialScreen
 import com.thelightphone.sdk.LightScreen
@@ -144,14 +145,24 @@ private fun DeckListRow(row: DeckRow, onOpen: () -> Unit, onToggle: () -> Unit) 
         // Parent decks get a leading +/− glyph that is its own tap target (toggle);
         // tapping the name still starts study. Leaf decks have no glyph.
         if (row.hasChildren) {
-            LightText(
-                text = if (row.isExpanded) "−" else "+",
-                variant = if (row.isTopLevel) LightTextVariant.Heading else LightTextVariant.Copy,
-                lighten = !row.hasDue,
+            val glyphVariant = if (row.isTopLevel) LightTextVariant.Heading else LightTextVariant.Copy
+            Box(
                 modifier = Modifier
                     .clickable(onClick = onToggle)
                     .padding(end = 0.5f.gridUnitsAsDp()),
-            )
+            ) {
+                // "+" and "−" have different advance widths in the Light font, so a bare
+                // glyph makes the deck title shift horizontally on every toggle. Lay out
+                // BOTH glyphs invisibly so the slot is always as wide as the wider one,
+                // then draw the current glyph on top — the title never moves.
+                LightText(text = "+", variant = glyphVariant, modifier = Modifier.alpha(0f))
+                LightText(text = "−", variant = glyphVariant, modifier = Modifier.alpha(0f))
+                LightText(
+                    text = if (row.isExpanded) "−" else "+",
+                    variant = glyphVariant,
+                    lighten = !row.hasDue,
+                )
+            }
         }
         LightText(
             text = row.label,
