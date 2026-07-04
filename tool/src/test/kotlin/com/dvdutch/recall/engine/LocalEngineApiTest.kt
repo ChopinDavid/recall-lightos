@@ -304,6 +304,57 @@ class LocalEngineApiTest {
     }
 
     @Test
+    fun `buryCard removes the card from the queue and drops the count`() {
+        selectDeck(seedNote("Buryable", "q", "a"))
+        val before = runBlocking { api.queue(20) }
+        val card = before.cards.first()
+        val newBefore = before.counts.new
+
+        runBlocking { api.buryCard(card.cardId) }
+
+        val after = runBlocking { api.queue(20) }
+        assertTrue(after.cards.none { it.cardId == card.cardId }, "buried card must leave the queue")
+        assertTrue(after.counts.new < newBefore, "burying must drop the new count")
+    }
+
+    @Test
+    fun `suspendCard removes the card from the queue and drops the count`() {
+        selectDeck(seedNote("Suspendable", "q", "a"))
+        val before = runBlocking { api.queue(20) }
+        val card = before.cards.first()
+        val newBefore = before.counts.new
+
+        runBlocking { api.suspendCard(card.cardId) }
+
+        val after = runBlocking { api.queue(20) }
+        assertTrue(after.cards.none { it.cardId == card.cardId }, "suspended card must leave the queue")
+        assertTrue(after.counts.new < newBefore, "suspending must drop the new count")
+    }
+
+    @Test
+    fun `toggleMark adds then removes the marked tag and the payload reflects it`() {
+        selectDeck(seedNote("Markable", "q", "a"))
+        val before = runBlocking { api.queue(20) }
+        val card = before.cards.first()
+        assertEquals(false, card.marked, "a fresh note must be unmarked")
+
+        // Toggle on: returns nowMarked = true, the note gains the "marked" tag, and the
+        // re-queried payload reflects marked = true.
+        val nowMarked = runBlocking { api.toggleMark(card.noteId) }
+        assertTrue(nowMarked, "toggleMark on an unmarked note must return true")
+        val tagsAfterMark = onEngine { it.getNote(card.noteId).tagsList }
+        assertTrue("marked" in tagsAfterMark, "note must gain the 'marked' tag, got $tagsAfterMark")
+        val markedPayload = runBlocking { api.queue(20) }.cards.first { it.noteId == card.noteId }
+        assertEquals(true, markedPayload.marked, "the payload must report the note as marked")
+
+        // Toggle off: returns false and the tag is gone.
+        val stillMarked = runBlocking { api.toggleMark(card.noteId) }
+        assertEquals(false, stillMarked, "toggleMark on a marked note must return false")
+        val tagsAfterUnmark = onEngine { it.getNote(card.noteId).tagsList }
+        assertTrue("marked" !in tagsAfterUnmark, "note must lose the 'marked' tag, got $tagsAfterUnmark")
+    }
+
+    @Test
     fun `answer on a missing card is gone`() {
         selectDeck(seedNote("Gone", "q", "a"))
         val q = runBlocking { api.queue(20) }

@@ -35,12 +35,18 @@ private class FakeBridge : EngineApi {
     val answerScript = ArrayDeque<Outcome<List<AnswerResult>>>()
     val finishScript = ArrayDeque<Outcome<SyncInfo>>()
     val undoScript = ArrayDeque<Outcome<UndoResult>>()
+    val buryScript = ArrayDeque<Outcome<Unit>>()
+    val suspendScript = ArrayDeque<Outcome<Unit>>()
+    val markScript = ArrayDeque<Outcome<Boolean>>()
 
     var startCalls = 0
     var queueCalls = 0
     var finishCalls = 0
     var undoCalls = 0
     val answerArgs = mutableListOf<List<AnswerIn>>()
+    val buryArgs = mutableListOf<Long>()
+    val suspendArgs = mutableListOf<Long>()
+    val markArgs = mutableListOf<Long>()
 
     private fun <T> ArrayDeque<Outcome<T>>.next(): T = when (val o = removeFirst()) {
         is Outcome.Ok -> o.value
@@ -71,17 +77,33 @@ private class FakeBridge : EngineApi {
         undoCalls++
         return undoScript.next()
     }
+
+    override suspend fun buryCard(cardId: Long) {
+        buryArgs.add(cardId)
+        buryScript.next()
+    }
+
+    override suspend fun suspendCard(cardId: Long) {
+        suspendArgs.add(cardId)
+        suspendScript.next()
+    }
+
+    override suspend fun toggleMark(noteId: Long): Boolean {
+        markArgs.add(noteId)
+        return markScript.next()
+    }
 }
 
 class StudyMachineTest {
 
-    private fun card(id: Long, states: String): CardPayload = CardPayload(
+    private fun card(id: Long, states: String, marked: Boolean = false): CardPayload = CardPayload(
         cardId = id,
         noteId = id * 10,
         front = listOf(TextNode(listOf(TextRun("front $id")))),
         back = listOf(TextNode(listOf(TextRun("back $id")))),
         states = states,
         nextDueLabels = mapOf("good" to "1d"),
+        marked = marked,
     )
 
     private val sync = SyncInfo(synced = true, detail = "ok")
@@ -689,5 +711,117 @@ class StudyMachineTest {
         val state = m.state.value
         assertTrue(state is StudyState.ShowingFront, "was $state")
         assertEquals(true, state.undoAvailable) // answered this session AND engine has an undoable op
+    }
+
+    // --- Card actions: bury / suspend / mark --------------------------------------
+
+    // Bury the current card: the engine's buryCard is called with the current card id,
+    // the buried card is dropped, the machine advances to the next card, and counts are
+    // refreshed from a fresh engine re-query (the buried card must NOT reappear).
+    @Test
+    fun buryDropsCurrentAdvancesAndRefreshesCounts() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 2), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(
+                QueueResponse(listOf(card(1, "s1"), card(2, "s2")), counts(new = 2)),
+            ),
+        )
+        val m = machine(bridge)
+        m.start()
+
+        // The engine buries card 1, then the fresh re-query returns only card 2, counts down.
+        bridge.buryScript.add(FakeBridge.Outcome.Ok(Unit))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(listOf(card(2, "s2")), counts(new = 1))),
+        )
+
+        m.buryCurrent()
+
+        assertEquals(listOf(1L), bridge.buryArgs) // buried the current card
+        val state = m.state.value
+        assertTrue(state is StudyState.ShowingFront, "was $state") // advanced, on front
+        assertEquals(2L, state.card.cardId) // the buried card 1 is gone; card 2 shown
+        assertEquals(1, state.counts.new) // counts refreshed from the engine
+    }
+
+    // Suspend the current card: same shape as bury (engine op + advance + re-query).
+    @Test
+    fun suspendDropsCurrentAdvancesAndRefreshesCounts() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 2), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(
+                QueueResponse(listOf(card(1, "s1"), card(2, "s2")), counts(new = 2)),
+            ),
+        )
+        val m = machine(bridge)
+        m.start()
+
+        bridge.suspendScript.add(FakeBridge.Outcome.Ok(Unit))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(listOf(card(2, "s2")), counts(new = 1))),
+        )
+
+        m.suspendCurrent()
+
+        assertEquals(listOf(1L), bridge.suspendArgs)
+        val state = m.state.value
+        assertTrue(state is StudyState.ShowingFront, "was $state")
+        assertEquals(2L, state.card.cardId)
+        assertEquals(1, state.counts.new)
+    }
+
+    // Mark the current note: state reflects nowMarked, the SAME card stays shown (no
+    // advance, no re-query), toggling again unmarks it.
+    @Test
+    fun markTogglesStateWithoutAdvancing() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 1), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(listOf(card(1, "s1")), counts(new = 1))),
+        )
+        val m = machine(bridge)
+        m.start()
+        assertEquals(false, (m.state.value as StudyState.ShowingFront).marked)
+
+        bridge.markScript.add(FakeBridge.Outcome.Ok(true))
+        m.toggleMarkCurrent()
+
+        assertEquals(listOf(10L), bridge.markArgs) // toggled the current note (id 1*10)
+        assertEquals(1, bridge.queueCalls) // no re-query: mark does not advance
+        val marked = m.state.value
+        assertTrue(marked is StudyState.ShowingFront, "was $marked")
+        assertEquals(1L, marked.card.cardId) // same card still shown
+        assertEquals(true, marked.marked) // indicator on
+
+        // Toggle again -> unmarked.
+        bridge.markScript.add(FakeBridge.Outcome.Ok(false))
+        m.toggleMarkCurrent()
+        val unmarked = m.state.value
+        assertTrue(unmarked is StudyState.ShowingFront, "was $unmarked")
+        assertEquals(false, unmarked.marked)
+    }
+
+    // Mark works from the revealed (back) side too, staying on the back without advancing.
+    @Test
+    fun markTogglesFromBackSideWithoutAdvancing() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 1), sync)))
+        bridge.queueScript.add(
+            FakeBridge.Outcome.Ok(QueueResponse(listOf(card(1, "s1")), counts(new = 1))),
+        )
+        val m = machine(bridge, now = clock(1_000L))
+        m.start()
+        m.reveal()
+
+        bridge.markScript.add(FakeBridge.Outcome.Ok(true))
+        m.toggleMarkCurrent()
+
+        val state = m.state.value
+        assertTrue(state is StudyState.ShowingBack, "was $state") // still on the back
+        assertEquals(1L, state.card.cardId)
+        assertEquals(true, state.marked)
+        assertEquals(1_000L, state.shownAtMs) // reveal time preserved
     }
 }

@@ -131,6 +131,36 @@ class StudyViewModel(
         viewModelScope.launch(driver) { m.undo() }
     }
 
+    /**
+     * Buries the current card (backend op). Stops audio and advances on the serial lane,
+     * exactly like [grade] — the buried card leaves the queue and the next card appears.
+     */
+    fun buryCard() {
+        val m = machine ?: return
+        audioPlayer?.stop()
+        viewModelScope.launch(driver) { m.buryCurrent() }
+    }
+
+    /**
+     * Suspends the current card (backend op). Same lane/teardown discipline as [buryCard];
+     * the card leaves the queue until unsuspended on desktop.
+     */
+    fun suspendCard() {
+        val m = machine ?: return
+        audioPlayer?.stop()
+        viewModelScope.launch(driver) { m.suspendCurrent() }
+    }
+
+    /**
+     * Toggles the "marked" tag on the current note (backend op). Does NOT advance or touch
+     * audio: only the mark indicator flips. Routed through the serial lane so it orders
+     * against grades/reveals.
+     */
+    fun toggleMark() {
+        val m = machine ?: return
+        viewModelScope.launch(driver) { m.toggleMarkCurrent() }
+    }
+
     /** Plays [filenames] for the current side; a no-op empty list clears playback. */
     fun playAudio(filenames: List<String>) {
         audioPlayer?.play(filenames)

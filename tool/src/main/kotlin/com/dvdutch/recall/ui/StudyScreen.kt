@@ -13,6 +13,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
@@ -67,6 +70,10 @@ class StudyScreen(
         val state by viewModel.state.collectAsState()
         val mediaLoader by viewModel.mediaLoader.collectAsState()
 
+        // Whether the card-actions menu (bury / suspend / mark) is open. Local UI state:
+        // it only ever opens over a live card and closes the moment an action fires.
+        var actionsOpen by remember { mutableStateOf(false) }
+
         LaunchedEffect(Unit) { viewModel.begin() }
 
         LightTheme(colors = themeColors) {
@@ -81,10 +88,16 @@ class StudyScreen(
                         onClick = { goBack() },
                     ),
                     center = LightTopBarCenter.Text("Study"),
+                    // "MORE" opens the card-actions menu, but only over a live card.
+                    rightButton = if (state.hasCard()) {
+                        LightBarButton.Text(text = "MORE", onClick = { actionsOpen = true })
+                    } else {
+                        null
+                    },
                     modifier = Modifier.padding(bottom = 0.25f.gridUnitsAsDp()),
                 )
 
-                CountsHeader(state.currentCounts())
+                CountsHeader(state.currentCounts(), state.marked())
 
                 // Unobtrusive UNDO control just below the counts header, shown only
                 // when the machine reports the last grade is undoable (an answer was
@@ -93,6 +106,20 @@ class StudyScreen(
                 // the counts tick back.
                 if (state.undoAvailable()) {
                     UndoRow(onUndo = viewModel::undo)
+                }
+
+                if (actionsOpen && state.hasCard()) {
+                    // The card-actions menu takes over the body while open. Each action
+                    // dispatches the backend op via the ViewModel and closes the menu;
+                    // bury/suspend advance to the next card, mark just toggles the star.
+                    ActionsMenu(
+                        marked = state.marked(),
+                        onBury = { viewModel.buryCard(); actionsOpen = false },
+                        onSuspend = { viewModel.suspendCard(); actionsOpen = false },
+                        onToggleMark = { viewModel.toggleMark(); actionsOpen = false },
+                        onCancel = { actionsOpen = false },
+                    )
+                    return@Column
                 }
 
                 when (val s = state) {
@@ -164,6 +191,17 @@ private fun StudyState.undoAvailable(): Boolean = when (this) {
     else -> false
 }
 
+/** Whether a live card is currently showing (front or back) — gates the MORE control. */
+private fun StudyState.hasCard(): Boolean =
+    this is StudyState.ShowingFront || this is StudyState.ShowingBack
+
+/** Whether the current note is marked — drives the ★ indicator in the counts header. */
+private fun StudyState.marked(): Boolean = when (this) {
+    is StudyState.ShowingFront -> marked
+    is StudyState.ShowingBack -> marked
+    else -> false
+}
+
 /**
  * A tappable "↶ UNDO" row shown only when the last grade is undoable; a tap reverts
  * it via rslib's own undo. Monochrome LightText matching [ReplayAudioRow] — sits
@@ -187,11 +225,15 @@ private fun UndoRow(onUndo: () -> Unit) {
     }
 }
 
-/** Slim `new · learning · review` header sitting under the top bar. */
+/**
+ * Slim `new · learning · review` header sitting under the top bar. A leading ★ appears
+ * when the current note is [marked] (AnkiDroid's Mark Note) — a subtle, monochrome cue.
+ */
 @Composable
-private fun CountsHeader(counts: Counts?) {
-    val text = counts?.let { "${it.new} new · ${it.learning} learning · ${it.review} review" }
+private fun CountsHeader(counts: Counts?, marked: Boolean) {
+    val body = counts?.let { "${it.new} new · ${it.learning} learning · ${it.review} review" }
         ?: " "
+    val text = if (marked) "★ $body" else body
     LightText(
         text = text,
         variant = LightTextVariant.Fine,
@@ -200,6 +242,49 @@ private fun CountsHeader(counts: Counts?) {
             .fillMaxWidth()
             .padding(horizontal = 1f.gridUnitsAsDp(), vertical = 0.25f.gridUnitsAsDp()),
     )
+}
+
+/**
+ * The card-actions menu: BURY CARD / SUSPEND CARD / MARK (or UNMARK) NOTE / CANCEL, each a
+ * tappable LightText row matching the SettingsScreen aesthetic. All are backend ops applied
+ * to the CURRENT card/note; bury and suspend advance to the next card, mark toggles the ★.
+ */
+@Composable
+private fun androidx.compose.foundation.layout.ColumnScope.ActionsMenu(
+    marked: Boolean,
+    onBury: () -> Unit,
+    onSuspend: () -> Unit,
+    onToggleMark: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .padding(horizontal = 1f.gridUnitsAsDp()),
+    ) {
+        ActionRow(label = "BURY CARD", onClick = onBury)
+        ActionRow(label = "SUSPEND CARD", onClick = onSuspend)
+        ActionRow(label = if (marked) "UNMARK NOTE" else "MARK NOTE", onClick = onToggleMark)
+        ActionRow(label = "CANCEL", onClick = onCancel, lighten = true)
+    }
+}
+
+/** One tappable action row in [ActionsMenu]. */
+@Composable
+private fun ActionRow(label: String, onClick: () -> Unit, lighten: Boolean = false) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 0.75f.gridUnitsAsDp()),
+    ) {
+        LightText(
+            text = label,
+            variant = LightTextVariant.Heading,
+            lighten = lighten,
+        )
+    }
 }
 
 @Composable
