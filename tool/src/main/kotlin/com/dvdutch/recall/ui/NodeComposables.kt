@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -115,18 +116,18 @@ private fun LightAnnotatedCopy(annotated: AnnotatedString, modifier: Modifier = 
  *   labelled placeholder box (the loader arrives in a later task).
  */
 @Composable
-fun RenderNodeView(node: RenderNode, mediaLoader: MediaLoader?) {
+fun RenderNodeView(node: RenderNode, mediaLoader: MediaLoader?, modifier: Modifier = Modifier) {
     when (node) {
-        is TextNode -> LightAnnotatedCopy(textNodeToAnnotatedString(node))
+        is TextNode -> LightAnnotatedCopy(textNodeToAnnotatedString(node), modifier = modifier)
 
-        is ClozeNode -> LightAnnotatedCopy(clozeToAnnotatedString(node))
+        is ClozeNode -> LightAnnotatedCopy(clozeToAnnotatedString(node), modifier = modifier)
 
         is ImageNode ->
             if (mediaLoader != null) MediaImage(node = node, loader = mediaLoader)
             else ImageNodePlaceholder(node)
 
         RuleNode -> Box(
-            modifier = Modifier
+            modifier = modifier
                 .fillMaxWidth()
                 .padding(vertical = 0.75f.gridUnitsAsDp())
                 .height(1.dp)
@@ -150,11 +151,34 @@ fun RenderNodeView(node: RenderNode, mediaLoader: MediaLoader?) {
     }
 }
 
-/** Renders a list of nodes stacked vertically, one below the next. */
+/**
+ * Renders a list of nodes stacked vertically, one below the next.
+ *
+ * [dividerIndex], when in range, marks the node that begins the answer — the boundary
+ * between question and answer. On the answer side StudyScreen passes the count of front
+ * nodes: since a standard back is `{{FrontSide}}` + (optional `<hr>`) + `{{Back}}`, the node
+ * at that index is the first content unique to the answer (the `<hr>` rule if the template
+ * has one, else the first answer node). [onNodePositioned] fires with that node's layout
+ * coordinates once placed, so StudyScreen can auto-scroll a tall card's answer into view on
+ * reveal. This anchors on the front/back boundary directly rather than hunting for a rule,
+ * so it works for templates (like image mnemonics) that omit the `<hr>` divider. A
+ * [dividerIndex] outside `nodes.indices` (e.g. −1 on the front side) simply never fires.
+ */
 @Composable
-fun RenderNodeColumn(nodes: List<RenderNode>, mediaLoader: MediaLoader?) {
-    for (node in nodes) {
-        RenderNodeView(node = node, mediaLoader = mediaLoader)
+fun RenderNodeColumn(
+    nodes: List<RenderNode>,
+    mediaLoader: MediaLoader?,
+    dividerIndex: Int = -1,
+    onNodePositioned: ((androidx.compose.ui.layout.LayoutCoordinates) -> Unit)? = null,
+) {
+    nodes.forEachIndexed { index, node ->
+        val dividerModifier =
+            if (onNodePositioned != null && index == dividerIndex) {
+                Modifier.onGloballyPositioned(onNodePositioned)
+            } else {
+                Modifier
+            }
+        RenderNodeView(node = node, mediaLoader = mediaLoader, modifier = dividerModifier)
     }
 }
 
