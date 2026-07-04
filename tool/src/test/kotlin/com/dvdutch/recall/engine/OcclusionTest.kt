@@ -168,4 +168,116 @@ class OcclusionTest {
         assertEquals(1, out.size)
         assertEquals(ShapeState.MASKED, out.single().state)
     }
+
+    // ---- fractional-vs-pixel coordinate normalisation -------------------------
+    // The "Image Occlusion Enhanced" / "Image Occlusion+" notetype (the dominant format
+    // med students use) stores coords as FRACTIONAL RATIOS 0..1 of the image, not pixels.
+    // Detection rule (evidence-based across real IO+ decks): if EVERY numeric coordinate
+    // in the note is <= 1.0, the note is fractional → multiply by natural dims to pixels.
+
+    private fun fractionalNote() = ParsedOcclusion(
+        occludeInactive = false,
+        occlusions = listOf(
+            RawOcclusion(1, listOf(RawShape("rect", mapOf("left" to ".1363", "top" to ".0512", "width" to ".1882", "height" to ".033")))),
+            RawOcclusion(2, listOf(RawShape("ellipse", mapOf("left" to ".2", "top" to ".3", "width" to ".1", "height" to ".05", "rx" to ".05", "ry" to ".025")))),
+            RawOcclusion(3, listOf(RawShape("polygon", mapOf("points" to ".1,.1 .5,.1 .3,.5")))),
+        ),
+    )
+
+    /** All-fractional note with natural 1550x1240 → resolved shapes must be in PIXELS. */
+    @Test
+    fun `resolveShapes scales fractional coords to pixels`() {
+        val out = resolveShapes(fractionalNote(), testedOrdinal = 1, isBack = false, naturalW = 1550, naturalH = 1240)
+        val rect = out.filterIsInstance<OcclusionShapeState.Rect>().single()
+        // left = .1363 * 1550 ≈ 211.3, top = .0512 * 1240 ≈ 63.5, width = .1882 * 1550 ≈ 291.7, height = .033 * 1240 ≈ 40.9
+        assertEquals(211.265, rect.left, 0.01)
+        assertEquals(63.488, rect.top, 0.01)
+        assertEquals(291.71, rect.width, 0.01)
+        assertEquals(40.92, rect.height, 0.01)
+
+        val ell = out.filterIsInstance<OcclusionShapeState.Ellipse>().single()
+        assertEquals(0.2 * 1550, ell.left, 0.01)
+        assertEquals(0.3 * 1240, ell.top, 0.01)
+        assertEquals(0.1 * 1550, ell.width, 0.01)
+        assertEquals(0.05 * 1240, ell.height, 0.01)
+        assertEquals(0.05 * 1550, ell.rx, 0.01)
+        assertEquals(0.025 * 1240, ell.ry, 0.01)
+
+        val poly = out.filterIsInstance<OcclusionShapeState.Polygon>().single()
+        assertEquals(
+            listOf(
+                Pt(0.1 * 1550, 0.1 * 1240),
+                Pt(0.5 * 1550, 0.1 * 1240),
+                Pt(0.3 * 1550, 0.5 * 1240),
+            ),
+            poly.points,
+        )
+    }
+
+    /** A pixel note (coords > 1) is left UNCHANGED regardless of natural dims. */
+    @Test
+    fun `resolveShapes leaves pixel coords unchanged`() {
+        val n = ParsedOcclusion(
+            occludeInactive = false,
+            occlusions = listOf(
+                RawOcclusion(1, listOf(RawShape("rect", mapOf("left" to "150", "top" to "50", "width" to "200", "height" to "80")))),
+            ),
+        )
+        val out = resolveShapes(n, testedOrdinal = 1, isBack = false, naturalW = 640, naturalH = 480)
+        val rect = out.filterIsInstance<OcclusionShapeState.Rect>().single()
+        assertEquals(150.0, rect.left, 0.0)
+        assertEquals(50.0, rect.top, 0.0)
+        assertEquals(200.0, rect.width, 0.0)
+        assertEquals(80.0, rect.height, 0.0)
+    }
+
+    /** Classification boundary: max coord exactly 1.0 → fractional; 1.5 → pixels. */
+    @Test
+    fun `resolveShapes classification boundary at one`() {
+        val atOne = ParsedOcclusion(
+            occludeInactive = false,
+            occlusions = listOf(RawOcclusion(1, listOf(RawShape("rect", mapOf("left" to "0.5", "top" to "0.5", "width" to "0.5", "height" to "1.0"))))),
+        )
+        // max coord == 1.0 → fractional → scaled.
+        val scaled = resolveShapes(atOne, testedOrdinal = 1, isBack = false, naturalW = 1000, naturalH = 1000)
+            .filterIsInstance<OcclusionShapeState.Rect>().single()
+        assertEquals(500.0, scaled.left, 0.0)
+        assertEquals(1000.0, scaled.height, 0.0)
+
+        val overOne = ParsedOcclusion(
+            occludeInactive = false,
+            occlusions = listOf(RawOcclusion(1, listOf(RawShape("rect", mapOf("left" to "0.5", "top" to "0.5", "width" to "0.5", "height" to "1.5"))))),
+        )
+        // any coord > 1.0 → pixels → unchanged.
+        val unchanged = resolveShapes(overOne, testedOrdinal = 1, isBack = false, naturalW = 1000, naturalH = 1000)
+            .filterIsInstance<OcclusionShapeState.Rect>().single()
+        assertEquals(0.5, unchanged.left, 0.0)
+        assertEquals(1.5, unchanged.height, 0.0)
+    }
+
+    /** Mixed-magnitude fractional note: a .2 shape and a .9 shape both scale correctly. */
+    @Test
+    fun `resolveShapes scales mixed-magnitude fractional shapes uniformly`() {
+        val n = ParsedOcclusion(
+            occludeInactive = false,
+            occlusions = listOf(
+                RawOcclusion(1, listOf(RawShape("rect", mapOf("left" to "0.2", "top" to "0.2", "width" to "0.1", "height" to "0.1")))),
+                RawOcclusion(2, listOf(RawShape("rect", mapOf("left" to "0.9", "top" to "0.9", "width" to "0.05", "height" to "0.05")))),
+            ),
+        )
+        val out = resolveShapes(n, testedOrdinal = 1, isBack = false, naturalW = 1000, naturalH = 500)
+        val rects = out.filterIsInstance<OcclusionShapeState.Rect>().sortedBy { it.left }
+        assertEquals(200.0, rects[0].left, 0.0)
+        assertEquals(100.0, rects[0].top, 0.0)
+        assertEquals(900.0, rects[1].left, 0.0)
+        assertEquals(450.0, rects[1].top, 0.0)
+    }
+
+    /** With unknown natural dims (0), fractional coords cannot be scaled → left as-is. */
+    @Test
+    fun `resolveShapes leaves fractional coords untouched when natural dims unknown`() {
+        val out = resolveShapes(fractionalNote(), testedOrdinal = 1, isBack = false, naturalW = 0, naturalH = 0)
+        val rect = out.filterIsInstance<OcclusionShapeState.Rect>().single()
+        assertEquals(0.1363, rect.left, 1e-9)
+    }
 }

@@ -203,7 +203,7 @@ class LocalEngineApi(
             image = occNote.imageFileName,
             naturalW = dims.width,
             naturalH = dims.height,
-            shapes = resolveShapes(parsed, tested, isBack),
+            shapes = resolveShapes(parsed, tested, isBack, dims.width, dims.height),
             side = if (isBack) "back" else "front",
         )
 
