@@ -80,6 +80,23 @@ class AttentionStateTest {
     }
 
     @Test
+    fun `the empty-server guard trips into a guard-confirm carrying the phone card count`() {
+        // A download that would replace this phone's cards with an EMPTY server must NOT
+        // proceed silently: the reducer moves to a distinct guard-confirm that states the
+        // concrete consequence with the real count so the user can CANCEL.
+        val state = AttentionReducer.guardTripped(AttentionUiState(localCardCount = 14_046), 14_046)
+        val phase = assertIs<AttentionPhase.GuardConfirm>(state.phase)
+        assertEquals(14_046, phase.localCardCount)
+    }
+
+    @Test
+    fun `cancelling the empty-server guard returns to choose without wiping`() {
+        val tripped = AttentionReducer.guardTripped(AttentionUiState(localCardCount = 9), 9)
+        val state = AttentionReducer.cancel(tripped)
+        assertIs<AttentionPhase.Choose>(state.phase)
+    }
+
+    @Test
     fun `failure carries its reason`() {
         val phase = assertIs<AttentionPhase.Failed>(
             AttentionReducer.failed(AttentionUiState(), "boom").phase,

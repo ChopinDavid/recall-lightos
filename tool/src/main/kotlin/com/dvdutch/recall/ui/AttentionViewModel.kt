@@ -3,6 +3,7 @@ package com.dvdutch.recall.ui
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.lifecycle.viewModelScope
+import com.dvdutch.recall.engine.FullDownloadResult
 import com.dvdutch.recall.engine.RecallEngine
 import com.thelightphone.sdk.LightViewModel
 import kotlinx.coroutines.Dispatchers
@@ -59,16 +60,52 @@ class AttentionViewModel(
     }
 
     /**
-     * Confirmed the destructive resolution for [direction]: run `fullSync(upload)`,
-     * moving to Running while it is in flight and Done/Failed on the outcome.
+     * Confirmed the destructive resolution for [direction]. Upload runs the plain
+     * `fullSync(upload=true)`. Download runs the GUARDED `fullDownload`: if the server turns
+     * out to be EMPTY while this phone is populated, the transfer is rolled back and the flow
+     * moves to [AttentionPhase.GuardConfirm] instead of silently wiping the phone — the user
+     * must then explicitly [forceDownload] or CANCEL.
      */
     fun confirm(direction: AttentionDirection) {
         _uiState.update { AttentionReducer.running(it, direction) }
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 engine.openCollection()
-                engine.controller().fullSync(upload = direction.upload)
-                setState { AttentionReducer.done(it) }
+                val controller = engine.controller()
+                if (direction == AttentionDirection.Upload) {
+                    controller.fullSync(upload = true)
+                    setState { AttentionReducer.done(it) }
+                } else {
+                    when (val result = controller.fullDownload(force = false)) {
+                        is FullDownloadResult.Downloaded -> setState { AttentionReducer.done(it) }
+                        is FullDownloadResult.GuardTripped ->
+                            setState { AttentionReducer.guardTripped(it, result.localCardCount) }
+                        is FullDownloadResult.Failed ->
+                            setState { AttentionReducer.failed(it, result.reason) }
+                    }
+                }
+            } catch (t: Throwable) {
+                setState { AttentionReducer.failed(it, t.message ?: "sync failed") }
+            }
+        }
+    }
+
+    /**
+     * The user saw the empty-server guard and chose to erase the phone anyway: force the
+     * download past the guard. Same outcome handling as [confirm]'s download, minus the
+     * guard (it cannot trip a second time when forced).
+     */
+    fun forceDownload() {
+        _uiState.update { AttentionReducer.running(it, AttentionDirection.Download) }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                engine.openCollection()
+                when (val result = engine.controller().fullDownload(force = true)) {
+                    is FullDownloadResult.Downloaded -> setState { AttentionReducer.done(it) }
+                    is FullDownloadResult.Failed -> setState { AttentionReducer.failed(it, result.reason) }
+                    is FullDownloadResult.GuardTripped -> // unreachable when forced; be safe
+                        setState { AttentionReducer.done(it) }
+                }
             } catch (t: Throwable) {
                 setState { AttentionReducer.failed(it, t.message ?: "sync failed") }
             }
