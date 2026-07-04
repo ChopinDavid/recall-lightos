@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -82,31 +83,60 @@ class StudyScreen(
                     .fillMaxSize()
                     .background(LightThemeTokens.colors.background),
             ) {
-                LightTopBar(
-                    leftButton = LightBarButton.LightIcon(
-                        icon = LightIcons.BACK,
-                        onClick = { goBack() },
-                    ),
-                    center = LightTopBarCenter.Text("Study"),
-                    // "MORE" opens the card-actions menu, but only over a live card.
-                    rightButton = if (state.hasCard()) {
-                        LightBarButton.Text(text = "MORE", onClick = { actionsOpen = true })
-                    } else {
-                        null
-                    },
-                    modifier = Modifier.padding(bottom = 0.25f.gridUnitsAsDp()),
-                )
+                // LightTopBar exposes a single right-button slot, so the two right
+                // controls (undo + MORE) are overlaid at CenterEnd using the bar's own
+                // metrics (height 3 units, horizontal padding 1 unit — mirrored from
+                // LightTopBar.kt, whose internals are private).
+                Box(modifier = Modifier.padding(bottom = 0.25f.gridUnitsAsDp())) {
+                    LightTopBar(
+                        leftButton = LightBarButton.LightIcon(
+                            icon = LightIcons.BACK,
+                            onClick = { goBack() },
+                        ),
+                        center = LightTopBarCenter.Text("Study"),
+                        rightButton = null,
+                    )
+                    val undoable = state.undoAvailable()
+                    if (state.hasCard() || undoable) {
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .height(3f.gridUnitsAsDp())
+                                .padding(end = 1f.gridUnitsAsDp()),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            // AnkiDroid-style undo affordance: ALWAYS visible during
+                            // study, ghosted when there is nothing to undo and full
+                            // white (tappable) after a grade — so the control teaches
+                            // that undo exists before it's needed. Fires rslib's own
+                            // undo; the card returns and the counts tick back.
+                            LightText(
+                                text = "↶",
+                                variant = LightTextVariant.Copy,
+                                lighten = !undoable,
+                                modifier = if (undoable) {
+                                    Modifier
+                                        .clickable(onClick = viewModel::undo)
+                                        .padding(horizontal = 0.5f.gridUnitsAsDp())
+                                } else {
+                                    Modifier.padding(horizontal = 0.5f.gridUnitsAsDp())
+                                },
+                            )
+                            // "MORE" opens the card-actions menu, only over a live card.
+                            if (state.hasCard()) {
+                                LightText(
+                                    text = "MORE",
+                                    variant = LightTextVariant.Fine,
+                                    modifier = Modifier
+                                        .clickable(onClick = { actionsOpen = true })
+                                        .padding(start = 0.5f.gridUnitsAsDp()),
+                                )
+                            }
+                        }
+                    }
+                }
 
                 CountsHeader(state.currentCounts(), state.marked())
-
-                // Unobtrusive UNDO control just below the counts header, shown only
-                // when the machine reports the last grade is undoable (an answer was
-                // given this session AND the engine holds an undoable op). One tap
-                // reverts the last grade via rslib's own undo; the card returns and
-                // the counts tick back.
-                if (state.undoAvailable()) {
-                    UndoRow(onUndo = viewModel::undo)
-                }
 
                 if (actionsOpen && state.hasCard()) {
                     // The card-actions menu takes over the body while open. Each action
@@ -202,28 +232,6 @@ private fun StudyState.marked(): Boolean = when (this) {
     else -> false
 }
 
-/**
- * A tappable "↶ UNDO" row shown only when the last grade is undoable; a tap reverts
- * it via rslib's own undo. Monochrome LightText matching [ReplayAudioRow] — sits
- * under the counts header, discoverable but unobtrusive.
- */
-@Composable
-private fun UndoRow(onUndo: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onUndo)
-            .padding(horizontal = 1f.gridUnitsAsDp(), vertical = 0.25f.gridUnitsAsDp()),
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        LightText(
-            text = "↶ UNDO",
-            variant = LightTextVariant.Fine,
-            lighten = true,
-            align = TextAlign.Center,
-        )
-    }
-}
 
 /**
  * Slim `new · learning · review` header sitting under the top bar. A leading ★ appears
