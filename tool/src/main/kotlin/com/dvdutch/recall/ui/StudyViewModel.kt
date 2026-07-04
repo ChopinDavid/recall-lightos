@@ -81,6 +81,41 @@ class StudyViewModel(
     /** True once [finish] has run so we never double-finish on hide + back. */
     private var finished = false
 
+    /**
+     * Whether the full-screen type-answer text editor is open. The UI opens it from the
+     * "TYPE ANSWER" row on a type-answer card's front; it closes on submit/cancel. Local
+     * to the ViewModel because it is pure screen state, not part of the study machine.
+     */
+    private val _typeAnswerEditing = MutableStateFlow(false)
+    val typeAnswerEditing: StateFlow<Boolean> = _typeAnswerEditing.asStateFlow()
+
+    /** Bumped on each editor open so the SDK editor re-seeds its (empty) field. */
+    private val _typeAnswerSession = MutableStateFlow(0)
+    val typeAnswerSession: StateFlow<Int> = _typeAnswerSession.asStateFlow()
+
+    /** Opens the type-answer editor over the current front. */
+    fun openTypeAnswerEditor() {
+        _typeAnswerSession.value += 1
+        _typeAnswerEditing.value = true
+    }
+
+    /** Closes the type-answer editor without recording anything. */
+    fun cancelTypeAnswer() {
+        _typeAnswerEditing.value = false
+    }
+
+    /**
+     * Records the typed answer on the machine and closes the editor. Sanitized with the
+     * shared credential rules (strip newlines/control chars, trim ends) but NOT the
+     * endpoint rule — a typed answer legitimately contains interior spaces (e.g. "New York").
+     */
+    fun submitTypeAnswer(raw: CharSequence) {
+        val m = machine
+        val clean = com.dvdutch.recall.prefs.TextSanitizer.sanitizeCredential(raw)
+        _typeAnswerEditing.value = false
+        if (m != null) viewModelScope.launch(driver) { m.setTypedAnswer(clean) }
+    }
+
     /** Starts (or restarts, on retry) the session. Idempotent per screen show. */
     fun begin() {
         if (machine != null) return

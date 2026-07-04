@@ -72,6 +72,15 @@ data class CardPayload(
     // toggling it via toggleMark never advances the card. Older payloads lacking it read
     // false (unmarked).
     val marked: Boolean = false,
+    // For a TYPE-ANSWER card ({{type:Field}}): the expected answer, resolved from the
+    // referenced note field and HTML/media-stripped (see fieldTextForCompare). Non-null
+    // ONLY for type-answer cards, so a null value is the signal that the card has NO
+    // type-answer affordance — normal cards leave it null and behave unchanged. Additive
+    // with a safe default so older payloads/callers stay valid.
+    @SerialName("type_answer_expected") val typeAnswerExpected: String? = null,
+    // True when the marker was `[[type:nc:Field]]` — compare case-insensitively. Only
+    // meaningful when [typeAnswerExpected] is non-null. Additive, defaults false.
+    @SerialName("type_answer_no_case") val typeAnswerNoCase: Boolean = false,
 )
 
 @Serializable

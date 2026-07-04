@@ -5,6 +5,8 @@ import com.dvdutch.recall.api.EngineApi
 import com.dvdutch.recall.api.BridgeError
 import com.dvdutch.recall.api.CardPayload
 import com.dvdutch.recall.api.Counts
+import com.dvdutch.recall.api.RenderNode
+import com.dvdutch.recall.engine.parseTypeAnswerDiff
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,6 +32,12 @@ sealed interface StudyState {
         val counts: Counts,
         val undoAvailable: Boolean = false,
         val marked: Boolean = false,
+        /**
+         * The expected answer for a TYPE-ANSWER card ([CardPayload.typeAnswerExpected]),
+         * or null for a normal card. Non-null is the signal to show the "TYPE ANSWER"
+         * affordance; normal cards leave it null and show no prompt.
+         */
+        val typeAnswerExpected: String? = null,
     ) : StudyState
 
     /**
@@ -42,6 +50,13 @@ sealed interface StudyState {
         val shownAtMs: Long,
         val undoAvailable: Boolean = false,
         val marked: Boolean = false,
+        /**
+         * For a TYPE-ANSWER card: the grading result to show near the top of the back —
+         * a [TypeAnswerReveal.Diff] when the user typed something (rslib's backend-computed
+         * diff), or a [TypeAnswerReveal.Expected] plain answer line when they revealed
+         * without typing. Null for a normal card.
+         */
+        val typeAnswer: TypeAnswerReveal? = null,
     ) : StudyState
 
     /**
@@ -71,6 +86,27 @@ sealed interface FailCause {
 
     /** The bridge returned a per-item `"error"` status for the graded answer. */
     data object AnswerRejected : FailCause
+}
+
+/**
+ * How a TYPE-ANSWER card's back presents the grading result.
+ *
+ * The marker's original position in the card is lost by design (it is stripped at the
+ * engine before compiling), so the reveal is shown as a clearly-set-off block near the
+ * top of the back rather than inline where `{{type:Field}}` sat.
+ */
+sealed interface TypeAnswerReveal {
+    /**
+     * The user typed something: [node] is the styled render of rslib's backend-computed
+     * diff (typeGood/typeBad/typeMissed → mono / mono+strike / mono+underline runs).
+     */
+    data class Diff(val node: RenderNode) : TypeAnswerReveal
+
+    /**
+     * The user revealed without typing: show the [answer] as a plain set-off line — never
+     * a fabricated all-wrong diff.
+     */
+    data class Expected(val answer: String) : TypeAnswerReveal
 }
 
 /**
@@ -116,6 +152,14 @@ class StudyMachine(
 
     /** Recorded at reveal so grading can compute a deterministic `ms_taken`. */
     private var shownAtMs: Long = 0L
+
+    /**
+     * What the user typed for the CURRENT type-answer card, or null if nothing was typed
+     * (or the card is normal). Set via [setTypedAnswer]; cleared whenever the visible card
+     * changes ([settle]) so it can never leak into the next card. Consumed by [reveal] to
+     * decide between a backend diff and the plain expected-answer line.
+     */
+    private var typedAnswer: String? = null
 
     /**
      * Whether the CURRENT note is marked. Seeded from the head card's
@@ -175,16 +219,57 @@ class StudyMachine(
     }
 
     /**
-     * Reveals the current card's back, recording the reveal time. No-op unless we
-     * are currently [StudyState.ShowingFront].
+     * Records what the user typed for the CURRENT type-answer card (from the SDK text
+     * editor, already sanitized by the UI). No-op unless a type-answer front is showing —
+     * so a stray call on a normal card or the back can never seed a diff. A blank/empty
+     * value clears the typed answer (reveal then shows the plain expected-answer line).
      */
-    fun reveal() {
+    fun setTypedAnswer(text: String) {
+        val current = _state.value
+        if (current !is StudyState.ShowingFront || current.typeAnswerExpected == null) return
+        typedAnswer = text.ifEmpty { null }
+    }
+
+    /**
+     * Reveals the current card's back, recording the reveal time. For a TYPE-ANSWER card
+     * it also resolves the [TypeAnswerReveal]: if the user typed something, it calls
+     * rslib's own `compareTypedAnswer` (never a local diff) and parses the result into
+     * styled nodes; if nothing was typed, it carries the plain expected answer. No-op
+     * unless we are currently [StudyState.ShowingFront].
+     *
+     * Suspends because the type-answer compare is an engine call; it is routed through the
+     * same serial driver lane as grade/undo by the ViewModel, so its state write is ordered
+     * against them. A normal card takes no engine call and is unchanged.
+     */
+    suspend fun reveal() {
         val current = _state.value
         if (current !is StudyState.ShowingFront) return
         shownAtMs = nowMs()
+        val reveal = resolveTypeAnswer(current.card)
         _state.value = StudyState.ShowingBack(
-            current.card, current.counts, shownAtMs, undoAvailable(), currentMarked,
+            current.card, current.counts, shownAtMs, undoAvailable(), currentMarked, reveal,
         )
+    }
+
+    /**
+     * Builds the [TypeAnswerReveal] for [card] on reveal, or null for a normal card:
+     *   - no expected answer      → null (normal card, no affordance);
+     *   - nothing typed           → [TypeAnswerReveal.Expected] (plain answer line);
+     *   - something typed         → rslib's `compareTypedAnswer` diff, parsed to styled nodes.
+     * The engine failing the compare is non-fatal here — we fall back to the expected-answer
+     * line rather than failing the whole reveal (the compare is a display nicety, not grading).
+     */
+    private suspend fun resolveTypeAnswer(card: CardPayload): TypeAnswerReveal? {
+        val expected = card.typeAnswerExpected ?: return null
+        val typed = typedAnswer ?: return TypeAnswerReveal.Expected(expected)
+        return try {
+            val diffHtml = client.compareTypedAnswer(expected, typed, card.typeAnswerNoCase)
+            TypeAnswerReveal.Diff(parseTypeAnswerDiff(diffHtml))
+        } catch (_: Throwable) {
+            // The diff is a display nicety, not grading: any compare/parse failure falls
+            // back to the plain expected-answer line rather than crashing the reveal.
+            TypeAnswerReveal.Expected(expected)
+        }
     }
 
     /**
@@ -418,6 +503,10 @@ class StudyMachine(
      * front of the next card by design.
      */
     private fun settle() {
+        // The visible card is (re)settling: any answer typed for the PREVIOUS card must
+        // never leak into this one. Clearing here covers every transition — advance after a
+        // grade, undo's re-fetch, bury/suspend — since they all funnel through settle().
+        typedAnswer = null
         val next = buffer.firstOrNull()
         _state.value = if (next == null) {
             // Empty NOW, but carry the latest counts so the UI can say whether
@@ -427,7 +516,7 @@ class StudyMachine(
             // Seed the mark indicator from the (now current) head card's payload; a
             // subsequent toggle updates currentMarked in place without a re-query.
             currentMarked = next.marked
-            StudyState.ShowingFront(next, counts, undoAvailable(), currentMarked)
+            StudyState.ShowingFront(next, counts, undoAvailable(), currentMarked, next.typeAnswerExpected)
         }
     }
 

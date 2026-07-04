@@ -45,4 +45,16 @@ interface EngineApi {
      * unmarked (false) after the toggle. The change syncs; the card stays in the queue.
      */
     suspend fun toggleMark(noteId: Long): Boolean
+
+    /**
+     * Computes the type-answer grading diff via rslib's OWN `compareAnswer` (the same
+     * comparison AnkiDroid/desktop drive) — NEVER a local diff. Returns rslib's diff
+     * HTML (`<code id=typeans>…</code>` with typeGood/typeBad/typeMissed spans), which
+     * [com.dvdutch.recall.engine.parseTypeAnswerDiff] turns into styled render nodes.
+     *
+     * [expected] is the resolved expected answer ([CardPayload.typeAnswerExpected]);
+     * [provided] is what the user typed. When [noCase] is true (an `[[type:nc:Field]]`
+     * marker) both sides are lowercased before comparison, so the diff is case-insensitive.
+     */
+    suspend fun compareTypedAnswer(expected: String, provided: String, noCase: Boolean = false): String
 }

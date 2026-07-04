@@ -35,6 +35,11 @@ data class TextRun(
     val small: Boolean = false,
     val mono: Boolean = false,
     val strike: Boolean = false,
+    // Underline. Additive, kotlin-side only: the parity HTML→node compiler never
+    // emits it (no HTML tag maps here) — it exists purely so the type-answer diff
+    // parser can flag a "missed" run monochrome-safely. Default false keeps the wire
+    // contract and the parity corpus unaffected.
+    val underline: Boolean = false,
 )
 
 @Serializable

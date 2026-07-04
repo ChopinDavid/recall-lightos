@@ -67,12 +67,16 @@ fun textNodeToAnnotatedString(node: TextNode): AnnotatedString = buildAnnotatedS
 
 /** Collapses a run's typographic flags into one [SpanStyle], or null if unstyled. */
 private fun TextRun.toSpanStyle(): SpanStyle? {
-    if (!b && !i && !small && !mono && !strike) return null
+    if (!b && !i && !small && !mono && !strike && !underline) return null
     return SpanStyle(
         fontWeight = if (b) FontWeight.Bold else null,
         fontStyle = if (i) FontStyle.Italic else null,
         fontFamily = if (mono) FontFamily.Monospace else null,
-        textDecoration = if (strike) TextDecoration.LineThrough else null,
+        textDecoration = when {
+            strike -> TextDecoration.LineThrough
+            underline -> TextDecoration.Underline
+            else -> null
+        },
         fontSize = if (small) SMALL_TEXT_SCALE.em else TextUnit.Unspecified,
     )
 }

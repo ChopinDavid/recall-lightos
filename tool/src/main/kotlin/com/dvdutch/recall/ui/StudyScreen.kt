@@ -37,6 +37,7 @@ import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightIcons
 import com.thelightphone.sdk.ui.LightText
+import com.thelightphone.sdk.ui.LightTextInputEditor
 import com.thelightphone.sdk.ui.LightTextVariant
 import com.thelightphone.sdk.ui.LightTheme
 import com.thelightphone.sdk.ui.LightThemeController
@@ -75,6 +76,9 @@ class StudyScreen(
         val themeColors by LightThemeController.colors.collectAsState()
         val state by viewModel.state.collectAsState()
         val mediaLoader by viewModel.mediaLoader.collectAsState()
+        val typeAnswerEditing by viewModel.typeAnswerEditing.collectAsState()
+        val typeAnswerSession by viewModel.typeAnswerSession.collectAsState()
+        val keyboardOptionsFlow = com.thelightphone.sdk.rememberKeyboardOptions()
 
         // Whether the card-actions menu (bury / suspend / mark) is open. Local UI state:
         // it only ever opens over a live card and closes the moment an action fires.
@@ -83,6 +87,24 @@ class StudyScreen(
         LaunchedEffect(Unit) { viewModel.begin() }
 
         LightTheme(colors = themeColors) {
+            // The full-screen type-answer editor takes over when open — the same SDK editor
+            // FirstRun/Settings use. It starts empty each open (bumped session key) and is
+            // sanitized on submit (interior spaces kept; newlines stripped).
+            if (typeAnswerEditing) {
+                LightTextInputEditor(
+                    title = "Type your answer",
+                    editorKey = "type-answer-$typeAnswerSession",
+                    keyboardOptionsFlow = keyboardOptionsFlow,
+                    state = androidx.compose.foundation.text.input.rememberTextFieldState(""),
+                    onSubmit = { viewModel.submitTypeAnswer(it) },
+                    onBack = viewModel::cancelTypeAnswer,
+                    submitIcon = LightIcons.ACCEPT,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(LightThemeTokens.colors.background),
+                )
+                return@LightTheme
+            }
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -172,6 +194,13 @@ class StudyScreen(
                         mediaLoader = mediaLoader,
                         onAutoPlay = viewModel::playAudio,
                         onReplay = viewModel::playAudio,
+                        // A type-answer card ({{type:Field}}) shows the TYPE ANSWER row above
+                        // REVEAL; a normal card leaves this null and shows no affordance.
+                        onTypeAnswer = if (s.typeAnswerExpected != null) {
+                            { viewModel.openTypeAnswerEditor() }
+                        } else {
+                            null
+                        },
                         bottom = {
                             LightBottomBar(
                                 items = listOf(
@@ -190,6 +219,9 @@ class StudyScreen(
                         mediaLoader = mediaLoader,
                         onAutoPlay = viewModel::playAudio,
                         onReplay = viewModel::playAudio,
+                        // The type-answer result block (diff or expected-answer line) sits at
+                        // the top of the back; null for a normal card.
+                        typeAnswerReveal = s.typeAnswer,
                         bottom = {
                             GradeBar(
                                 buttons = gradeButtons(s.card.nextDueLabels),
@@ -316,6 +348,8 @@ private fun androidx.compose.foundation.layout.ColumnScope.CardBody(
     onAutoPlay: (List<String>) -> Unit,
     onReplay: (List<String>) -> Unit,
     bottom: @Composable () -> Unit,
+    onTypeAnswer: (() -> Unit)? = null,
+    typeAnswerReveal: com.dvdutch.recall.study.TypeAnswerReveal? = null,
 ) {
     val sideAudio = activeSideAudio(card, showBack)
 
@@ -377,6 +411,11 @@ private fun androidx.compose.foundation.layout.ColumnScope.CardBody(
                 viewportH = coords.size.height
             },
     ) {
+        // The type-answer result (diff or expected-answer line) sits at the very top of the
+        // revealed back, clearly set off above the card content. Only on the back.
+        if (showBack && typeAnswerReveal != null) {
+            TypeAnswerRevealBlock(reveal = typeAnswerReveal, mediaLoader = mediaLoader)
+        }
         RenderNodeColumn(
             nodes = if (showBack) card.back else card.front,
             mediaLoader = mediaLoader,
@@ -393,6 +432,10 @@ private fun androidx.compose.foundation.layout.ColumnScope.CardBody(
     }
     if (sideHasAudio(card, showBack)) {
         ReplayAudioRow(onReplay = { onReplay(sideAudio) })
+    }
+    // The TYPE ANSWER affordance sits just above REVEAL on a type-answer front.
+    if (!showBack && onTypeAnswer != null) {
+        TypeAnswerRow(onOpen = onTypeAnswer)
     }
     bottom()
 }

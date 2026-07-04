@@ -19,6 +19,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -152,6 +153,74 @@ class LocalEngineApiTest {
         assertEquals(ShapeState.REVEALED_OUTLINE, backRect.state)
         val backText = card.back.filterIsInstance<TextNode>().flatMap { it.runs }.joinToString("") { it.s }
         assertTrue("Coordinates motor" in backText, "back extra text node missing: $backText")
+    }
+
+    /**
+     * Seeds a stock "Basic (type in the answer)" note (front/back) — the type-answer
+     * notetype present in every collection — into [deckName]; returns the deck id.
+     */
+    private fun seedTypeNote(deckName: String, front: String, back: String): Long {
+        return onEngine { backend ->
+            val ntid = backend.getNotetypeIdByName("Basic (type in the answer)")
+            require(ntid != 0L) { "collection is missing the stock type-answer notetype" }
+            val deckId = deckIdCreating(backend, deckName)
+            val n = Note.newBuilder()
+                .setNotetypeId(ntid)
+                .addFields(front)
+                .addFields(back)
+                .build()
+            backend.addNote(n, deckId)
+            deckId
+        }
+    }
+
+    @Test
+    fun `type-answer card renders without the marker and carries the expected answer`() {
+        selectDeck(seedTypeNote("TypeTest", "Capital of France?", "Paris"))
+        val card = runBlocking { api.queue(20) }.cards.first()
+
+        // The [[type:Back]] marker must never reach the phone as literal text.
+        val frontText = card.front.filterIsInstance<TextNode>()
+            .flatMap { it.runs }.joinToString("") { it.s }
+        assertTrue("[[type" !in frontText, "type marker leaked into front text: $frontText")
+        assertTrue("Capital of France?" in frontText, "question text lost: $frontText")
+
+        // The expected answer is resolved from the Back field, HTML-stripped.
+        assertEquals("Paris", card.typeAnswerExpected, "expected answer must resolve to the Back field")
+        assertEquals(false, card.typeAnswerNoCase, "a plain type marker is case-sensitive")
+
+        // A back with the marker stripped too (it appears on the answer side as well).
+        val backText = card.back.filterIsInstance<TextNode>()
+            .flatMap { it.runs }.joinToString("") { it.s }
+        assertTrue("[[type" !in backText, "type marker leaked into back text: $backText")
+    }
+
+    @Test
+    fun `a normal card leaves the type-answer fields null`() {
+        selectDeck(seedNote("Normal", "q", "a"))
+        val card = runBlocking { api.queue(20) }.cards.first()
+        assertNull(card.typeAnswerExpected, "a normal card must not carry an expected answer")
+        assertEquals(false, card.typeAnswerNoCase)
+    }
+
+    @Test
+    fun `compareTypedAnswer round-trips the backend diff for a partly-wrong answer`() {
+        seedNote("Cmp", "q", "a") // any collection open; compareAnswer needs no card
+        val diff = runBlocking { api.compareTypedAnswer("Paris", "paris") }
+        // rslib's compareAnswer wraps the diff in <code id=typeans> with classed spans.
+        assertTrue("typeans" in diff, "expected rslib's typeans diff, got: $diff")
+        assertTrue("typeGood" in diff || "typeBad" in diff, "expected diff spans, got: $diff")
+        // And it parses into styled mono runs with a struck/underlined mismatch.
+        val runs = (parseTypeAnswerDiff(diff) as TextNode).runs
+        assertTrue(runs.any { it.strike || it.underline }, "a wrong char must be flagged: $runs")
+    }
+
+    @Test
+    fun `compareTypedAnswer with noCase lowercases both sides so case differences match`() {
+        seedNote("CmpNc", "q", "a")
+        val diff = runBlocking { api.compareTypedAnswer("Paris", "paris", noCase = true) }
+        // Case-insensitive: "paris" vs "Paris" is an exact match, so no typeBad/typeMissed.
+        assertTrue("typeBad" !in diff && "typeMissed" !in diff, "nc compare should be all-good: $diff")
     }
 
     @Test
