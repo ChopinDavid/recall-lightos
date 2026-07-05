@@ -127,15 +127,24 @@ class StudyViewModel(
     }
 
     /**
-     * Records the typed answer on the machine and closes the editor. Sanitized with the
-     * shared credential rules (strip newlines/control chars, trim ends) but NOT the
-     * endpoint rule — a typed answer legitimately contains interior spaces (e.g. "New York").
+     * Records the typed answer on the machine, closes the editor, and AUTO-REVEALS the back —
+     * because typing IS answering (desktop Anki + AnkiDroid: Enter in the type box shows the
+     * answer). Both machine calls run on the same [driver] coroutine so [StudyMachine.reveal]
+     * always sees the just-recorded [StudyMachine.setTypedAnswer] and produces the diff (never a
+     * plain expected line). Cancelling ([cancelTypeAnswer]) instead leaves the front unrevealed.
+     *
+     * The typed text is sanitized with the shared credential rules (strip newlines/control
+     * chars, trim ends) but NOT the endpoint rule — a typed answer legitimately contains
+     * interior spaces (e.g. "New York").
      */
     fun submitTypeAnswer(raw: CharSequence) {
         val m = machine
         val clean = com.dvdutch.recall.prefs.TextSanitizer.sanitizeCredential(raw)
         _typeAnswerEditing.value = false
-        if (m != null) scope.launch(driver) { m.setTypedAnswer(clean) }
+        if (m != null) scope.launch(driver) {
+            m.setTypedAnswer(clean)
+            m.reveal()
+        }
     }
 
     /** Starts (or restarts, on retry) the session. Idempotent per screen show. */
