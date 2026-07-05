@@ -96,10 +96,10 @@ enum class ShapeState {
 
     /**
      * Solid opaque mask for the TESTED shape on the FRONT — the region being asked. Drawn
-     * with a distinguishing high-contrast border so that, among many hide-all masks, the
-     * studier can tell exactly WHICH hidden region they must recall. Still fully opaque:
-     * the answer stays covered. (AnkiDroid renders this pink vs. tan; we do it in
-     * monochrome — see [maskStyle].)
+     * in a distinguishing colour so that, among many hide-all masks, the studier can tell
+     * exactly WHICH hidden region they must recall. Still fully opaque: the answer stays
+     * covered. (Matches AnkiDroid: salmon `#FF8E8E` tested vs. tan `#FFEBA2` inactive by
+     * default — see [maskStyle].)
      */
     MASKED_TESTED,
 
