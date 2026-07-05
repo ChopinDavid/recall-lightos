@@ -3,6 +3,7 @@ package com.dvdutch.recall.ui
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.lifecycle.viewModelScope
+import com.dvdutch.recall.api.EngineApi
 import com.dvdutch.recall.audio.CardAudioPlayer
 import com.dvdutch.recall.engine.RecallEngine
 import com.dvdutch.recall.study.StudyMachine
@@ -10,6 +11,7 @@ import com.dvdutch.recall.study.StudyState
 import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SimpleLightScreen
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -52,9 +54,29 @@ class StudyViewModel(
      * serialized; overridable in tests.
      */
     private val driver: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(1),
+    // Test seams (default-args keep production call sites unchanged). The engine is
+    // injectable; [scope]/[mainDispatcher] make the state-mirror coroutine run without
+    // an Android Main dispatcher; and the machine/audio factories let a test drive the
+    // real [StudyMachine] over a fake [EngineApi] and observe audio without the Android
+    // MediaPlayer. Defaults reproduce the previous inline construction exactly.
+    private val engine: RecallEngine = RecallEngine(filesDir, dataStore),
+    // Null in production → resolves to [viewModelScope]; tests pass their own scope.
+    injectedScope: CoroutineScope? = null,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+    private val machineFactory: (EngineApi) -> StudyMachine = { api ->
+        StudyMachine(
+            client = api,
+            deckId = deckId,
+            nowMs = { System.currentTimeMillis() },
+            uuid = { UUID.randomUUID().toString() },
+        )
+    },
+    private val audioPlayerFactory: () -> CardAudioPlayer = {
+        CardAudioPlayer(resolve = engine.storage::mediaFile)
+    },
 ) : LightViewModel<Unit>() {
 
-    private val engine = RecallEngine(filesDir, dataStore)
+    private val scope: CoroutineScope = injectedScope ?: viewModelScope
 
     private val _state = MutableStateFlow<StudyState>(StudyState.Loading)
     val state: StateFlow<StudyState> = _state.asStateFlow()
@@ -113,27 +135,22 @@ class StudyViewModel(
         val m = machine
         val clean = com.dvdutch.recall.prefs.TextSanitizer.sanitizeCredential(raw)
         _typeAnswerEditing.value = false
-        if (m != null) viewModelScope.launch(driver) { m.setTypedAnswer(clean) }
+        if (m != null) scope.launch(driver) { m.setTypedAnswer(clean) }
     }
 
     /** Starts (or restarts, on retry) the session. Idempotent per screen show. */
     fun begin() {
         if (machine != null) return
-        viewModelScope.launch(driver) {
+        scope.launch(driver) {
             engine.openCollection()
             val controller = engine.controller().takeIf { it.configured }
             val api = engine.api(controller)
-            val m = StudyMachine(
-                client = api,
-                deckId = deckId,
-                nowMs = { System.currentTimeMillis() },
-                uuid = { UUID.randomUUID().toString() },
-            )
+            val m = machineFactory(api)
             machine = m
             _mediaLoader.value = MediaLoader(engine.storage)
-            audioPlayer = CardAudioPlayer(resolve = engine.storage::mediaFile)
+            audioPlayer = audioPlayerFactory()
             // Mirror the machine's state into our surfaced flow.
-            viewModelScope.launch(Dispatchers.Main) {
+            scope.launch(mainDispatcher) {
                 m.state.collect { _state.value = it }
             }
             m.start()
@@ -142,7 +159,7 @@ class StudyViewModel(
 
     fun reveal() {
         val m = machine ?: return
-        viewModelScope.launch(driver) { m.reveal() }
+        scope.launch(driver) { m.reveal() }
     }
 
     fun grade(rating: String) {
@@ -151,7 +168,7 @@ class StudyViewModel(
         // card. The next card's auto-play would supersede it anyway, but grading may
         // reach Finished (no next card), and a lingering track then would be wrong.
         audioPlayer?.stop()
-        viewModelScope.launch(driver) { m.grade(rating) }
+        scope.launch(driver) { m.grade(rating) }
     }
 
     /**
@@ -163,7 +180,7 @@ class StudyViewModel(
     fun undo() {
         val m = machine ?: return
         audioPlayer?.stop()
-        viewModelScope.launch(driver) { m.undo() }
+        scope.launch(driver) { m.undo() }
     }
 
     /**
@@ -173,7 +190,7 @@ class StudyViewModel(
     fun buryCard() {
         val m = machine ?: return
         audioPlayer?.stop()
-        viewModelScope.launch(driver) { m.buryCurrent() }
+        scope.launch(driver) { m.buryCurrent() }
     }
 
     /**
@@ -183,7 +200,7 @@ class StudyViewModel(
     fun suspendCard() {
         val m = machine ?: return
         audioPlayer?.stop()
-        viewModelScope.launch(driver) { m.suspendCurrent() }
+        scope.launch(driver) { m.suspendCurrent() }
     }
 
     /**
@@ -193,7 +210,7 @@ class StudyViewModel(
      */
     fun toggleMark() {
         val m = machine ?: return
-        viewModelScope.launch(driver) { m.toggleMarkCurrent() }
+        scope.launch(driver) { m.toggleMarkCurrent() }
     }
 
     /** Plays [filenames] for the current side; a no-op empty list clears playback. */
@@ -204,7 +221,7 @@ class StudyViewModel(
     /** Retry the whole session after a retriable failure by re-starting it. */
     fun retry() {
         val m = machine ?: return begin()
-        viewModelScope.launch(driver) { m.start() }
+        scope.launch(driver) { m.start() }
     }
 
     /** Best-effort finish; safe to call from both hide and back. */
@@ -216,7 +233,7 @@ class StudyViewModel(
         // MediaPlayer un-released.
         audioPlayer?.release()
         val m = machine
-        viewModelScope.launch(driver) {
+        scope.launch(driver) {
             runCatching { m?.finish() }
         }
     }

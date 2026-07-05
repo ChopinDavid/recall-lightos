@@ -19,16 +19,16 @@ import java.io.File
  * the periodic job) resolves it through here so there is exactly one collection-path
  * and one sync-config convention across the app.
  */
-class RecallEngine(
+open class RecallEngine(
     private val filesDir: File,
     private val dataStore: DataStore<Preferences>,
     private val holder: EngineHolder = EngineHolder,
 ) {
 
-    val storage: RecallStorage = RecallStorage(filesDir)
+    open val storage: RecallStorage = RecallStorage(filesDir)
 
     /** Reads the persisted sync config; blank fields make the controller unconfigured. */
-    suspend fun syncConfig(): SyncConfig {
+    open suspend fun syncConfig(): SyncConfig {
         val prefs = dataStore.data.first()
         return SyncConfig(
             endpoint = prefs[RecallPreferences.SYNC_ENDPOINT] ?: RecallPreferences.DEFAULT_SYNC_ENDPOINT,
@@ -43,7 +43,7 @@ class RecallEngine(
      * controller instance, so Home can still route to attention after the session that latched
      * the divergence is long gone.
      */
-    suspend fun controller(): SyncController =
+    open suspend fun controller(): SyncController =
         SyncController(
             syncConfig(),
             holder,
@@ -55,7 +55,7 @@ class RecallEngine(
         )
 
     /** The durable "collections have diverged" latch (defaults false when never written). */
-    suspend fun needsAttention(): Boolean =
+    open suspend fun needsAttention(): Boolean =
         dataStore.data.first()[RecallPreferences.NEEDS_ATTENTION] ?: false
 
     private suspend fun writeNeedsAttention(value: Boolean) {
@@ -67,7 +67,7 @@ class RecallEngine(
      * lane, so subsequent engine calls have a live collection. Idempotent — reopening
      * the same path is a no-op in [EngineHolder.openCollection]. Returns the path opened.
      */
-    suspend fun openCollection(): String {
+    open suspend fun openCollection(): String {
         val path = storage.ensureCollectionDir()
         // Journaling recovery BEFORE opening: an orphaned `.guard-backup` means the
         // download guard's roll-back was interrupted (crash/kill/OOM mid-copy), leaving
@@ -83,8 +83,17 @@ class RecallEngine(
      * controller and a best-effort backup folder under storage. Callers must have
      * called [openCollection] first.
      */
-    fun api(sync: SyncController?): LocalEngineApi =
+    open fun api(sync: SyncController?): LocalEngineApi =
         LocalEngineApi(holder, sync, backupFolder = storage.collectionDir.absolutePath)
+
+    /**
+     * The flattened due deck tree over the open collection, via [api]/[LocalEngineApi.decks].
+     * A thin seam so the Home ViewModel's tree routing is unit-testable against a fake engine
+     * without going through the concrete [LocalEngineApi] (its return type). Callers must have
+     * called [openCollection] first.
+     */
+    open suspend fun decks(sync: SyncController?): List<com.dvdutch.recall.api.Deck> =
+        api(sync).decks()
 
     /**
      * The number of cards in the open collection, for the needs-attention screen's
@@ -94,7 +103,7 @@ class RecallEngine(
      * render — and lane-confined like every other engine touch. Callers must have called
      * [openCollection] first.
      */
-    suspend fun localCardCount(): Int = withContext(holder.lane) {
+    open suspend fun localCardCount(): Int = withContext(holder.lane) {
         holder.backend().searchCards("", anki.search.SortOrder.getDefaultInstance()).size
     }
 }

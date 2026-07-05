@@ -43,7 +43,7 @@ data class SyncConfig(
  * ([needsAttention], [lastSync]) are plain [MutableStateFlow]s mutated only from lane-confined
  * code, so their reads are consistent with the last completed sync.
  */
-class SyncController(
+open class SyncController(
     private val config: SyncConfig,
     private val holder: EngineHolder,
     /**
@@ -90,7 +90,7 @@ class SyncController(
     val lastSync: StateFlow<Long?> = _lastSync.asStateFlow()
 
     /** True only when all three sync-config fields are non-blank. */
-    val configured: Boolean
+    open val configured: Boolean
         get() = config.endpoint.isNotBlank() &&
             config.username.isNotBlank() &&
             config.password.isNotBlank()
@@ -114,7 +114,7 @@ class SyncController(
      * Logs in and caches the auth, returning it. Convenience for callers/tests; the
      * normal path is [sync], which logs in lazily. Confines to [EngineHolder.lane].
      */
-    suspend fun login(): SyncAuth = withContext(holder.lane) { loginOnLane() }
+    open suspend fun login(): SyncAuth = withContext(holder.lane) { loginOnLane() }
 
     /**
      * Normal collection sync (`syncCollection`), non-fatal by contract. Returns
@@ -130,7 +130,7 @@ class SyncController(
      *
      * [media] toggles media sync (studyStart/finish pass `true`; the periodic job may too).
      */
-    suspend fun sync(media: Boolean = true): SyncInfo {
+    open suspend fun sync(media: Boolean = true): SyncInfo {
         if (!configured) return SyncInfo(synced = false, detail = "sync not configured")
         if (_needsAttention.value) {
             return SyncInfo(synced = false, detail = "needs attention: full sync required")
@@ -186,7 +186,7 @@ class SyncController(
      * `serverUsn` is left unset (mirrors the bridge's `server_usn=None`; the proto field is
      * optional and AnkiDroid only sets it when a media USN is known).
      */
-    suspend fun fullSync(upload: Boolean) {
+    open suspend fun fullSync(upload: Boolean) {
         withContext(holder.lane) {
             val backend = holder.backend()
             val request = FullUploadOrDownloadRequest.newBuilder()
@@ -220,7 +220,7 @@ class SyncController(
      * When [collectionFile] is null the guard cannot protect a file, so this degrades to a
      * bare [fullSync] download and returns [FullDownloadResult.Downloaded]/[FullDownloadResult.Failed].
      */
-    suspend fun fullDownload(force: Boolean): FullDownloadResult {
+    open suspend fun fullDownload(force: Boolean): FullDownloadResult {
         val fileProvider = collectionFile ?: run {
             return try {
                 fullSync(upload = false)

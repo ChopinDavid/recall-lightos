@@ -9,6 +9,8 @@ import com.dvdutch.recall.engine.RecallEngine
 import com.dvdutch.recall.prefs.RecallPreferences
 import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SimpleLightScreen
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -62,9 +64,17 @@ data class HomeUiState(val mode: HomeMode = HomeMode.Loading)
 class RecallHomeViewModel(
     private val filesDir: File,
     private val dataStore: DataStore<Preferences>,
+    // Test seams (default-args keep production call sites unchanged): inject the engine
+    // to drive the load routing against a fake, and the scope/dispatchers so the load
+    // and toggle coroutines run deterministically without an Android Main dispatcher.
+    private val engine: RecallEngine = RecallEngine(filesDir, dataStore),
+    // Null in production → resolves to [viewModelScope]; tests pass their own scope.
+    injectedScope: CoroutineScope? = null,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) : LightViewModel<Unit>() {
 
-    private val engine = RecallEngine(filesDir, dataStore)
+    private val scope: CoroutineScope = injectedScope ?: viewModelScope
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -83,7 +93,7 @@ class RecallHomeViewModel(
 
     fun load() {
         _uiState.update { it.copy(mode = HomeMode.Loading) }
-        viewModelScope.launch(Dispatchers.IO) {
+        scope.launch(ioDispatcher) {
             if (!engine.storage.collectionExists()) {
                 setMode(HomeMode.NeedsFirstRun)
                 return@launch
@@ -100,7 +110,7 @@ class RecallHomeViewModel(
                 if (HomeMode.attentionRoute(controller.configured, diverged)) {
                     HomeMode.NeedsAttention
                 } else {
-                    val decks = engine.api(controller).decks()
+                    val decks = engine.decks(controller)
                     lastDecks = decks
                     HomeMode.Loaded(visibleDeckRows(decks, readExpandedIds()))
                 }
@@ -118,7 +128,7 @@ class RecallHomeViewModel(
      * preference, never the Anki collection.
      */
     fun toggle(deckId: Long) {
-        viewModelScope.launch(Dispatchers.IO) {
+        scope.launch(ioDispatcher) {
             val current = readExpandedIds()
             val next = if (deckId in current) current - deckId else current + deckId
             dataStore.edit { prefs ->
@@ -139,6 +149,6 @@ class RecallHomeViewModel(
             ?: emptySet()
 
     private suspend fun setMode(mode: HomeMode) {
-        withContext(Dispatchers.Main) { _uiState.update { it.copy(mode = mode) } }
+        withContext(mainDispatcher) { _uiState.update { it.copy(mode = mode) } }
     }
 }
