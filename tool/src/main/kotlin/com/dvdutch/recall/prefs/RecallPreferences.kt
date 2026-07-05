@@ -1,5 +1,6 @@
 package com.dvdutch.recall.prefs
 
+import com.dvdutch.recall.BuildConfig
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -43,6 +44,12 @@ object RecallPreferences {
      */
     val EXPANDED_DECK_IDS = stringSetPreferencesKey("expanded_deck_ids")
 
-    /** Default sync endpoint when nothing has been persisted yet (host-local dev hub). */
-    const val DEFAULT_SYNC_ENDPOINT = "http://10.0.2.2:18080/"
+    /**
+     * Default sync endpoint when nothing has been persisted yet. BUILD-TYPE scoped:
+     * DEBUG prefills the host-local dev hub (`http://10.0.2.2:18080/`) so the emulator
+     * workflow stays one-tap; RELEASE is EMPTY so the shipping build ships no dev server
+     * and first-run forces the user to enter their own endpoint. The value comes from
+     * `BuildConfig.DEV_DEFAULT_ENDPOINT`, set per build type in tool/build.gradle.kts.
+     */
+    val DEFAULT_SYNC_ENDPOINT: String = BuildConfig.DEV_DEFAULT_ENDPOINT
 }

@@ -4,6 +4,18 @@ label = "Recall"
 versionCode = 1
 versionName = "0.1"
 permissions = ["android.permission.INTERNET"]
-# change if you run this on an LP3!
-# serverPackage = "com.lightos"
+
+# serverPackage = which package hosts the Light server this tool binds to. The SDK
+# (LightSdkApplication) reads it from the generated LIGHT_SERVER_PACKAGE manifest
+# meta-data at runtime to UnifiedPush.saveDistributor(...) and LightServiceConnection
+# .bind(...). It does NOT affect this tool's own applicationId (that stays tool.id).
+#
+# On the emulator the Light server is the emulator system app, package
+# `com.thelightphone.sdk.emulator` (installed per docs/system_app). On a real LP3 /
+# Light's production build service it is `com.lightos`.
+#
+# SUBMISSION-DAY: flip this to "com.lightos" ONLY when building for Light's build
+# service / real LP3 hardware. Do NOT flip for local dev — the emulator has no
+# `com.lightos` package, so the SDK bind would fail and the tool would not receive
+# Light-server data on the emulator.
 serverPackage = "com.thelightphone.sdk.emulator"
