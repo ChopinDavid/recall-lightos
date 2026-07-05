@@ -183,6 +183,77 @@ class LocalEngineApiTest {
         }
     }
 
+    /**
+     * Seeds a Cloze note whose front template carries a `{{type:cloze:Text}}` marker into
+     * [deckName]; returns the deck id. The stock Cloze notetype's front template is patched
+     * once to append the marker (so the rendered question emits the literal
+     * `[[type:cloze:Text]]` rslib substitutes), then a note with [text] is added.
+     */
+    private fun seedClozeTypeNote(deckName: String, text: String): Long {
+        return onEngine { backend ->
+            val ntid = backend.getNotetypeIdByName("Cloze")
+            require(ntid != 0L) { "fresh collection is missing the stock Cloze notetype" }
+            // Patch the front template to append the cloze type-answer marker.
+            val nt = backend.getNotetype(ntid)
+            val tmpl0 = nt.getTemplates(0)
+            val patchedConfig = tmpl0.config.toBuilder()
+                .setQFormat(tmpl0.config.qFormat + "\n{{type:cloze:Text}}")
+                .build()
+            val patchedNt = nt.toBuilder()
+                .setTemplates(0, tmpl0.toBuilder().setConfig(patchedConfig).build())
+                .build()
+            backend.updateNotetype(patchedNt)
+
+            val deckId = deckIdCreating(backend, deckName)
+            val n = Note.newBuilder()
+                .setNotetypeId(ntid)
+                .addFields(text)
+                .addFields("") // stock Cloze's second field ("Back Extra")
+                .build()
+            backend.addNote(n, deckId)
+            deckId
+        }
+    }
+
+    @Test
+    fun `cloze type-answer card resolves the current-ord deletion text per card`() {
+        // Two deletions of c1 (join with ", ") and one c2 — a multi-deletion + second-ord
+        // fixture. Expected strings verified empirically against pylib's
+        // extract_cloze_for_typing (25.09): c1 -> "France, Paris", c2 -> "the Eiffel Tower".
+        selectDeck(
+            seedClozeTypeNote(
+                "ClozeType",
+                "The capital of {{c1::France}} is {{c1::Paris}}. It has {{c2::the Eiffel Tower}}.",
+            ),
+        )
+        val cards = runBlocking { api.queue(20) }.cards
+        assertEquals(2, cards.size, "a two-ord cloze note must yield two cards")
+
+        // Each card carries ITS ordinal's deletion text, never the whole field. The scheduler
+        // queue order isn't ordinal-stable, so assert on the resolved set: the two cards must be
+        // exactly the c1 (joined) and c2 deletions.
+        val expected = cards.mapNotNull { it.typeAnswerExpected }.toSet()
+        assertEquals(
+            setOf("France, Paris", "the Eiffel Tower"),
+            expected,
+            "each cloze card must resolve to its own ord's deletion(s): $expected",
+        )
+        // Multiple deletions of the same ord join with ", " (verified above via "France, Paris")
+        // and the whole field is NEVER used as the expected answer.
+        assertTrue(
+            cards.none { (it.typeAnswerExpected ?: "").contains("Eiffel") &&
+                (it.typeAnswerExpected ?: "").contains("France") },
+            "no card may resolve to the whole field: $expected",
+        )
+        // Cloze type markers carry no nc: prefix — case-sensitive compare.
+        assertTrue(cards.all { !it.typeAnswerNoCase }, "cloze type is case-sensitive")
+
+        // The marker must never leak into the rendered front text.
+        val frontText = cards.first().front.filterIsInstance<TextNode>()
+            .flatMap { it.runs }.joinToString("") { it.s }
+        assertTrue("[[type" !in frontText, "cloze type marker leaked into front: $frontText")
+    }
+
     @Test
     fun `type-answer card renders without the marker and carries the expected answer`() {
         selectDeck(seedTypeNote("TypeTest", "Capital of France?", "Paris"))
