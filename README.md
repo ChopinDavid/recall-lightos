@@ -1,5 +1,8 @@
 # Recall
 
+[![CI](https://github.com/ChopinDavid/recall-lightos/actions/workflows/ci.yml/badge.svg?branch=recall)](https://github.com/ChopinDavid/recall-lightos/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/ChopinDavid/recall-lightos/branch/recall/graph/badge.svg)](https://codecov.io/gh/ChopinDavid/recall-lightos)
+
 A review-only, [Anki](https://apps.ankiweb.net/)-compatible spaced-repetition client for **LightOS** (the Light Phone III), built on the [light-sdk](https://github.com/lightphone/light-sdk).
 
 *Working title. Not affiliated with Anki/Ankitects — "Anki" is used only to describe compatibility.*
