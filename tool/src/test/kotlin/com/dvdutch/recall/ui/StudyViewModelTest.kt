@@ -258,11 +258,11 @@ class StudyViewModelTest {
         }
     }
 
-    // The typed-answer lifecycle: submit records it on the machine (open→submit); on reveal
-    // the machine calls compareTypedAnswer with the typed value; advancing clears it so the
-    // next card's reveal shows the plain expected answer (no stale diff).
+    // The typed-answer lifecycle: submit records it AND auto-reveals (typing is answering);
+    // the machine calls compareTypedAnswer with the typed value and lands on the back with a
+    // Diff; advancing clears it so the next card's reveal shows the plain expected answer.
     @Test
-    fun `typed answer is recorded, used on reveal, and cleared on advance`() {
+    fun `typed answer is recorded, auto-reveals with a diff, and is cleared on advance`() {
         withVm { vm, env ->
             env.api.startScript.add(StudyStartResponse(counts(new = 2), SyncInfo(true, "ok")))
             env.api.queueScript.add(
@@ -277,12 +277,17 @@ class StudyViewModelTest {
             assertTrue(vm.typeAnswerEditing.value)
             val session = vm.typeAnswerSession.value
 
+            // Submit alone must auto-reveal — no separate reveal() call.
             vm.submitTypeAnswer("paris")
             assertTrue(!vm.typeAnswerEditing.value, "submit closes the editor")
-
-            vm.reveal()
+            waitFor(message = { "auto-revealed to back" }) { vm.state.value is StudyState.ShowingBack }
             waitFor(message = { "compare called" }) { env.api.compareArgs.isNotEmpty() }
             assertEquals(Triple("Paris", "paris", false), env.api.compareArgs.single())
+            val back = vm.state.value as StudyState.ShowingBack
+            assertTrue(
+                back.typeAnswer is com.dvdutch.recall.study.TypeAnswerReveal.Diff,
+                "a submitted typed answer must reveal a diff, was ${back.typeAnswer}",
+            )
 
             vm.grade("good")
             waitFor { (vm.state.value as? StudyState.ShowingFront)?.card?.cardId == 2L }
@@ -292,6 +297,25 @@ class StudyViewModelTest {
             waitFor { vm.state.value is StudyState.ShowingBack }
             assertEquals(1, env.api.compareArgs.size, "the typed answer must not leak to card 2")
             assertTrue(vm.typeAnswerSession.value >= session)
+        }
+    }
+
+    // Cancelling the editor (△ not pressed) must NOT reveal: the front stays up unrevealed and
+    // no compare is made, so a typed-but-cancelled attempt never grades or diffs.
+    @Test
+    fun `cancelTypeAnswer leaves the front unrevealed`() {
+        withVm { vm, env ->
+            env.api.startScript.add(StudyStartResponse(counts(new = 1), SyncInfo(true, "ok")))
+            env.api.queueScript.add(QueueResponse(listOf(card(1, type = "Paris")), counts(new = 1)))
+            vm.begin()
+            waitFor { vm.state.value is StudyState.ShowingFront }
+
+            vm.openTypeAnswerEditor()
+            vm.cancelTypeAnswer()
+
+            assertTrue(!vm.typeAnswerEditing.value, "cancel closes the editor")
+            assertTrue(vm.state.value is StudyState.ShowingFront, "cancel must not reveal the back")
+            assertTrue(env.api.compareArgs.isEmpty(), "cancel must not run a compare")
         }
     }
 
