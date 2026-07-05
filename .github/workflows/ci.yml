@@ -24,7 +24,7 @@ name: CI
 
 on:
   push:
-    branches: [recall]
+    branches: [main, recall]
   workflow_dispatch:
 
 # Least privilege. `packages: read` lets the built-in GITHUB_TOKEN read THIS repo's
