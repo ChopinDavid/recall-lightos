@@ -72,6 +72,25 @@ internal open class FakeSyncController(
     val fullDownloadForceArgs = mutableListOf<Boolean>()
     var fullDownloadResult: FullDownloadResult = FullDownloadResult.Downloaded
 
+    // Scripted normal sync(): count calls, script the returned SyncInfo, and — when a
+    // FULL_* divergence should be simulated — latch needsAttention like the real one does.
+    @Volatile var syncCalls = 0
+    var syncResult: com.dvdutch.recall.api.SyncInfo = com.dvdutch.recall.api.SyncInfo(synced = true, detail = "ok")
+    var syncLatchesAttention: Boolean = false
+    // Optional SUSPENDING gate so a test can hold a sync in-flight (icon ghosted) and assert
+    // the no-double-fire / ghosting behaviour deterministically. Suspends the sync coroutine
+    // (never blocks a thread — so it composes with any injected dispatcher) until [releaseSync].
+    private val syncGate = java.util.concurrent.atomic.AtomicReference<kotlinx.coroutines.CompletableDeferred<Unit>?>(null)
+    fun blockNextSync() { syncGate.set(kotlinx.coroutines.CompletableDeferred()) }
+    fun releaseSync() { syncGate.getAndSet(null)?.complete(Unit) }
+
+    override suspend fun sync(media: Boolean): com.dvdutch.recall.api.SyncInfo {
+        syncCalls++
+        syncGate.get()?.await()
+        if (syncLatchesAttention) setNeedsAttentionForTest(true)
+        return syncResult
+    }
+
     override val configured: Boolean get() = configuredResult
 
     override suspend fun login(): anki.sync.SyncAuth {

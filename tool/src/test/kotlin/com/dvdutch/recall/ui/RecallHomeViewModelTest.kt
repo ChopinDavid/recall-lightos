@@ -105,6 +105,93 @@ class RecallHomeViewModelTest {
         }
     }
 
+    // ---- Manual sync (the top-bar 🔄 control) --------------------------------------------
+
+    // A tap runs the normal sync on the controller seam, shows in-flight (ghosted) while it
+    // runs, then on success reloads the deck list and returns to idle.
+    @Test
+    fun `manual sync runs the controller sync, reloads decks, and clears in-flight on success`() {
+        val controller = FakeSyncController(configuredResult = true)
+        val firstDecks = listOf(deck(10, "Spanish", new = 1))
+        val engine = { dir: java.io.File, ds: androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences> ->
+            object : FakeEngine(dir, ds, controller = controller, decks = firstDecks) {
+                var deckCalls = 0
+                override suspend fun decks(sync: com.dvdutch.recall.engine.SyncController?): List<Deck> {
+                    deckCalls++
+                    // After the sync, a new deck has appeared on the server → the reload sees it.
+                    return if (deckCalls <= 1) firstDecks else firstDecks + deck(11, "French", new = 2)
+                }
+            }
+        }
+        vm(engine) { vm, _, _ ->
+            vm.load()
+            waitFor(message = { "initial Loaded" }) { vm.uiState.value.mode is HomeMode.Loaded }
+            controller.blockNextSync()
+
+            vm.sync()
+            waitFor(message = { "in-flight" }) { vm.uiState.value.syncState == SyncState.InFlight }
+
+            controller.releaseSync()
+            waitFor(message = { "back to idle" }) { vm.uiState.value.syncState == SyncState.Idle }
+            assertEquals(1, controller.syncCalls)
+            val rows = (vm.uiState.value.mode as HomeMode.Loaded).rows
+            assertEquals(listOf("Spanish", "French"), rows.map { it.label }, "deck list refreshed after sync")
+        }
+    }
+
+    // A failed sync sets the error line; the next successful sync clears it.
+    @Test
+    fun `manual sync failure sets the error line, cleared on next success`() {
+        val controller = FakeSyncController(configuredResult = true)
+        vm({ dir, ds -> FakeEngine(dir, ds, controller = controller, decks = listOf(deck(10, "Spanish", new = 1))) }) { vm, _, _ ->
+            vm.load()
+            waitFor(message = { "Loaded" }) { vm.uiState.value.mode is HomeMode.Loaded }
+
+            controller.syncResult = com.dvdutch.recall.api.SyncInfo(synced = false, detail = "sync failed: boom")
+            vm.sync()
+            waitFor(message = { "error line" }) { vm.uiState.value.syncState is SyncState.Failed }
+
+            controller.syncResult = com.dvdutch.recall.api.SyncInfo(synced = true, detail = "ok")
+            vm.sync()
+            waitFor(message = { "error cleared" }) { vm.uiState.value.syncState == SyncState.Idle }
+        }
+    }
+
+    // A sync that latches a FULL_* divergence routes Home to NeedsAttention (the AttentionScreen).
+    @Test
+    fun `manual sync that diverges routes to NeedsAttention`() {
+        val controller = FakeSyncController(configuredResult = true).apply {
+            syncLatchesAttention = true
+            syncResult = com.dvdutch.recall.api.SyncInfo(synced = false, detail = "needs attention: full sync required")
+        }
+        vm({ dir, ds -> FakeEngine(dir, ds, controller = controller, decks = listOf(deck(10, "Spanish", new = 1))) }) { vm, _, _ ->
+            vm.load()
+            waitFor(message = { "Loaded" }) { vm.uiState.value.mode is HomeMode.Loaded }
+
+            vm.sync()
+            waitFor(message = { "NeedsAttention" }) { vm.uiState.value.mode is HomeMode.NeedsAttention }
+        }
+    }
+
+    // A tap while a sync is already in-flight is a no-op — no second controller.sync call.
+    @Test
+    fun `manual sync while in-flight does not fire a second sync`() {
+        val controller = FakeSyncController(configuredResult = true)
+        vm({ dir, ds -> FakeEngine(dir, ds, controller = controller, decks = listOf(deck(10, "Spanish", new = 1))) }) { vm, _, _ ->
+            vm.load()
+            waitFor(message = { "Loaded" }) { vm.uiState.value.mode is HomeMode.Loaded }
+            controller.blockNextSync()
+
+            vm.sync()
+            waitFor(message = { "in-flight" }) { vm.uiState.value.syncState == SyncState.InFlight }
+            vm.sync() // second tap while ghosted — must be ignored
+
+            controller.releaseSync()
+            waitFor(message = { "idle" }) { vm.uiState.value.syncState == SyncState.Idle }
+            assertEquals(1, controller.syncCalls, "the in-flight tap must not fire a second sync")
+        }
+    }
+
     // toggle expands a parent: it persists the id and re-filters the cached tree so the
     // child becomes visible — without reopening the collection.
     @Test
