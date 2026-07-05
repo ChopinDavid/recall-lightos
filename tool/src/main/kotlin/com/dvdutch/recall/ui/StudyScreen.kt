@@ -84,6 +84,14 @@ class StudyScreen(
         // it only ever opens over a live card and closes the moment an action fires.
         var actionsOpen by remember { mutableStateOf(false) }
 
+        // "Toggle Masks" peek state (AnkiDroid parity). A pure Compose view state — NOT a
+        // StudyMachine/engine concern — so it lives here, keyed on the current card id: it
+        // spans a card's FRONT and back (both sides read the same cardId) yet resets to
+        // masks-shown the instant the card advances (a new cardId re-seeds `remember`). Only
+        // ever consulted on occlusion sides; harmless otherwise.
+        val currentCardId = state.currentCardId()
+        var masksHidden by remember(currentCardId) { mutableStateOf(false) }
+
         LaunchedEffect(Unit) { viewModel.begin() }
 
         LightTheme(colors = themeColors) {
@@ -194,6 +202,8 @@ class StudyScreen(
                         mediaLoader = mediaLoader,
                         onAutoPlay = viewModel::playAudio,
                         onReplay = viewModel::playAudio,
+                        masksHidden = masksHidden,
+                        onToggleMasks = { masksHidden = !masksHidden },
                         // A type-answer card ({{type:Field}}) shows the TYPE ANSWER row above
                         // REVEAL; a normal card leaves this null and shows no affordance.
                         onTypeAnswer = if (s.typeAnswerExpected != null) {
@@ -219,6 +229,8 @@ class StudyScreen(
                         mediaLoader = mediaLoader,
                         onAutoPlay = viewModel::playAudio,
                         onReplay = viewModel::playAudio,
+                        masksHidden = masksHidden,
+                        onToggleMasks = { masksHidden = !masksHidden },
                         // The type-answer result block (diff or expected-answer line) sits at
                         // the top of the back; null for a normal card.
                         typeAnswerReveal = s.typeAnswer,
@@ -267,6 +279,16 @@ private fun StudyState.undoAvailable(): Boolean = when (this) {
 /** Whether a live card is currently showing (front or back) — gates the MORE control. */
 private fun StudyState.hasCard(): Boolean =
     this is StudyState.ShowingFront || this is StudyState.ShowingBack
+
+/**
+ * The current card's id, or null when no card is showing. Used to key the per-card
+ * "Toggle Masks" peek state so it spans front→back yet resets when the card advances.
+ */
+private fun StudyState.currentCardId(): Long? = when (this) {
+    is StudyState.ShowingFront -> card.cardId
+    is StudyState.ShowingBack -> card.cardId
+    else -> null
+}
 
 /** Whether the current note is marked — drives the ★ indicator in the counts header. */
 private fun StudyState.marked(): Boolean = when (this) {
@@ -348,10 +370,15 @@ private fun androidx.compose.foundation.layout.ColumnScope.CardBody(
     onAutoPlay: (List<String>) -> Unit,
     onReplay: (List<String>) -> Unit,
     bottom: @Composable () -> Unit,
+    masksHidden: Boolean = false,
+    onToggleMasks: (() -> Unit)? = null,
     onTypeAnswer: (() -> Unit)? = null,
     typeAnswerReveal: com.dvdutch.recall.study.TypeAnswerReveal? = null,
 ) {
     val sideAudio = activeSideAudio(card, showBack)
+    // The MASKS peek control appears ONLY on a side that actually carries an occlusion image.
+    val sideHasOcclusion = (if (showBack) card.back else card.front)
+        .any { it is com.dvdutch.recall.api.OcclusionNode }
 
     // Auto-play the current side's audio once per (card, side) transition — front on
     // show, back on reveal (Anki's default). Keyed so it fires on the transition, not on
@@ -419,6 +446,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.CardBody(
         RenderNodeColumn(
             nodes = if (showBack) card.back else card.front,
             mediaLoader = mediaLoader,
+            masksHidden = masksHidden,
             // The answer boundary is the first back node past the {{FrontSide}} prefix, i.e.
             // index == the number of front nodes (the <hr> rule if the template has one, else
             // the first answer node). Only meaningful on the back; −1 on the front never fires.
@@ -432,6 +460,12 @@ private fun androidx.compose.foundation.layout.ColumnScope.CardBody(
     }
     if (sideHasAudio(card, showBack)) {
         ReplayAudioRow(onReplay = { onReplay(sideAudio) })
+    }
+    // The "Toggle Masks" peek control (AnkiDroid parity) — only on an occlusion side. Tapping
+    // hides ALL masks so the full image shows, and toggles back to restore exactly; the label
+    // reflects the current state so the affordance reads either way.
+    if (sideHasOcclusion && onToggleMasks != null) {
+        MasksToggleRow(masksHidden = masksHidden, onToggle = onToggleMasks)
     }
     // The TYPE ANSWER affordance sits just above REVEAL on a type-answer front.
     if (!showBack && onTypeAnswer != null) {
@@ -456,6 +490,30 @@ private fun ReplayAudioRow(onReplay: () -> Unit) {
     ) {
         LightText(
             text = "🔊 REPLAY AUDIO",
+            variant = LightTextVariant.Fine,
+            lighten = true,
+            align = TextAlign.Center,
+        )
+    }
+}
+
+/**
+ * A tappable "☰ MASKS" / "☰ SHOW MASKS" row shown only on an occlusion side (AnkiDroid's
+ * "Toggle Masks" affordance). A tap hides every mask so the studier can peek at the full
+ * image, then restores them; the label reflects the current state. Same monochrome
+ * [LightText] treatment as [ReplayAudioRow], sitting just above REVEAL / the grade bar.
+ */
+@Composable
+private fun MasksToggleRow(masksHidden: Boolean, onToggle: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 1f.gridUnitsAsDp(), vertical = 0.25f.gridUnitsAsDp()),
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        LightText(
+            text = if (masksHidden) "☰ SHOW MASKS" else "☰ MASKS",
             variant = LightTextVariant.Fine,
             lighten = true,
             align = TextAlign.Center,

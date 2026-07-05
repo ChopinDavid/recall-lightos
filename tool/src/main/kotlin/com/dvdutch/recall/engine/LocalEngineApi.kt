@@ -183,24 +183,51 @@ class LocalEngineApi(
             frontAudio = front.audio,
             backAudio = back.audio,
             marked = isMarked(backend, card.noteId),
-            typeAnswerExpected = typeAnswer?.let { expectedAnswer(backend, card.noteId, it.field) },
+            typeAnswerExpected = typeAnswer?.let {
+                expectedAnswer(backend, card.noteId, it.field, it.cloze, card.templateIdx)
+            },
             typeAnswerNoCase = typeAnswer?.noCase ?: false,
         )
     }
 
     /**
-     * Resolves the expected type-answer: the referenced note [field]'s stored HTML, reduced
-     * to plain comparison text via [fieldTextForCompare] (tags removed, entities decoded,
-     * media dropped, whitespace trimmed). Returns null if the field is not on the note, so a
-     * broken `{{type:Missing}}` degrades to "no expected answer" rather than crashing the
+     * Resolves the expected type-answer for the current card.
+     *
+     * For a plain/`nc:` marker it is the referenced note [field]'s stored HTML, reduced to
+     * plain comparison text via [fieldTextForCompare] (tags removed, entities decoded, media
+     * dropped, whitespace trimmed).
+     *
+     * For a `[[type:cloze:Field]]` marker ([isCloze] true) the expected answer is instead the
+     * CURRENT card's cloze deletion text(s) for its ordinal — NOT the whole field. rslib's
+     * `extractClozeForTyping(fieldHtml, ordinal)` returns exactly that (desktop's `type:cloze`
+     * behaviour): every deletion of the current ordinal, joined with `", "` when there is more
+     * than one (verified empirically against pylib 25.09's `extract_cloze_for_typing`, e.g.
+     * `{{c1::France}} … {{c1::Paris}}` → `"France, Paris"`). The scheduler card's
+     * [cardOrd] is 0-based (c1 → 0), while `extractClozeForTyping` takes the 1-based cloze
+     * number, so we pass `cardOrd + 1`.
+     *
+     * Returns null if the field is not on the note (or, for cloze, the extraction is empty),
+     * so a broken `{{type:Missing}}` degrades to "no expected answer" rather than crashing the
      * queue. MUST be called on [EngineHolder.lane].
      */
-    private fun expectedAnswer(backend: Backend, noteId: Long, field: String): String? {
+    private fun expectedAnswer(
+        backend: Backend,
+        noteId: Long,
+        field: String,
+        isCloze: Boolean,
+        cardOrd: Int,
+    ): String? {
         val note = backend.getNote(noteId)
         val notetype = backend.getNotetype(note.notetypeId)
         val idx = notetype.fieldsList.indexOfFirst { it.name == field }
         if (idx < 0 || idx >= note.fieldsList.size) return null
-        return fieldTextForCompare(note.getFields(idx))
+        val fieldHtml = note.getFields(idx)
+        if (isCloze) {
+            // rslib takes the 1-based cloze number; the card ordinal is 0-based.
+            val extracted = backend.extractClozeForTyping(fieldHtml, cardOrd + 1)
+            return fieldTextForCompare(extracted).ifEmpty { null }
+        }
+        return fieldTextForCompare(fieldHtml)
     }
 
     /**

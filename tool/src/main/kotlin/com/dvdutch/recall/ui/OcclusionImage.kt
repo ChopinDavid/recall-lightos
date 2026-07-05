@@ -112,6 +112,18 @@ fun maskStyle(state: ShapeState): MaskStyle? = when (state) {
     ShapeState.REVEALED_OUTLINE -> MaskStyle(filled = false, fill = OUTLINE_COLOR)
 }
 
+/**
+ * The pure state mapping behind the "Toggle Masks" peek (AnkiDroid parity). When
+ * [masksHidden] is true, EVERY resolved [ShapeState] collapses to [ShapeState.CONTEXT] —
+ * so [maskStyle] draws nothing and the full base image shows through — letting the studier
+ * peek at the whole image without revealing which region is asked. When false, the state
+ * passes through UNCHANGED, so toggling back restores bit-for-bit-identical rendering. This
+ * is a UI-only view state: it feeds CONTEXT into the existing draw path rather than altering
+ * it, and the engine-resolved states are never mutated.
+ */
+fun effectiveShapeState(state: ShapeState, masksHidden: Boolean): ShapeState =
+    if (masksHidden) ShapeState.CONTEXT else state
+
 // --- Base-image load state (why this exists) ----------------------------------
 
 /**
@@ -283,9 +295,11 @@ fun scaleShape(shape: OcclusionShapeState, transform: FitTransform): ScaledShape
  * drawing masks at an unknown scale would misplace them.
  *
  * @param mediaLoader supplies the base bitmap; when null, the placeholder is shown.
+ * @param masksHidden when true, the "Toggle Masks" peek is active: every shape renders as
+ *   [ShapeState.CONTEXT] (nothing drawn) so the full image shows; false is normal rendering.
  */
 @Composable
-fun OcclusionImage(node: OcclusionNode, mediaLoader: MediaLoader?) {
+fun OcclusionImage(node: OcclusionNode, mediaLoader: MediaLoader?, masksHidden: Boolean = false) {
     if (mediaLoader == null) {
         // No loader supplied (config-time): treat as unavailable, but with the
         // bordered text state — never a solid grey fill that reads as a stuck mask.
@@ -343,7 +357,10 @@ fun OcclusionImage(node: OcclusionNode, mediaLoader: MediaLoader?) {
         val transform = fitTransform(naturalW, naturalH, size.width, size.height)
         if (transform.scale <= 0f) return@Canvas
         for (shape in node.shapes) {
-            drawScaledShape(scaleShape(shape, transform))
+            // The Toggle Masks peek is applied here, at the single point states enter the draw
+            // path: masks-off maps every shape to CONTEXT (drawn nothing); masks-on is a no-op.
+            val effective = effectiveShapeState(shape.state, masksHidden)
+            drawScaledShape(scaleShape(shape, transform), effective)
         }
     }
 }
@@ -374,8 +391,8 @@ private fun DrawScope.drawBaseImage(image: ImageBitmap) {
  * stroke-only style paints its outline; and a style carrying a [MaskStyle.border] adds
  * the distinguishing two-tone ring on top (the tested front mask).
  */
-private fun DrawScope.drawScaledShape(shape: ScaledShape) {
-    val style = maskStyle(shape.state) ?: return // CONTEXT → shows through, draw nothing
+private fun DrawScope.drawScaledShape(shape: ScaledShape, state: ShapeState = shape.state) {
+    val style = maskStyle(state) ?: return // CONTEXT → shows through, draw nothing
     drawShapeGeometry(shape, color = style.fill, filled = style.filled)
     style.border?.let { drawMaskBorder(shape, it) }
 }

@@ -120,7 +120,12 @@ private fun LightAnnotatedCopy(annotated: AnnotatedString, modifier: Modifier = 
  *   labelled placeholder box (the loader arrives in a later task).
  */
 @Composable
-fun RenderNodeView(node: RenderNode, mediaLoader: MediaLoader?, modifier: Modifier = Modifier) {
+fun RenderNodeView(
+    node: RenderNode,
+    mediaLoader: MediaLoader?,
+    modifier: Modifier = Modifier,
+    masksHidden: Boolean = false,
+) {
     when (node) {
         is TextNode -> LightAnnotatedCopy(textNodeToAnnotatedString(node), modifier = modifier)
 
@@ -138,7 +143,8 @@ fun RenderNodeView(node: RenderNode, mediaLoader: MediaLoader?, modifier: Modifi
                 .background(LightThemeTokens.colors.contentSecondary),
         )
 
-        is OcclusionNode -> OcclusionImage(node = node, mediaLoader = mediaLoader)
+        is OcclusionNode ->
+            OcclusionImage(node = node, mediaLoader = mediaLoader, masksHidden = masksHidden)
 
         is UnsupportedNode ->
             // The `audio` placeholder is retired: audio is now real playback with a
@@ -174,6 +180,7 @@ fun RenderNodeColumn(
     mediaLoader: MediaLoader?,
     dividerIndex: Int = -1,
     onNodePositioned: ((androidx.compose.ui.layout.LayoutCoordinates) -> Unit)? = null,
+    masksHidden: Boolean = false,
 ) {
     nodes.forEachIndexed { index, node ->
         val dividerModifier =
@@ -182,7 +189,12 @@ fun RenderNodeColumn(
             } else {
                 Modifier
             }
-        RenderNodeView(node = node, mediaLoader = mediaLoader, modifier = dividerModifier)
+        RenderNodeView(
+            node = node,
+            mediaLoader = mediaLoader,
+            modifier = dividerModifier,
+            masksHidden = masksHidden,
+        )
     }
 }
 
