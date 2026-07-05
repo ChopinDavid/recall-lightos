@@ -124,7 +124,15 @@ private fun IntroBody(
             modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
         )
 
-        FirstRunRow("Sync endpoint", state.endpoint.ifBlank { "not set" }) { onEdit(FirstRunField.Endpoint) }
+        FirstRunRow("Sync endpoint", state.endpoint.ifBlank { "not set — tap to enter, e.g. https://…" }) { onEdit(FirstRunField.Endpoint) }
+        if (com.dvdutch.recall.prefs.TextSanitizer.isInsecureEndpoint(state.endpoint)) {
+            LightText(
+                text = "http — traffic is unencrypted; use https if your server supports it",
+                variant = LightTextVariant.Detail,
+                lighten = true,
+                modifier = Modifier.padding(bottom = 0.5f.gridUnitsAsDp()),
+            )
+        }
         FirstRunRow("Username", state.username.ifBlank { "not set" }) { onEdit(FirstRunField.Username) }
         FirstRunRow(
             "Password",

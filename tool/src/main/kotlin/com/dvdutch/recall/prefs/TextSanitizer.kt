@@ -50,6 +50,16 @@ object TextSanitizer {
         return host.isNotEmpty()
     }
 
+    /**
+     * True if [endpoint] is a non-empty http:// (not https) URL. Used to surface a
+     * gentle, non-blocking warning row: self-hosted LAN sync servers legitimately
+     * use plain http, so we never reject it — we just note the traffic is
+     * unencrypted so the user can choose https when their server supports it. Call
+     * on an already [sanitizeEndpoint]-cleaned value.
+     */
+    fun isInsecureEndpoint(endpoint: String): Boolean =
+        endpoint.substringBefore("://", missingDelimiterValue = "").lowercase() == "http"
+
     /** A char that is a line break or any ISO control character (tab, etc.). */
     private fun Char.isNewlineOrControl(): Boolean =
         this == '\n' || this == '\r' || this.isISOControl()

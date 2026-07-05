@@ -6,6 +6,11 @@ build/
 local.properties
 local/
 
+### Recall release keystore — NEVER commit the signing key or its passwords.
+### Keystore identity is FOREVER for Android app updates; losing or leaking it
+### is unrecoverable. Passwords live only in local.properties (also gitignored).
+tool/keystore/
+
 ### IntelliJ IDEA ###
 .idea/
 *.iws

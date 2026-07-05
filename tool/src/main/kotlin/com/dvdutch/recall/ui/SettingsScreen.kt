@@ -162,6 +162,14 @@ private fun SettingsMain(
                 value = endpoint.ifBlank { "not set" },
                 onClick = onEditEndpoint,
             )
+            if (com.dvdutch.recall.prefs.TextSanitizer.isInsecureEndpoint(endpoint)) {
+                LightText(
+                    text = "http — traffic is unencrypted; use https if your server supports it",
+                    variant = LightTextVariant.Fine,
+                    lighten = true,
+                    modifier = Modifier.padding(bottom = 0.5f.gridUnitsAsDp()),
+                )
+            }
             SettingRow(
                 label = "Username",
                 value = username.ifBlank { "not set" },

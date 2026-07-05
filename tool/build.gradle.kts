@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -6,6 +8,26 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.light.sdk)
 }
+
+// Release-signing secrets are read from local.properties (gitignored) first, then
+// environment variables, so the real keystore's passwords never enter the repo.
+// See tool/keystore/release.jks (also gitignored) and local.properties.
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+fun secret(key: String): String? =
+    (localProps.getProperty(key) ?: System.getenv(key))?.takeIf { it.isNotBlank() }
+
+val releaseStorePassword = secret("RELEASE_STORE_PASSWORD")
+val releaseKeyPassword = secret("RELEASE_KEY_PASSWORD")
+val releaseKeystoreFile = file("keystore/release.jks")
+// Release is properly signed only when the keystore file AND both passwords are
+// present. Otherwise we fall back to debug-signing (with a loud build warning) so
+// local `assembleRelease` still produces an installable APK — but a real shipping
+// build MUST have these set.
+val hasReleaseSigning = releaseKeystoreFile.exists() &&
+    releaseStorePassword != null && releaseKeyPassword != null
 
 android {
     compileSdk = rootProject.ext["compileSdk"] as Int
@@ -19,6 +41,41 @@ android {
             enableV3Signing = true
             enableV4Signing = true
         }
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = releaseKeystoreFile
+                storePassword = releaseStorePassword
+                keyAlias = "recall-release"
+                keyPassword = releaseKeyPassword
+                enableV3Signing = true
+                enableV4Signing = true
+            }
+        }
+    }
+
+    // Resolve which signing config the release build type uses. When the real
+    // keystore/passwords are absent we degrade to the dev key so local release
+    // builds still install on the emulator — but warn so it can't ship unnoticed.
+    val releaseSigningConfig = if (hasReleaseSigning) {
+        signingConfigs.getByName("release")
+    } else {
+        logger.warn(
+            "RECALL: release keystore or passwords absent (tool/keystore/release.jks + " +
+                "RELEASE_STORE_PASSWORD/RELEASE_KEY_PASSWORD in local.properties or env) — " +
+                "falling back to DEBUG signing for the release build. Do NOT ship this APK.",
+        )
+        signingConfigs.getByName("lightsdkDev")
+    }
+
+    // The sync endpoint default is BUILD-TYPE scoped so the shipping build ships
+    // no dev server: DEBUG prefills the host-local emulator hub (keeping the
+    // test/test123 emulator workflow one-tap), RELEASE prefills nothing so
+    // first-run forces the user to enter their own endpoint. Read through
+    // BuildConfig.DEV_DEFAULT_ENDPOINT (see RecallPreferences.DEFAULT_SYNC_ENDPOINT).
+    val devDefaultEndpoint = "http://10.0.2.2:18080/"
+
+    buildFeatures {
+        buildConfig = true
     }
 
     defaultConfig {
@@ -37,12 +94,14 @@ android {
     buildTypes {
         debug {
             signingConfig = signingConfigs.getByName("lightsdkDev")
+            // Emulator convenience: prefill the host-local dev hub.
+            buildConfigField("String", "DEV_DEFAULT_ENDPOINT", "\"$devDefaultEndpoint\"")
         }
         release {
-            // R8: shrink + minify. Real keystore is a later publishing step; for
-            // now the release is signed with the same dev key as debug so it can
-            // install on the emulator (no signature-mismatch reinstall needed).
-            signingConfig = signingConfigs.getByName("lightsdkDev")
+            // Shipping build: no dev default. First-run shows an EMPTY endpoint,
+            // so the user must enter their own sync server before downloading.
+            buildConfigField("String", "DEV_DEFAULT_ENDPOINT", "\"\"")
+            signingConfig = releaseSigningConfig
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
