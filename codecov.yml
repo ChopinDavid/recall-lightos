@@ -1,0 +1,34 @@
+# Codecov config for this tool. Coverage is a DASHBOARD here, not a gate: this is a
+# solo project, so we do not want coverage to fail PR/commit status checks. Everything
+# below is informational-only. Loosen/tighten later if the project grows.
+
+codecov:
+  require_ci_to_pass: false
+
+coverage:
+  status:
+    project:
+      default:
+        # Never fail a commit/PR on coverage — report only.
+        informational: true
+        target: auto
+    patch:
+      default:
+        informational: true
+        target: auto
+
+# Only :tool is instrumented; everything else is Light's SDK (out of scope). Focus the
+# report on our own source so SDK/example/generated code doesn't skew the numbers.
+ignore:
+  - "sdk/**"
+  - "plugin/**"
+  - "lint-rules/**"
+  - "examples/**"
+  - "**/build/**"
+  - "**/*Test.kt"
+  - "**/BuildConfig.*"
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+  require_changes: false

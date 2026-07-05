@@ -1,0 +1,120 @@
+# CI for this tool (a fork of light-sdk with the app in tool/).
+#
+# What it does: on every push to `recall` (and on manual dispatch) it runs the
+# :tool JVM unit suite + assembleDebug, generates JaCoCo coverage, and uploads it
+# to Codecov.
+#
+# Secrets it uses (all OPTIONAL — the job degrades gracefully if absent):
+#   GH_PACKAGES_USER  + GH_PACKAGES_TOKEN  -> read the lightphone/light-keyboard
+#       GitHub Packages Maven artifact (com.thelightphone.lp3keyboard:ui), the ONE
+#       dependency with no anonymous/Maven-Central path. A classic PAT with the
+#       `read:packages` scope is enough. Without these the build cannot resolve the
+#       keyboard dep, so this workflow SKIPS the build and finishes GREEN as
+#       "setup-pending" with a notice, rather than going red before setup.
+#   CODECOV_TOKEN -> optional; public-repo uploads are tokenless, but a token
+#       avoids Codecov's tokenless rate-limit flakiness. Absent => upload is still
+#       attempted tokenlessly and never fails the job.
+#
+# The anki/rsdroid backend comes from Maven Central (anonymous, no secret), and its
+# -testing artifact bundles librsdroid.so for linux-x86_64, so the JVM tests that
+# drive the real backend run on ubuntu-latest with no emulator. sync-live tests
+# self-skip (assumeTrue) when python-anki isn't present, which it isn't in CI.
+
+name: CI
+
+on:
+  push:
+    branches: [recall]
+  workflow_dispatch:
+
+# Least privilege. `packages: read` lets the built-in GITHUB_TOKEN read THIS repo's
+# packages; the cross-org light-keyboard read is done via the PAT env vars, not this.
+permissions:
+  contents: read
+  packages: read
+
+# One run per ref; newer pushes cancel older in-flight runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Unit tests + assembleDebug + coverage
+    runs-on: ubuntu-latest # standard runner => free & unlimited for public repos
+
+    steps:
+      # Gate: if the GitHub Packages token is absent we can't resolve the keyboard
+      # dep, so there's no point building. Emit setup instructions and mark all
+      # later steps as skipped — the JOB still ends SUCCESSFULLY ("setup-pending"),
+      # so the repo isn't red before David adds the secret.
+      - name: Check for GitHub Packages credentials
+        id: creds
+        run: |
+          if [ -n "${{ secrets.GH_PACKAGES_TOKEN }}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "GitHub Packages token present — running full CI."
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=CI setup pending (this run is intentionally a no-op success)::This tool depends on com.thelightphone.lp3keyboard:ui, which lives ONLY in the lightphone/light-keyboard GitHub Packages Maven registry (no anonymous path). To turn CI on (~2 min): 1) create a classic PAT with the 'read:packages' scope on a GitHub account that can read that package (your chopindavid account already can); 2) in this repo go to Settings -> Secrets and variables -> Actions and add two repository secrets: GH_PACKAGES_USER = your GitHub username, GH_PACKAGES_TOKEN = the PAT. Optionally add CODECOV_TOKEN for stable coverage uploads. Push again (or re-run this workflow) and the full build will run."
+          fi
+
+      - name: Checkout
+        if: steps.creds.outputs.present == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        if: steps.creds.outputs.present == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17' # matches project jvmTarget=17 and AGP 8.12.3
+
+      - name: Set up Android SDK
+        if: steps.creds.outputs.present == 'true'
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle (with built-in dependency + build caching)
+        if: steps.creds.outputs.present == 'true'
+        uses: gradle/actions/setup-gradle@v4
+
+      # -Precall.coverage=true turns on the manual JaCoCo path in tool/build.gradle.kts
+      # (agent + JacocoReport in an SDK-validator-invisible _internal- configuration).
+      # recallCoverageReport dependsOn testDebugUnitTest, so this runs the full unit
+      # suite too. Then assembleDebug builds the APK (dev-keystore signed, no secret).
+      - name: Run unit tests + coverage + build debug APK
+        if: steps.creds.outputs.present == 'true'
+        env:
+          GH_PACKAGES_USER: ${{ secrets.GH_PACKAGES_USER }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: >-
+          ./gradlew
+          :tool:recallCoverageReport
+          :tool:assembleDebug
+          -Precall.coverage=true
+          --stacktrace
+          --no-daemon
+
+      # Codecov: public-repo uploads are tokenless, so this works with no secret; a
+      # CODECOV_TOKEN (if present) is used to dodge tokenless rate limits. Either way
+      # fail_ci_if_error=false keeps a coverage-upload hiccup from failing the build.
+      - name: Upload coverage to Codecov
+        if: steps.creds.outputs.present == 'true'
+        uses: codecov/codecov-action@v5
+        with:
+          files: tool/build/reports/jacoco/recallCoverageReport/recallCoverageReport.xml
+          flags: tool
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }} # optional; empty => tokenless upload
+
+      - name: Upload test report (on failure)
+        if: failure() && steps.creds.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tool-test-report
+          path: |
+            tool/build/reports/tests/testDebugUnitTest/**
+            tool/build/test-results/testDebugUnitTest/**
+            tool/build/reports/jacoco/recallCoverageReport/**
+          if-no-files-found: ignore
+          retention-days: 14
