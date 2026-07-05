@@ -51,7 +51,25 @@ sealed interface HomeMode {
     }
 }
 
-data class HomeUiState(val mode: HomeMode = HomeMode.Loading)
+/**
+ * The manual-sync (top-bar 🔄) control's state, orthogonal to [HomeMode]: a sync runs over
+ * whatever the deck list is currently showing and only mutates it on completion.
+ */
+sealed interface SyncState {
+    /** No manual sync running; the icon renders solid and is tappable. */
+    data object Idle : SyncState
+
+    /** A manual sync is in flight; the icon renders ghosted and ignores taps. */
+    data object InFlight : SyncState
+
+    /** The last manual sync failed; [message] is the single lightened line above the list. */
+    data class Failed(val message: String) : SyncState
+}
+
+data class HomeUiState(
+    val mode: HomeMode = HomeMode.Loading,
+    val syncState: SyncState = SyncState.Idle,
+)
 
 /**
  * ViewModel for [RecallHomeScreen]. On show it decides between three routes off the
@@ -92,7 +110,12 @@ class RecallHomeViewModel(
     }
 
     fun load() {
-        _uiState.update { it.copy(mode = HomeMode.Loading) }
+        // A fresh load (screen show / retry / return from another screen) clears any stale
+        // manual-sync error line — but never interrupts an in-flight manual sync's ghosting.
+        _uiState.update {
+            val clearedSync = if (it.syncState is SyncState.Failed) SyncState.Idle else it.syncState
+            it.copy(mode = HomeMode.Loading, syncState = clearedSync)
+        }
         scope.launch(ioDispatcher) {
             if (!engine.storage.collectionExists()) {
                 setMode(HomeMode.NeedsFirstRun)
@@ -118,6 +141,59 @@ class RecallHomeViewModel(
                 HomeMode.Error(t.message ?: "couldn't open your collection")
             }
             setMode(mode)
+        }
+    }
+
+    /**
+     * The manual-sync control (the top-bar 🔄). Runs the SAME normal collection sync the
+     * session boundaries use ([SyncController.sync], media included) and reflects the outcome:
+     *   - while in flight             → [SyncState.InFlight] (icon ghosted; a second tap during
+     *     this window is a no-op — the guard below drops it, so no double-fire / no race);
+     *   - a FULL_* divergence latched → [HomeMode.NeedsAttention] (routes to AttentionScreen,
+     *     exactly like session-start sync), clearing any prior error;
+     *   - a clean sync                → clear the error line and RELOAD the deck tree (new
+     *     decks / updated counts appear) without leaving Home;
+     *   - a non-fatal failure         → [SyncState.Failed] with a lightened line above the list,
+     *     cleared on the next clean sync (or on the next [load]/navigation).
+     *
+     * Concurrency: [SyncController.sync] confines every backend touch to the single serial
+     * [com.dvdutch.recall.engine.EngineHolder.lane] shared by PeriodicSync and session sync, so
+     * a manual sync can never enter the backend re-entrantly with them; the in-flight guard here
+     * additionally prevents a rapid double-tap from queuing a redundant second sync.
+     */
+    fun sync() {
+        // No-op if a manual sync is already running (icon is ghosted): no second sync call,
+        // no double-fire on rapid taps.
+        if (_uiState.value.syncState == SyncState.InFlight) return
+        _uiState.update { it.copy(syncState = SyncState.InFlight) }
+        scope.launch(ioDispatcher) {
+            try {
+                engine.openCollection()
+                val controller = engine.controller()
+                if (!controller.configured) {
+                    setSyncState(SyncState.Failed("sync not configured — check settings"))
+                    return@launch
+                }
+                val info = controller.sync(media = true)
+                // A FULL_* divergence just latched → route to attention like session-start does.
+                if (engine.needsAttention() || controller.needsAttention.value) {
+                    setSyncState(SyncState.Idle)
+                    setMode(HomeMode.NeedsAttention)
+                    return@launch
+                }
+                if (info.synced) {
+                    // Refresh the deck tree over the freshly synced collection, then clear
+                    // any prior error and drop out of in-flight.
+                    val decks = engine.decks(controller)
+                    lastDecks = decks
+                    setMode(HomeMode.Loaded(visibleDeckRows(decks, readExpandedIds())))
+                    setSyncState(SyncState.Idle)
+                } else {
+                    setSyncState(SyncState.Failed("sync failed — check settings"))
+                }
+            } catch (t: Throwable) {
+                setSyncState(SyncState.Failed("sync failed — check settings"))
+            }
         }
     }
 
@@ -150,5 +226,9 @@ class RecallHomeViewModel(
 
     private suspend fun setMode(mode: HomeMode) {
         withContext(mainDispatcher) { _uiState.update { it.copy(mode = mode) } }
+    }
+
+    private suspend fun setSyncState(syncState: SyncState) {
+        withContext(mainDispatcher) { _uiState.update { it.copy(syncState = syncState) } }
     }
 }
