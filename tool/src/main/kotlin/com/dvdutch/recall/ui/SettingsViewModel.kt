@@ -9,6 +9,8 @@ import com.dvdutch.recall.prefs.RecallPreferences
 import com.dvdutch.recall.prefs.TextSanitizer
 import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SimpleLightScreen
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -57,15 +59,23 @@ data class SettingsUiState(
 class SettingsViewModel(
     private val filesDir: File,
     private val dataStore: DataStore<Preferences>,
+    // Test seams (default-args keep production call sites unchanged): inject the engine
+    // for the "Test login" path (fake controller) and the scope/dispatchers so the
+    // coroutine bodies run deterministically without an Android Main dispatcher.
+    private val engine: RecallEngine = RecallEngine(filesDir, dataStore),
+    // Null in production → resolves to [viewModelScope]; tests pass their own scope.
+    injectedScope: CoroutineScope? = null,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) : LightViewModel<Unit>() {
 
-    private val engine = RecallEngine(filesDir, dataStore)
+    private val scope: CoroutineScope = injectedScope ?: viewModelScope
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
     init {
-        viewModelScope.launch(Dispatchers.IO) {
+        scope.launch(ioDispatcher) {
             runCatching { loadStoredState() }
         }
     }
@@ -79,7 +89,7 @@ class SettingsViewModel(
     }
 
     private suspend fun updateState(transform: (SettingsUiState) -> SettingsUiState) {
-        withContext(Dispatchers.Main) { _uiState.update(transform) }
+        withContext(mainDispatcher) { _uiState.update(transform) }
     }
 
     fun openEditEndpoint() = openEditor(SettingsMode.EditEndpoint)
@@ -115,7 +125,7 @@ class SettingsViewModel(
     }
 
     private fun persist(key: Preferences.Key<String>, value: String) {
-        viewModelScope.launch(Dispatchers.IO) {
+        scope.launch(ioDispatcher) {
             runCatching { dataStore.edit { prefs -> prefs[key] = value } }
         }
     }
@@ -125,7 +135,7 @@ class SettingsViewModel(
         val state = _uiState.value
         if (state.testing) return
         _uiState.update { it.copy(testing = true, statusLine = "testing…") }
-        viewModelScope.launch(Dispatchers.IO) {
+        scope.launch(ioDispatcher) {
             val controller = engine.controller()
             val line = if (!controller.configured) {
                 "fill in endpoint, username and password first"

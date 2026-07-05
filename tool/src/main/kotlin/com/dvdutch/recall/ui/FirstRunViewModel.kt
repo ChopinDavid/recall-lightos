@@ -8,6 +8,8 @@ import com.dvdutch.recall.engine.RecallEngine
 import com.dvdutch.recall.prefs.RecallPreferences
 import com.dvdutch.recall.prefs.TextSanitizer
 import com.thelightphone.sdk.LightViewModel
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,9 +29,17 @@ import java.io.File
 class FirstRunViewModel(
     private val filesDir: File,
     private val dataStore: DataStore<Preferences>,
+    // Test seams (default-args keep production call sites unchanged): inject the engine
+    // to drive login/fullSync against a fake, and the scope/dispatchers so the download
+    // coroutine runs deterministically without an Android Main dispatcher.
+    private val engine: RecallEngine = RecallEngine(filesDir, dataStore),
+    // Null in production → resolves to [viewModelScope]; tests pass their own scope.
+    injectedScope: CoroutineScope? = null,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) : LightViewModel<Unit>() {
 
-    private val engine = RecallEngine(filesDir, dataStore)
+    private val scope: CoroutineScope = injectedScope ?: viewModelScope
 
     private val _state = MutableStateFlow(FirstRunState.initial(RecallPreferences.DEFAULT_SYNC_ENDPOINT))
     val state: StateFlow<FirstRunState> = _state.asStateFlow()
@@ -72,7 +82,7 @@ class FirstRunViewModel(
         val current = _state.value
         if (!current.canDownload || current.phase is FirstRunPhase.Downloading) return
         _state.update { it.startDownloading() }
-        viewModelScope.launch(Dispatchers.IO) {
+        scope.launch(ioDispatcher) {
             val config = current.syncConfig()
             runCatching {
                 dataStore.edit { prefs ->
@@ -94,7 +104,7 @@ class FirstRunViewModel(
     }
 
     private suspend fun setState(transform: (FirstRunState) -> FirstRunState) {
-        withContext(Dispatchers.Main) { _state.update(transform) }
+        withContext(mainDispatcher) { _state.update(transform) }
     }
 }
 

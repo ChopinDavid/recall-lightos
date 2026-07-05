@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.dvdutch.recall.engine.FullDownloadResult
 import com.dvdutch.recall.engine.RecallEngine
 import com.thelightphone.sdk.LightViewModel
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,9 +27,19 @@ import java.io.File
 class AttentionViewModel(
     private val filesDir: File,
     private val dataStore: DataStore<Preferences>,
+    // Test seams (default-args keep the production call sites unchanged): the engine
+    // is injectable so the destructive divergence flows can be driven against a fake
+    // controller, and the scope/dispatchers are overridable so tests run the coroutine
+    // bodies deterministically without an Android Main dispatcher.
+    private val engine: RecallEngine = RecallEngine(filesDir, dataStore),
+    // Null in production → resolves to [viewModelScope] (can't be a constructor default,
+    // as the instance isn't initialized yet); tests pass their own scope.
+    injectedScope: CoroutineScope? = null,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) : LightViewModel<Unit>() {
 
-    private val engine = RecallEngine(filesDir, dataStore)
+    private val scope: CoroutineScope = injectedScope ?: viewModelScope
 
     private val _uiState = MutableStateFlow(AttentionUiState())
     val uiState: StateFlow<AttentionUiState> = _uiState.asStateFlow()
@@ -36,14 +48,14 @@ class AttentionViewModel(
         // Read this phone's card count up front so the confirm screen can state the
         // concrete consequence ("…deletes N cards…"). Best-effort: if the collection
         // can't be opened or counted, the count stays null and the copy omits the number.
-        viewModelScope.launch(Dispatchers.IO) {
+        scope.launch(ioDispatcher) {
             val count = try {
                 engine.openCollection()
                 engine.localCardCount()
             } catch (_: Throwable) {
                 null
             }
-            withContext(Dispatchers.Main) {
+            withContext(mainDispatcher) {
                 _uiState.update { it.copy(localCardCount = count) }
             }
         }
@@ -68,7 +80,7 @@ class AttentionViewModel(
      */
     fun confirm(direction: AttentionDirection) {
         _uiState.update { AttentionReducer.running(it, direction) }
-        viewModelScope.launch(Dispatchers.IO) {
+        scope.launch(ioDispatcher) {
             try {
                 engine.openCollection()
                 val controller = engine.controller()
@@ -97,7 +109,7 @@ class AttentionViewModel(
      */
     fun forceDownload() {
         _uiState.update { AttentionReducer.running(it, AttentionDirection.Download) }
-        viewModelScope.launch(Dispatchers.IO) {
+        scope.launch(ioDispatcher) {
             try {
                 engine.openCollection()
                 when (val result = engine.controller().fullDownload(force = true)) {
@@ -113,6 +125,6 @@ class AttentionViewModel(
     }
 
     private suspend fun setState(transform: (AttentionUiState) -> AttentionUiState) {
-        withContext(Dispatchers.Main) { _uiState.update(transform) }
+        withContext(mainDispatcher) { _uiState.update(transform) }
     }
 }
