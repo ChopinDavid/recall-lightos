@@ -9,7 +9,9 @@ A review-only, [Anki](https://apps.ankiweb.net/)-compatible spaced-repetition cl
 
 ## Demo
 
-https://github.com/ChopinDavid/recall-lightos/raw/assets/demo-v2.mov
+![Recall demo — studying on the Light Phone III emulator](https://raw.githubusercontent.com/ChopinDavid/recall-lightos/assets/demo-v2.gif)
+
+*(full-quality video: [demo-v2.mov](https://github.com/ChopinDavid/recall-lightos/raw/assets/demo-v2.mov))*
 
 ## What it does
 
