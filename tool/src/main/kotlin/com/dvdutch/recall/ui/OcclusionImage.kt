@@ -39,26 +39,70 @@ import com.thelightphone.sdk.ui.gridUnitsAsDp
  */
 private const val OCCLUSION_TAG = "OcclusionImage"
 
-/**
- * Solid mask fill for masked shapes ([ShapeState.MASKED] / [ShapeState.MASKED_TESTED]).
- * On the black theme a mid/light grey block reads clearly as "something is hidden here"
- * while staying monochrome. Fully opaque so the answer region underneath is genuinely
- * covered — this is identical for tested and inactive masks; the tested one is set apart
- * by its border, never by a lighter/translucent fill.
- */
-private val MASK_FILL = Color(0xFFBBBBBB)
+// --- Mono palette (grayscale-only fallback) -----------------------------------
 
 /**
- * Outline colour for [ShapeState.REVEALED_OUTLINE] shapes (the tested answer on the
- * back). White reads as a highlight ring around the now-visible region on the black
- * theme.
+ * Solid mask fill for masked shapes under [MaskPalette.Mono]. A mid/light grey block
+ * reads clearly as "something is hidden here" while staying monochrome. Fully opaque so
+ * the answer region underneath is genuinely covered — identical for tested and inactive
+ * masks; the tested one is set apart by its two-tone ring, never by a lighter fill.
  */
-private val OUTLINE_COLOR = Color.White
+private val MONO_MASK_FILL = Color(0xFFBBBBBB)
+
+/**
+ * Outline colour for [ShapeState.REVEALED_OUTLINE] under [MaskPalette.Mono]. White reads
+ * as a highlight ring around the now-visible region on the black theme.
+ */
+private val MONO_OUTLINE_COLOR = Color.White
+
+// --- Anki palette (default — matches AnkiDroid / Anki desktop) -----------------
+//
+// Our base images render in full colour, so the masks match Anki's real IO palette
+// rather than a monochrome stand-in. Values are the authoritative Anki defaults
+// (Anki desktop / AnkiDroid image-occlusion CSS custom properties), corroborated by
+// pixel-sampling the AnkiDroid comparison screenshots:
+//   --inactive-shape-color: #ffeba2   (tan/cream fill)
+//   --active-shape-color:   #ff8e8e   (salmon/red fill — the tested mask on the front)
+//   --highlight-shape-border: 1px #ff8e8e  (red outline of the revealed region on the back)
+// AnkiDroid draws the SAME thin dark 1px border on both inactive and active masks; the
+// tested/inactive distinction is carried purely by the FILL colour (tan vs salmon), so
+// no two-tone ring is used here. The two fills also keep a wide relative-luminance gap
+// (see [relativeLuminance]) so tested vs inactive stays distinguishable if the device
+// grayscales.
+
+/** Anki inactive-mask fill (`--inactive-shape-color: #ffeba2`). */
+private val ANKI_INACTIVE_FILL = Color(0xFFFFEBA2)
+
+/** Anki active/tested-mask fill (`--active-shape-color: #ff8e8e`). */
+private val ANKI_TESTED_FILL = Color(0xFFFF8E8E)
+
+/** Anki revealed-region outline colour (`--highlight-shape-border: #ff8e8e`). */
+private val ANKI_OUTLINE_COLOR = Color(0xFFFF8E8E)
+
+/** Anki shape border (`--inactive/active-shape-border: 1px #212121`), single-tone. */
+private val ANKI_MASK_BORDER = MaskBorder(
+    outerColor = Color(0xFF212121),
+    outerWidthPx = 2f,
+    innerColor = Color(0xFF212121),
+    innerWidthPx = 2f,
+)
 
 /** Outline stroke width, in natural-image pixels (scaled with the image). */
 private const val OUTLINE_STROKE_PX = 2f
 
-// --- Mask styling (the single point a future COLOR mode would swap) -----------
+// --- Mask styling (the single point the palette is swapped) -------------------
+
+/**
+ * Which colour palette the occlusion masks are drawn in. [Anki] is the default — it
+ * matches AnkiDroid / Anki desktop exactly (tan inactive, salmon tested, red revealed
+ * outline) because our images render in full colour. [Mono] is a grayscale-only fallback
+ * (mid-grey block + two-tone ring + white outline) retained for a future device-colour
+ * toggle; there is no settings UI yet.
+ */
+enum class MaskPalette { Anki, Mono }
+
+/** The default palette used everywhere until a device-colour toggle is added. */
+private val DEFAULT_PALETTE = MaskPalette.Anki
 
 /**
  * A two-tone ring drawn around the tested mask: a thick [outerColor] stroke with a
@@ -85,8 +129,8 @@ data class MaskStyle(
     val border: MaskBorder? = null,
 )
 
-/** Border for the tested front mask: heavy black outer ring + white inner ring. */
-private val TESTED_BORDER = MaskBorder(
+/** Mono tested-mask ring: heavy black outer ring + white inner ring (two-tone). */
+private val MONO_TESTED_BORDER = MaskBorder(
     outerColor = Color.Black,
     outerWidthPx = 6f,
     innerColor = Color.White,
@@ -94,23 +138,57 @@ private val TESTED_BORDER = MaskBorder(
 )
 
 /**
- * The SINGLE pure mapping from a resolved [ShapeState] to how it must be drawn. Every
- * mask/outline styling decision lives here, so a future COLOR mode (pink tested / tan
- * inactive, behind a settings toggle) is a one-function swap. Returns `null` for
- * [ShapeState.CONTEXT] (draw nothing).
- *
- *  - [ShapeState.MASKED]        → plain solid grey block (inactive, hide-all).
- *  - [ShapeState.MASKED_TESTED] → same solid grey block PLUS a heavy two-tone ring so the
- *    asked region is unmistakable among many masks (monochrome default).
- *  - [ShapeState.REVEALED_OUTLINE] → stroke-only white outline (tested answer, back).
- *  - [ShapeState.CONTEXT]       → null (shows through, drawn nothing).
+ * WCAG relative luminance of [color] in the sRGB space (0 = black, 1 = white). Used to
+ * prove the [MaskPalette.Anki] fills stay distinguishable by brightness alone if the
+ * device grayscales — see the luminance-gap assertion in the mask-style tests.
  */
-fun maskStyle(state: ShapeState): MaskStyle? = when (state) {
-    ShapeState.CONTEXT -> null
-    ShapeState.MASKED -> MaskStyle(filled = true, fill = MASK_FILL)
-    ShapeState.MASKED_TESTED -> MaskStyle(filled = true, fill = MASK_FILL, border = TESTED_BORDER)
-    ShapeState.REVEALED_OUTLINE -> MaskStyle(filled = false, fill = OUTLINE_COLOR)
+fun relativeLuminance(color: Color): Double {
+    fun lin(c: Float): Double {
+        val d = c.toDouble()
+        return if (d <= 0.03928) d / 12.92 else Math.pow((d + 0.055) / 1.055, 2.4)
+    }
+    return 0.2126 * lin(color.red) + 0.7152 * lin(color.green) + 0.0722 * lin(color.blue)
 }
+
+/**
+ * The SINGLE pure mapping from a resolved [ShapeState] to how it must be drawn, under the
+ * chosen [palette]. Every mask/outline styling decision lives here, so switching palettes
+ * (once a device-colour toggle exists) is a one-argument swap. [palette] defaults to
+ * [MaskPalette.Anki]. Returns `null` for [ShapeState.CONTEXT] (draw nothing).
+ *
+ * [MaskPalette.Anki] (default — our images are full colour, so match AnkiDroid exactly):
+ *  - [ShapeState.MASKED]        → solid tan `#FFEBA2` block + thin dark border.
+ *  - [ShapeState.MASKED_TESTED] → solid salmon `#FF8E8E` block + the SAME thin dark border
+ *    (the tested/inactive distinction is the fill colour, matching AnkiDroid — no ring).
+ *  - [ShapeState.REVEALED_OUTLINE] → stroke-only red `#FF8E8E` outline (revealed answer).
+ *
+ * [MaskPalette.Mono] (grayscale-only fallback):
+ *  - [ShapeState.MASKED]        → plain solid grey block.
+ *  - [ShapeState.MASKED_TESTED] → same grey block PLUS a heavy two-tone ring.
+ *  - [ShapeState.REVEALED_OUTLINE] → stroke-only white outline.
+ *
+ * [ShapeState.CONTEXT] → null (shows through, drawn nothing) in both palettes.
+ */
+fun maskStyle(state: ShapeState, palette: MaskPalette = DEFAULT_PALETTE): MaskStyle? =
+    when (palette) {
+        MaskPalette.Anki -> when (state) {
+            ShapeState.CONTEXT -> null
+            ShapeState.MASKED ->
+                MaskStyle(filled = true, fill = ANKI_INACTIVE_FILL, border = ANKI_MASK_BORDER)
+            ShapeState.MASKED_TESTED ->
+                MaskStyle(filled = true, fill = ANKI_TESTED_FILL, border = ANKI_MASK_BORDER)
+            ShapeState.REVEALED_OUTLINE ->
+                MaskStyle(filled = false, fill = ANKI_OUTLINE_COLOR)
+        }
+
+        MaskPalette.Mono -> when (state) {
+            ShapeState.CONTEXT -> null
+            ShapeState.MASKED -> MaskStyle(filled = true, fill = MONO_MASK_FILL)
+            ShapeState.MASKED_TESTED ->
+                MaskStyle(filled = true, fill = MONO_MASK_FILL, border = MONO_TESTED_BORDER)
+            ShapeState.REVEALED_OUTLINE -> MaskStyle(filled = false, fill = MONO_OUTLINE_COLOR)
+        }
+    }
 
 /**
  * The pure state mapping behind the "Toggle Masks" peek (AnkiDroid parity). When
@@ -130,8 +208,8 @@ fun effectiveShapeState(state: ShapeState, masksHidden: Boolean): ShapeState =
  * The three states an occlusion base image can be in.
  *
  * This exists to kill a real UX bug: the generic [ImageNodePlaceholder] is a *solid
- * grey filled box*, and a masked occlusion shape ([MASK_FILL]) is *also* a solid grey
- * box. So a mid-load occlusion card rendered through the shared placeholder was visually
+ * grey filled box*, and a masked occlusion shape is *also* a solid filled box. So a
+ * mid-load occlusion card rendered through the shared placeholder was visually
  * indistinguishable from an occlusion whose mask never lifts — it read as broken. The
  * loading and failed states must therefore be *text in a bordered (unfilled) box*, never
  * a solid fill, so they can never be mistaken for a mask.
@@ -486,8 +564,8 @@ private fun polygonPath(points: List<Pair<Float, Float>>): Path = Path().apply {
 
 /**
  * The non-drawn states of an occlusion base image: a *bordered, text-labelled, unfilled*
- * box — deliberately NOT the solid grey [ImageNodePlaceholder]. A solid grey fill is
- * exactly what a [MASK_FILL] mask looks like, so reusing it made a mid-load (or missing)
+ * box — deliberately NOT the solid grey [ImageNodePlaceholder]. A solid filled box is
+ * exactly what a mask looks like, so reusing it made a mid-load (or missing)
  * occlusion card indistinguishable from an occlusion whose mask never lifts. Text plus an
  * outline (no fill) can never be mistaken for a mask.
  *
