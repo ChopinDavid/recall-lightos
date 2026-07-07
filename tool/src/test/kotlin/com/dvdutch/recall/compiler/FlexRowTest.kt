@@ -115,6 +115,59 @@ class FlexRowTest {
         assertTrue(row.cells[1].nodes.any { it is RuleNode }, "hr should span the cell")
     }
 
+    // --- Fix A: flex: <number> cell weights ----------------------------------
+
+    @Test
+    fun allExplicitFlexWeightsAllCells() {
+        // .25 / 1 / .25 header: every cell gets its flex as a weight, so the corners
+        // are equal and the centre is truly centred (flex-basis-0 semantics).
+        val css = """
+            .row { display: flex }
+            .left-text { flex: .25; text-align: left }
+            .center-text { flex: 1; text-align: center }
+            .right-text { flex: .25; text-align: right }
+        """.trimIndent()
+        val html = """<div class="row"><div class="left-text">8</div><div class="center-text">P</div><div class="right-text">D 100</div></div>"""
+        val row = compileHtml(html, side = "back", css = css).single() as RowNode
+        assertEquals(0.25f, row.cells[0].weight)
+        assertEquals(1f, row.cells[1].weight)
+        assertEquals(0.25f, row.cells[2].weight)
+        // per-cell text-align still honored
+        assertEquals(BlockAlign.START, row.cells[0].align)
+        assertEquals(BlockAlign.CENTER, row.cells[1].align)
+        assertEquals(BlockAlign.END, row.cells[2].align)
+    }
+
+    @Test
+    fun mixedExplicitFlexFallsBackToPositionalWeights() {
+        // Not ALL cells carry an explicit flex number -> keep the positional default
+        // (corners wrap-content/null, middle weight 1).
+        val css = """
+            .row { display: flex }
+            .center-text { flex: 1; text-align: center }
+        """.trimIndent()
+        val html = """<div class="row"><div>8</div><div class="center-text">P</div><div>D 100</div></div>"""
+        val row = compileHtml(html, side = "back", css = css).single() as RowNode
+        assertNull(row.cells[0].weight)
+        assertEquals(1f, row.cells[1].weight)
+        assertNull(row.cells[2].weight)
+    }
+
+    @Test
+    fun explicitFlexHonorsPerCellTextAlign() {
+        // A cell's own class text-align wins over the positional default even under
+        // weighted layout (e.g. a left-aligned first cell stays START).
+        val css = """
+            .row { display: flex }
+            .a { flex: 1; text-align: center }
+            .b { flex: 1; text-align: center }
+        """.trimIndent()
+        val html = """<div class="row"><div class="a">x</div><div class="b">y</div></div>"""
+        val row = compileHtml(html, side = "back", css = css).single() as RowNode
+        assertEquals(BlockAlign.CENTER, row.cells[0].align)
+        assertEquals(BlockAlign.CENTER, row.cells[1].align)
+    }
+
     // --- Feature 2: text-align on block nodes --------------------------------
 
     @Test
@@ -138,6 +191,46 @@ class FlexRowTest {
         val html = """<div class="flash"><div>a</div><div>b</div></div>"""
         val nodes = compileHtml(html, side = "front", css = css)
         assertTrue(nodes.all { it is TextNode && it.align == BlockAlign.CENTER }, "$nodes")
+    }
+
+    // --- Fix B: block placement follows PARENT alignment ---------------------
+
+    @Test
+    fun inlineBlockPlacementFollowsParentAlignment() {
+        // `.audio-container { display: inline-block; text-align: left }` inside a
+        // center parent: CSS centres the inline-block within its parent (placement),
+        // its own text-align only governs internal content. So the sentence text
+        // must be CENTER-placed, not left.
+        val css = """
+            .sentence { text-align: center }
+            .audio-container { display: inline-block; text-align: left }
+        """.trimIndent()
+        val html = """<div class="sentence"><div class="audio-container">Я надеялся</div></div>"""
+        val node = compileHtml(html, side = "back", css = css).single() as TextNode
+        assertEquals(BlockAlign.CENTER, node.align)
+    }
+
+    @Test
+    fun inlineBlockOwnAlignStillAppliesWhenParentIsStart() {
+        // Without a centering parent, an inline-block still just inherits START; its
+        // own left text-align is a no-op placement-wise.
+        val css = ".audio-container { display: inline-block; text-align: left }"
+        val html = """<div><div class="audio-container">x</div></div>"""
+        val node = compileHtml(html, side = "back", css = css).single() as TextNode
+        assertEquals(BlockAlign.START, node.align)
+    }
+
+    @Test
+    fun nonInlineBlockOwnAlignStillWins() {
+        // A regular (non-inline-block) block's own text-align continues to win over
+        // the parent (unchanged behaviour) — e.g. a left field under a center card.
+        val css = """
+            .card { text-align: center }
+            .left { text-align: left }
+        """.trimIndent()
+        val html = """<div class="card"><div class="left">x</div></div>"""
+        val node = compileHtml(html, side = "back", css = css).single() as TextNode
+        assertEquals(BlockAlign.START, node.align)
     }
 
     // --- end-to-end prettify header ------------------------------------------

@@ -103,4 +103,51 @@ class CssTextAlignTest {
         // `.prettify-tags { display: center }` is invalid CSS, never a flex row.
         assertEquals(false, CssTextAlign.parse(css = ".prettify-tags { display: center }").isFlexRow(listOf("prettify-tags")))
     }
+
+    // --- flex: <number> weight extraction (Fix A) ----------------------------
+
+    private fun flex(css: String, cls: String): Float? =
+        CssTextAlign.parse(css).flexForClasses(listOf(cls))
+
+    @Test
+    fun bareFlexNumberExtracted() {
+        assertEquals(1f, flex(".center-text { flex: 1 }", "center-text"))
+    }
+
+    @Test
+    fun fractionalFlexNumberExtracted() {
+        assertEquals(0.25f, flex(".left-text { flex: .25 }", "left-text"))
+    }
+
+    @Test
+    fun flexShorthandWithGrowGrowBasisIsNotBareNumber() {
+        // `flex: 1 1 0` is the multi-value shorthand, not the bare-number form; we
+        // only honor the single bare number to stay conservative.
+        assertNull(flex(".x { flex: 1 1 0 }", "x"))
+    }
+
+    @Test
+    fun flexKeywordIsNotBareNumber() {
+        assertNull(flex(".x { flex: auto }", "x"))
+        assertNull(flex(".x { flex: none }", "x"))
+    }
+
+    @Test
+    fun classWithoutFlexHasNoWeight() {
+        assertNull(flex(".x { text-align: center }", "x"))
+    }
+
+    @Test
+    fun zeroOrNegativeFlexIgnored() {
+        // A non-positive weight is meaningless as a Compose weight; ignore it.
+        assertNull(flex(".x { flex: 0 }", "x"))
+        assertNull(flex(".x { flex: -1 }", "x"))
+    }
+
+    @Test
+    fun multiSelectorSharesFlex() {
+        val css = ".a, .b { flex: 1 }"
+        assertEquals(1f, flex(css, "a"))
+        assertEquals(1f, flex(css, "b"))
+    }
 }

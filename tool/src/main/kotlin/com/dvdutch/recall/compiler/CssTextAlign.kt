@@ -20,7 +20,18 @@ import com.dvdutch.recall.api.BlockAlign
 class CssTextAlign private constructor(
     private val classAlign: Map<String, BlockAlign>,
     private val flexRowClasses: Set<String>,
+    private val classFlex: Map<String, Float>,
+    private val inlineBlockClasses: Set<String>,
 ) {
+    /**
+     * True iff any of [classes] declares `display: inline-block`. An inline-block's
+     * own `text-align` governs only its INTERNAL content — its PLACEMENT within its
+     * parent follows the parent's alignment (CSS shrink-to-fit + inline centering).
+     * So the compiler must not let such an element's own text-align override the
+     * inherited placement (Fix B).
+     */
+    fun isInlineBlock(classes: List<String>): Boolean = classes.any { it in inlineBlockClasses }
+
     /** The [BlockAlign] for the first of [classes] that carries one, or null. */
     fun alignForClasses(classes: List<String>): BlockAlign? {
         for (c in classes) classAlign[c]?.let { return it }
@@ -29,6 +40,17 @@ class CssTextAlign private constructor(
 
     /** True iff any of [classes] resolved to `display: flex` (row/unset direction). */
     fun isFlexRow(classes: List<String>): Boolean = classes.any { it in flexRowClasses }
+
+    /**
+     * The positive `flex: <number>` weight for the first of [classes] that carries
+     * one (bare-number form only, e.g. `flex: 1` / `flex: .25`), or null. Used as a
+     * Compose `Modifier.weight` so a `.left/.center/.right` header lays its cells out
+     * in true proportion (`.25 / 1 / .25` → equal corners, centred middle).
+     */
+    fun flexForClasses(classes: List<String>): Float? {
+        for (c in classes) classFlex[c]?.let { return it }
+        return null
+    }
 
     val isEmpty: Boolean get() = classAlign.isEmpty() && flexRowClasses.isEmpty()
 
@@ -54,12 +76,17 @@ class CssTextAlign private constructor(
         // A `--name: value` custom-property declaration (used inside :root).
         private val CUSTOM_PROP = Regex("""(--[\w-]+)\s*:\s*([^;]+)""")
 
-        val EMPTY = CssTextAlign(emptyMap(), emptySet())
+        // A bare single-number `flex` value: `1`, `.25`, `0.5` (optionally leading
+        // sign). The multi-value shorthand (`1 1 0`) and keywords (`auto`, `none`,
+        // `content`) intentionally do NOT match, so only the simple weight is honored.
+        private val BARE_FLEX = Regex("""^[+-]?(?:\d+\.?\d*|\.\d+)$""")
+
+        val EMPTY = CssTextAlign(emptyMap(), emptySet(), emptyMap(), emptySet())
 
         fun parse(css: String): CssTextAlign {
             val lowered = css.lowercase()
             if (css.isEmpty() ||
-                (!lowered.contains("text-align") && !lowered.contains("display"))
+                (!lowered.contains("text-align") && !lowered.contains("display") && !lowered.contains("flex"))
             ) {
                 return EMPTY
             }
@@ -69,20 +96,42 @@ class CssTextAlign private constructor(
             val rootVars = collectRootVars(text)
             val classAlign = mutableMapOf<String, BlockAlign>()
             val flexRowClasses = mutableSetOf<String>()
+            val classFlex = mutableMapOf<String, Float>()
+            val inlineBlockClasses = mutableSetOf<String>()
 
             for (m in RULE.findAll(text)) {
                 val selectors = m.groupValues[1]
                 val decls = m.groupValues[2]
                 val align = textAlignOf(decls, rootVars)
                 val flexRow = declaresFlexRow(decls)
-                if (align == null && !flexRow) continue
+                val flex = flexWeightOf(decls)
+                val inlineBlock = declaresInlineBlock(decls)
+                if (align == null && !flexRow && flex == null && !inlineBlock) continue
                 for (rawSel in selectors.split(",")) {
                     val cls = classOf(rawSel.trim()) ?: continue
                     if (align != null) classAlign.putIfAbsent(cls, align)
                     if (flexRow) flexRowClasses.add(cls)
+                    if (flex != null) classFlex.putIfAbsent(cls, flex)
+                    if (inlineBlock) inlineBlockClasses.add(cls)
                 }
             }
-            return CssTextAlign(classAlign, flexRowClasses)
+            return CssTextAlign(classAlign, flexRowClasses, classFlex, inlineBlockClasses)
+        }
+
+        /**
+         * The positive bare-number `flex` weight in [decls] (last declaration wins,
+         * CSS source order), or null when absent, non-bare-number, or non-positive.
+         */
+        private fun flexWeightOf(decls: String): Float? {
+            var result: Float? = null
+            for (decl in decls.split(";")) {
+                val idx = decl.indexOf(':')
+                if (idx < 0) continue
+                if (decl.substring(0, idx).trim().lowercase() != "flex") continue
+                val value = decl.substring(idx + 1).trim()
+                result = if (BARE_FLEX.matches(value)) value.toFloatOrNull()?.takeIf { it > 0f } else null
+            }
+            return result
         }
 
         /** The class component of a `.class` or `tag.class` simple selector, else null. */
@@ -133,6 +182,17 @@ class CssTextAlign private constructor(
             "center" -> BlockAlign.CENTER
             "right", "end" -> BlockAlign.END
             else -> null
+        }
+
+        /** True iff [decls] declares `display: inline-block`. */
+        private fun declaresInlineBlock(decls: String): Boolean {
+            for (decl in decls.split(";")) {
+                val idx = decl.indexOf(':')
+                if (idx < 0) continue
+                if (decl.substring(0, idx).trim().lowercase() != "display") continue
+                if (decl.substring(idx + 1).trim().lowercase() == "inline-block") return true
+            }
+            return false
         }
 
         /**

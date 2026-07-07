@@ -19,12 +19,16 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import com.dvdutch.recall.api.BlockAlign
 import com.dvdutch.recall.api.ClozeNode
 import com.dvdutch.recall.api.ImageNode
@@ -43,6 +47,28 @@ import com.thelightphone.sdk.ui.gridUnitsAsDp
 
 /** Relative font size applied to `small` runs so it scales with the base style. */
 private const val SMALL_TEXT_SCALE = 0.8f
+
+/**
+ * Fix C — layers a uniform [LineHeightStyle] onto a card text style so EVERY line
+ * box is the same height regardless of combining marks. Without it, a combining
+ * acute accent (U+0301, e.g. "надéялся") extends above the normal ascent and
+ * Compose's DEFAULT line-height distribution lets that line's box grow to fit the
+ * mark — the wrapped Russian sentence then shows a much larger inter-line gap than
+ * the plain-ASCII English wrap. `trim = None` keeps the explicit lineHeight fully
+ * applied (no first/last-line trimming) and `Center` distributes it symmetrically,
+ * so the box height no longer tracks per-line glyph ascent. `includeFontPadding =
+ * false` additionally drops the platform's extra font-metric padding, which a
+ * combining accent would otherwise inflate, so the accented line's advance matches
+ * the plain lines. Together they mirror AnkiDroid's CSS `line-height: 1.5`. Pure
+ * (Compose-runtime-free) so it is unit-tested directly.
+ */
+fun cardCopyStyle(base: TextStyle): TextStyle = base.copy(
+    lineHeightStyle = LineHeightStyle(
+        alignment = LineHeightStyle.Alignment.Center,
+        trim = LineHeightStyle.Trim.None,
+    ),
+    platformStyle = PlatformTextStyle(includeFontPadding = false),
+)
 
 /**
  * The [UnsupportedNode.kind] the engine tags a side's audio marker with. Its inline
@@ -120,7 +146,8 @@ private fun LightAnnotatedCopy(
         text = annotated,
         modifier = modifier,
         color = LightThemeTokens.colors.content,
-        style = LightThemeTokens.typography.copy,
+        // Fix C: uniform line boxes so a combining accent can't inflate a line's gap.
+        style = cardCopyStyle(LightThemeTokens.typography.copy),
         textAlign = align.toTextAlign(),
     )
 }
@@ -171,7 +198,7 @@ fun RenderNodeView(
             if (mediaLoader != null) MediaImage(node = node, loader = mediaLoader)
             else ImageNodePlaceholder(node)
 
-        RuleNode -> Box(
+        is RuleNode -> Box(
             modifier = (if (expandWidth) modifier.fillMaxWidth() else modifier)
                 .padding(vertical = 0.75f.gridUnitsAsDp())
                 .height(1.dp)
@@ -197,6 +224,27 @@ fun RenderNodeView(
 }
 
 /**
+ * A block node's own (top, bottom) vertical margins in em, or (0,0) for nodes that
+ * carry none. Fix D: only [TextNode]/[RowNode]/[RuleNode] carry margins.
+ */
+private fun RenderNode.marginsEm(): Pair<Float, Float> = when (this) {
+    is TextNode -> marginTop to marginBottom
+    is RowNode -> marginTop to marginBottom
+    is RuleNode -> marginTop to marginBottom
+    else -> 0f to 0f
+}
+
+/**
+ * The vertical gap (em) to insert BEFORE each stacked node. The first node keeps
+ * its own top margin; between two nodes the previous bottom and next top COLLAPSE
+ * to their max (CSS margin collapse), not their sum. Pure and unit-tested.
+ */
+fun collapsedTopGapsEm(nodes: List<RenderNode>): List<Float> = nodes.mapIndexed { i, node ->
+    val top = node.marginsEm().first
+    if (i == 0) top else maxOf(nodes[i - 1].marginsEm().second, top)
+}
+
+/**
  * Renders a list of nodes stacked vertically, one below the next.
  *
  * [dividerIndex], when in range, marks the node that begins the answer — the boundary
@@ -217,7 +265,18 @@ fun RenderNodeColumn(
     onNodePositioned: ((androidx.compose.ui.layout.LayoutCoordinates) -> Unit)? = null,
     masksHidden: Boolean = false,
 ) {
+    // Fix D: the collapsed vertical gap (em) to insert before each block, converted
+    // to dp against the card base text size (the copy style's font size) so it scales
+    // with the deck's em rhythm.
+    val gapsEm = collapsedTopGapsEm(nodes)
+    val baseSp = LightThemeTokens.typography.copy.fontSize
+    val density = androidx.compose.ui.platform.LocalDensity.current
     nodes.forEachIndexed { index, node ->
+        val gap = gapsEm[index]
+        if (gap > 0f) {
+            val gapDp = with(density) { (gap * baseSp.value).sp.toDp() }
+            androidx.compose.foundation.layout.Spacer(Modifier.height(gapDp))
+        }
         val dividerModifier =
             if (onNodePositioned != null && index == dividerIndex) {
                 Modifier.onGloballyPositioned(onNodePositioned)
@@ -258,8 +317,9 @@ private fun RowScope.RenderRowCell(cell: RowCell, mediaLoader: MediaLoader?) {
     // wrap-content (corner) cell must NOT let a block fill max width or it would
     // starve the weighted sibling. The Column's horizontalAlignment still places
     // corner content per the cell's role.
-    val weighted = cell.weight != null
-    val cellModifier = if (weighted) Modifier.weight(cell.weight!!) else Modifier
+    val weight = cell.weight
+    val weighted = weight != null
+    val cellModifier = if (weight != null) Modifier.weight(weight) else Modifier
     Column(
         modifier = cellModifier,
         horizontalAlignment = when (cell.align) {

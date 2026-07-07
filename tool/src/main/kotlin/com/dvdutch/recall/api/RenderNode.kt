@@ -47,6 +47,12 @@ enum class BlockAlign {
 data class TextNode(
     val runs: List<TextRun>,
     val align: BlockAlign = BlockAlign.START,
+    // Fix D: bounded vertical margins (in em, × the card base text size) extracted
+    // from the block's class CSS. A phone-side layout enrichment (like [align]),
+    // NOT parity-governed. Adjacent block margins collapse to their max (not sum)
+    // when the column stacks them.
+    val marginTop: Float = 0f,
+    val marginBottom: Float = 0f,
 ) : RenderNode
 
 @Serializable
@@ -90,7 +96,11 @@ data class RowCell(
  */
 @Serializable
 @SerialName("row")
-data class RowNode(val cells: List<RowCell>) : RenderNode
+data class RowNode(
+    val cells: List<RowCell>,
+    val marginTop: Float = 0f,
+    val marginBottom: Float = 0f,
+) : RenderNode
 
 @Serializable
 data class ClozeNode(
@@ -104,7 +114,10 @@ data class ImageNode(val src: String, val w: Int? = null, val h: Int? = null) : 
 
 @Serializable
 @SerialName("rule")
-data object RuleNode : RenderNode
+data class RuleNode(
+    val marginTop: Float = 0f,
+    val marginBottom: Float = 0f,
+) : RenderNode
 
 @Serializable
 data class UnsupportedNode(val kind: String) : RenderNode
