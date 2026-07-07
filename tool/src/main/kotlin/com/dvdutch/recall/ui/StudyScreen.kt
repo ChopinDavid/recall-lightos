@@ -19,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -46,6 +47,8 @@ import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
 import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 
 /**
  * The study session screen for one deck. It renders whichever [StudyState] the
@@ -404,22 +407,26 @@ private fun androidx.compose.foundation.layout.ColumnScope.CardBody(
     var dividerWindowY by remember(card.cardId) { mutableStateOf<Float?>(null) }
 
     // On the front→back transition (and only then), if the divider sits below the fold,
-    // smooth-scroll it to a small margin below the viewport top. Keyed on (card, showBack)
-    // so it fires once per reveal, never on plain recomposition; a short card whose divider
-    // is already visible yields a null target and does not move (the common case, no motion).
-    // A quick animated scroll (not an instant jump) reads best on the Light aesthetic: the
-    // small, deliberate motion signals "the answer continues below" without the jarring
-    // teleport of an instant jump. It runs after the answer subtree has been positioned
-    // (dividerWindowY non-null), so it composes with — never fights — the scrollbar's
+    // smooth-scroll it to a small margin below the viewport top. Keyed STRICTLY on
+    // (card, showBack): the divider/viewport measurements are AWAITED inside the effect
+    // (snapshotFlow) rather than used as keys — onGloballyPositioned re-reports the
+    // divider's window Y on every USER scroll, and keying on it made this effect re-fire
+    // mid-scroll and yank the viewport back to the answer anchor (a fling to the top
+    // warped straight back to the bottom). One reveal → one scroll; after that the user
+    // owns the viewport. A short card whose divider is already visible yields a null
+    // target and does not move (the common case, no motion). A quick animated scroll
+    // (not an instant jump) reads best on the Light aesthetic; it runs after the answer
+    // subtree has been positioned, so it composes with — never fights — the scrollbar's
     // one-frame show debounce.
-    LaunchedEffect(card.cardId, showBack, dividerWindowY, viewportH) {
+    LaunchedEffect(card.cardId, showBack) {
         if (!showBack) return@LaunchedEffect
-        val dividerY = dividerWindowY ?: return@LaunchedEffect
-        if (viewportH <= 0) return@LaunchedEffect
-        val dividerContentY = (dividerY - viewportTopY).roundToInt() + scrollState.value
+        val (dividerY, viewport) = snapshotFlow { dividerWindowY to viewportH }
+            .filter { (d, v) -> d != null && v > 0 }
+            .first()
+        val dividerContentY = (dividerY!! - viewportTopY).roundToInt() + scrollState.value
         val target = revealScrollTarget(
             dividerY = dividerContentY,
-            viewportH = viewportH,
+            viewportH = viewport,
             currentScroll = scrollState.value,
             maxScroll = scrollState.maxValue,
             topMargin = topMargin,
