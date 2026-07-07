@@ -33,6 +33,7 @@ fun compileHtml(
     if (html.isBlank()) return emptyList()
     val hidden = CssHidden.parse(css)
     val layout = CssTextAlign.parse(css)
+    val margins = CssMargins.parse(css)
     // The tokenizer never raises on any input; libxml2's `fragment_fromstring`
     // ParserError/ValueError fallback (flatten to a single text node) is
     // therefore unreachable in practice, but we keep the never-empty contract:
@@ -41,7 +42,7 @@ fun compileHtml(
     // Only tags that actually carry a `::` can produce a leaf, so pre-filter to
     // the hierarchical ones. Empty (the common case) disables the mapping wholly.
     val ctx = Ctx(side, tags.filter { it.contains("::") }.toSet())
-    walk(root, ctx, emptySet(), hidden, layout, BlockAlign.START)
+    walk(root, ctx, emptySet(), hidden, layout, margins, BlockAlign.START)
     ctx.flushText()
     return ctx.nodes
 }
@@ -74,10 +75,15 @@ private class Ctx(val side: String, val hierarchicalTags: Set<String> = emptySet
     // stamps the alignment of the block that produced the run.
     var align: BlockAlign = BlockAlign.START
 
+    // Fix D: the vertical margins (em) in effect for text flushed right now, stamped
+    // from the block element that produced the run; reset with [align].
+    var marginTop: Float = 0f
+    var marginBottom: Float = 0f
+
     fun flushText() {
         val nonEmpty = runs.filter { it.s.isNotEmpty() }
         if (nonEmpty.isNotEmpty() && nonEmpty.any { it.s.isNotBlank() }) {
-            nodes.add(TextNode(mergeRuns(nonEmpty, hierarchicalTags), align))
+            nodes.add(TextNode(mergeRuns(nonEmpty, hierarchicalTags), align, marginTop, marginBottom))
         }
         runs.clear()
     }
@@ -212,6 +218,7 @@ private fun walk(
     styles: Set<String>,
     hidden: CssHidden,
     layout: CssTextAlign,
+    margins: CssMargins,
     inheritedAlign: BlockAlign,
 ) {
     val tag = el.tag
@@ -231,9 +238,21 @@ private fun walk(
         return
     }
 
-    // Feature 2: this element's text-align (inline style wins over class CSS),
-    // else inherit the enclosing block's alignment. Feature 1: a flex-row class.
-    val elAlign = inlineTextAlign(el) ?: layout.alignForClasses(classes) ?: inheritedAlign
+    // Fix D: this element's own vertical margins (em) from its class CSS.
+    val marginTop = margins.topEmForClasses(classes)
+    val marginBottom = margins.bottomEmForClasses(classes)
+
+    // Feature 2 / Fix B: this element's effective PLACEMENT alignment. An
+    // inline-block's own text-align governs only its internal content, NOT its
+    // placement — placement follows the parent (CSS shrink-to-fit + inline
+    // centering). So for an inline-block we ignore its own text-align and keep the
+    // inherited placement; otherwise the element's own text-align (inline style
+    // wins over class CSS) applies, else inherit the enclosing block's alignment.
+    val elAlign = if (isInlineBlock(el, layout, classes)) {
+        inheritedAlign
+    } else {
+        inlineTextAlign(el) ?: layout.alignForClasses(classes) ?: inheritedAlign
+    }
 
     if (tag in UNSUPPORTED) {
         ctx.flushText()
@@ -254,7 +273,7 @@ private fun walk(
 
     if (tag == "hr") {
         ctx.flushText()
-        ctx.nodes.add(RuleNode)
+        ctx.nodes.add(RuleNode(marginTop = marginTop, marginBottom = marginBottom))
         el.tail?.let { ctx.addRun(cleanWs(it), styles) }
         return
     }
@@ -286,7 +305,9 @@ private fun walk(
 
     // Feature 1: a flex-row element compiles its ELEMENT children as row cells,
     // under strict guardrails, else falls through to vertical linearization.
-    if (layout.isFlexRow(classes) && tryCompileFlexRow(el, ctx, hidden, layout, elAlign)) {
+    if (layout.isFlexRow(classes) &&
+        tryCompileFlexRow(el, ctx, hidden, layout, margins, elAlign, marginTop, marginBottom)
+    ) {
         el.tail?.let { ctx.addRun(cleanWs(it), styles) }
         return
     }
@@ -296,17 +317,21 @@ private fun walk(
     if (isBlock) {
         ctx.flushText()
         ctx.align = elAlign
+        ctx.marginTop = marginTop
+        ctx.marginBottom = marginBottom
         if (tag == "li") ctx.addRun("• ", emptySet())
     }
 
     el.text?.let { ctx.addRun(cleanWs(it), childStyles) }
     for (child in el.children) {
-        walk(child, ctx, childStyles, hidden, layout, elAlign)
+        walk(child, ctx, childStyles, hidden, layout, margins, elAlign)
     }
 
     if (isBlock) {
         ctx.flushText()
         ctx.align = inheritedAlign
+        ctx.marginTop = 0f
+        ctx.marginBottom = 0f
     }
     el.tail?.let { ctx.addRun(cleanWs(it), styles) }
 }
@@ -328,7 +353,10 @@ private fun tryCompileFlexRow(
     ctx: Ctx,
     hidden: CssHidden,
     layout: CssTextAlign,
+    margins: CssMargins,
     rowAlign: BlockAlign,
+    rowMarginTop: Float,
+    rowMarginBottom: Float,
 ): Boolean {
     val kids = el.children.filter { it.tag != null }
     if (kids.size < 2 || kids.size > 4) return false
@@ -338,26 +366,54 @@ private fun tryCompileFlexRow(
     if (el.children.any { !pyStrip(it.tail ?: "").isEmpty() }) return false
 
     val last = kids.size - 1
+    // Fix A: when EVERY child carries an explicit bare `flex: <n>` (via its own
+    // class CSS), weight each cell by that number (flex-basis-0 semantics) so a
+    // `.25 / 1 / .25` header lays out with equal corners and a truly-centred
+    // middle. Otherwise fall back to the positional default (corners wrap-content,
+    // middle weight 1).
+    val childFlex = kids.map { layout.flexForClasses(pySplit(it.attr("class") ?: "")) }
+    val allExplicit = childFlex.all { it != null }
     val cells = kids.mapIndexed { i, child ->
-        val align = when (i) {
+        // The cell's own text-align (its class CSS) wins; else the positional
+        // default (first START, last END, middle CENTER).
+        val classes = pySplit(child.attr("class") ?: "")
+        val align = layout.alignForClasses(classes) ?: when (i) {
             0 -> BlockAlign.START
             last -> BlockAlign.END
             else -> BlockAlign.CENTER
         }
-        val weight = if (i == 0 || i == last) null else 1f
+        val weight = if (allExplicit) childFlex[i] else if (i == 0 || i == last) null else 1f
         val cellCtx = Ctx(ctx.side, ctx.hierarchicalTags)
         cellCtx.align = align
-        walk(child, cellCtx, emptySet(), hidden, layout, align)
+        walk(child, cellCtx, emptySet(), hidden, layout, margins, align)
         cellCtx.flushText()
         RowCell(nodes = cellCtx.nodes.toList(), weight = weight, align = align)
     }
     ctx.flushText()
-    ctx.nodes.add(RowNode(cells))
+    ctx.nodes.add(RowNode(cells, marginTop = rowMarginTop, marginBottom = rowMarginBottom))
     return true
 }
 
 private fun isInlineHidden(el: Element): Boolean =
     CssHidden.declaresHidden(el.attr("style") ?: "")
+
+/**
+ * True iff [el] is `display: inline-block` via its class CSS or its inline
+ * `style="display: inline-block"`. Such an element's own text-align governs only
+ * its internal content; its placement follows the parent (Fix B).
+ */
+private fun isInlineBlock(el: Element, layout: CssTextAlign, classes: List<String>): Boolean {
+    if (layout.isInlineBlock(classes)) return true
+    val style = el.attr("style") ?: return false
+    if (!style.contains("display", ignoreCase = true)) return false
+    for (decl in style.split(";")) {
+        val idx = decl.indexOf(':')
+        if (idx < 0) continue
+        if (decl.substring(0, idx).trim().lowercase() != "display") continue
+        if (decl.substring(idx + 1).trim().lowercase() == "inline-block") return true
+    }
+    return false
+}
 
 /** The `text-align` from an element's inline `style="…"`, mapped to [BlockAlign], or null. */
 private fun inlineTextAlign(el: Element): BlockAlign? {

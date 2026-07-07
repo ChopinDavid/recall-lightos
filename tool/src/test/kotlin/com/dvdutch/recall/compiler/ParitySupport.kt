@@ -56,7 +56,7 @@ fun nodesToJson(nodes: List<RenderNode>): JsonArray = buildJsonArray {
                     node.w?.let { put("w", JsonPrimitive(it)) }
                     node.h?.let { put("h", JsonPrimitive(it)) }
                 }
-                RuleNode -> buildJsonObject { put("t", JsonPrimitive("rule")) }
+                is RuleNode -> buildJsonObject { put("t", JsonPrimitive("rule")) }
                 is RowNode ->
                     // RowNodes are a phone-side layout enrichment (Feature 1) with no
                     // Python-reference counterpart, so they are intentionally not parity
