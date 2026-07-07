@@ -489,7 +489,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.CardBody(
 }
 
 /**
- * A tappable "🔊 REPLAY AUDIO" row shown only when the current side has audio; a tap
+ * A tappable "▶︎ REPLAY AUDIO" row shown only when the current side has audio; a tap
  * replays that side's list from the start. Monochrome LightText in the design system,
  * sitting just above the bottom bar / grade buttons — discoverable but not intrusive.
  */
@@ -503,7 +503,7 @@ private fun ReplayAudioRow(onReplay: () -> Unit) {
         horizontalArrangement = Arrangement.Center,
     ) {
         LightText(
-            text = "🔊 REPLAY AUDIO",
+            text = "▶︎ REPLAY AUDIO",
             variant = LightTextVariant.Fine,
             lighten = true,
             align = TextAlign.Center,
