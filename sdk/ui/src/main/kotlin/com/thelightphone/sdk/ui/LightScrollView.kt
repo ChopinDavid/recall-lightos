@@ -26,8 +26,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -97,7 +99,15 @@ fun LightScrollView(
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
     val scrollOffsetPx by remember { derivedStateOf { scrollState.value.toFloat() } }
-    val showScrollBar = scrollState.maxValue > 0
+    val overflowing = scrollState.maxValue > 0
+    val showScrollBar by produceState(initialValue = false, overflowing) {
+        if (!overflowing) {
+            value = false
+        } else {
+            withFrameNanos { }
+            if (scrollState.maxValue > 0) value = true
+        }
+    }
     val contentPaddingEnd = scrollBarGutterUnits(scrollBarPosition)
 
     Box(modifier = modifier) {
