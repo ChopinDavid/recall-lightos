@@ -454,6 +454,9 @@ private fun androidx.compose.foundation.layout.ColumnScope.CardBody(
             nodes = if (showBack) card.back else card.front,
             mediaLoader = mediaLoader,
             masksHidden = masksHidden,
+            // Inline per-sound replay: a tap on an audio glyph (track N) plays THAT track only,
+            // resolved through the same play seam auto-play/replay use (never a whole-side play).
+            onPlayTrack = { track -> onReplay(trackFilenames(sideAudio, track)) },
             // The answer boundary is the first back node past the {{FrontSide}} prefix, i.e.
             // index == the number of front nodes (the <hr> rule if the template has one, else
             // the first answer node). Only meaningful on the back; −1 on the front never fires.
@@ -465,7 +468,11 @@ private fun androidx.compose.foundation.layout.ColumnScope.CardBody(
             },
         )
     }
-    if (sideHasAudio(card, showBack)) {
+    // The AGGREGATE bottom "REPLAY AUDIO" row is now a DEFENSIVE fallback only: it appears
+    // solely when some av tag was positionless (the engine's aggregate marker). With inline
+    // per-sound glyphs (AnkiDroid parity) every tag normally has an inline home, so this row
+    // is absent and each sound is replayed from its own glyph.
+    if (sideNeedsAggregateReplay(card, showBack)) {
         ReplayAudioRow(onReplay = { onReplay(sideAudio) })
     }
     // The "Toggle Masks" peek control (AnkiDroid parity) — only on an occlusion side. Tapping

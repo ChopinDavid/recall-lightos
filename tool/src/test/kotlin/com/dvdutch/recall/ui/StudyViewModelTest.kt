@@ -335,6 +335,25 @@ class StudyViewModelTest {
         }
     }
 
+    // Inline per-sound replay: tapping ONE glyph plays exactly that track's file (the play
+    // seam StudyScreen drives via trackFilenames), never the whole side's list.
+    @Test
+    fun `playing a single track starts only that track`() {
+        withVm { vm, env ->
+            env.api.startScript.add(StudyStartResponse(counts(new = 1), SyncInfo(true, "ok")))
+            env.api.queueScript.add(QueueResponse(listOf(card(1)), counts(new = 1)))
+            vm.begin()
+            waitFor { vm.state.value is StudyState.ShowingFront }
+
+            // The side has two sounds; the sentence glyph (track 1) resolves to sentence.mp3.
+            val side = listOf("word.mp3", "sentence.mp3")
+            vm.playAudio(trackFilenames(side, 1))
+
+            waitFor(message = { "sentence started" }) { env.recorder.starts.any { it.endsWith("sentence.mp3") } }
+            assertTrue(env.recorder.starts.none { it.endsWith("word.mp3") }, "word track must NOT play")
+        }
+    }
+
     // finishSession finishes the machine (studyFinish) and releases audio; it is idempotent
     // so a hide + back can't double-finish.
     @Test

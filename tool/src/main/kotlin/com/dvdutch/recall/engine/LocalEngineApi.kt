@@ -14,6 +14,7 @@ import com.dvdutch.recall.api.Deck
 import com.dvdutch.recall.api.OcclusionNode
 import com.dvdutch.recall.api.QueueResponse
 import com.dvdutch.recall.api.RenderNode
+import com.dvdutch.recall.api.RowNode
 import com.dvdutch.recall.api.TextNode
 import com.dvdutch.recall.api.TextRun
 import com.dvdutch.recall.api.StudyStartResponse
@@ -341,16 +342,22 @@ class LocalEngineApi(
      *   - `extractAvTags(html, isQuestion).avTagsList` yields the ordered filenames
      *     ([soundFilenames]) that populate `front_audio`/`back_audio`.
      *
-     * Why NOT use `extractAvTags(...).text` for the text too: verified on the real
-     * backend, `.text` rewrites `[sound:x]` into an `[anki:play:q:N]` marker that it
-     * does NOT then remove, so it would leak that marker into the compiled output.
-     * `stripAvTags` removes the reference outright, so it stays the source of the
-     * compiled text. Both are backend calls and MUST run on [EngineHolder.lane].
+     * Inline per-sound replay (AnkiDroid parity): rather than `stripAvTags` (which
+     * removes every `[sound:x]` reference and loses its position), we compile the
+     * `extractAvTags(...).text` — which rewrites each reference IN PLACE into an
+     * `[anki:play:q|a:N]` marker at its authored spot. [compileHtml] turns each marker
+     * into an inline audio run (a [com.dvdutch.recall.api.TextRun] carrying track index
+     * N) so the UI can draw a tappable speaker glyph AT that position and play exactly
+     * that track. The marker text never leaks: the compiler consumes it.
      *
-     * The `unsupported/audio` marker node is still emitted here (a side-has-audio
-     * signal), but Task 3 retired its `▢ [audio]` UI: `NodeComposables` now drops the
-     * `audio` kind, and StudyScreen renders a real replay affordance driven by these
-     * `front_audio`/`back_audio` filenames instead.
+     * `.avTagsList` still yields the ordered filenames ([soundFilenames]) that populate
+     * `front_audio`/`back_audio` — the index → filename map a track N resolves through.
+     * Both are backend calls and MUST run on [EngineHolder.lane].
+     *
+     * Aggregate fallback: an `unsupported/audio` node (the old bottom "REPLAY AUDIO"
+     * signal) is appended ONLY when some av tag did NOT land an inline position —
+     * defensive, since with `.text` every marker is inline. When every tag is positioned
+     * inline (the norm) no aggregate node is emitted, so StudyScreen drops the bottom row.
      */
     private fun compileSide(
         backend: Backend,
@@ -366,13 +373,39 @@ class LocalEngineApi(
         // untouched. Cloze type markers ([[type:cloze:Field]]) are stripped the same way —
         // v1 offers no cloze type-answer affordance (documented out of scope).
         val markerFree = TypeAnswerMarker.strip(html)
-        val stripped = backend.stripAvTags(markerFree)
-        val nodes = compileHtml(stripped, side, css, tags).toMutableList()
         val audio = soundFilenames(backend.extractAvTags(markerFree, isQuestion).avTagsList)
-        if (stripped != markerFree) {
+        // Compile the MARKER-BEARING text (positions each [anki:play] inline), not the
+        // stripped text — so the speaker glyphs land at their template spots.
+        val markerText = backend.extractAvTags(markerFree, isQuestion).text
+        val nodes = compileHtml(markerText, side, css, tags).toMutableList()
+        // Which track indices actually got an inline home — recursively, since an audio run
+        // can live inside a RowNode cell (the RC5000 header flex-row places the word audio
+        // there). Scanning only the top level would miss those and wrongly flag them positionless.
+        val positioned = positionedAudioTracks(nodes)
+        // Defensive: if any av tag is positionless, keep the aggregate bottom row for the side.
+        if (audio.indices.any { it !in positioned }) {
             nodes.add(UnsupportedNode("audio"))
         }
         return CompiledSide(nodes, audio)
+    }
+
+    /**
+     * The set of audio track indices that got an INLINE position anywhere in [nodes] —
+     * descending into [RowNode] cells so a marker placed inside the header flex-row (as
+     * RC5000's word audio is) counts as positioned. Used to decide whether the defensive
+     * aggregate "REPLAY AUDIO" row is still needed (only when some track is positionless).
+     */
+    private fun positionedAudioTracks(nodes: List<RenderNode>): Set<Int> {
+        val out = mutableSetOf<Int>()
+        fun visit(list: List<RenderNode>) {
+            for (n in list) when (n) {
+                is TextNode -> n.runs.forEach { it.audioTrack?.let(out::add) }
+                is RowNode -> n.cells.forEach { visit(it.nodes) }
+                else -> {}
+            }
+        }
+        visit(nodes)
+        return out
     }
 
     /**

@@ -72,7 +72,37 @@ private val STYLE_TAGS = mapOf(
     "small" to "small", "sub" to "small", "sup" to "small",
 )
 
-private class Run(val s: String, val styles: Set<String>)
+// A styled text run, OR (when [audioTrack] != null) an inline audio marker run: empty
+// visible text, carrying the 0-based index into the side's audio list. Audio runs never
+// merge with text runs (they carry a non-null token), so they keep their exact position.
+private class Run(val s: String, val styles: Set<String>, val audioTrack: Int? = null)
+
+/**
+ * Matches the backend's inline play markers `[anki:play:q:N]` / `[anki:play:a:N]`
+ * (from `extractAvTags(...).text`), capturing the 0-based track index N. Only this
+ * exact shape is treated as audio; any other `[x:y:z]` bracket text is left intact.
+ */
+private val AUDIO_MARKER = Regex("""\[anki:play:[qa]:(\d+)]""")
+
+/**
+ * Splits [text] into alternating visible-text and inline-audio [Run]s at each
+ * `[anki:play:q|a:N]` marker, preserving the surrounding text byte-for-byte. A text
+ * without any marker yields a single text [Run] (the common, hot path). Each marker
+ * becomes an audio [Run] carrying its captured track index; the marker itself never
+ * survives as literal text.
+ */
+private fun splitAudioMarkers(text: String, styles: Set<String>): List<Run> {
+    if (!text.contains("[anki:play:")) return listOf(Run(text, styles))
+    val out = mutableListOf<Run>()
+    var last = 0
+    for (m in AUDIO_MARKER.findAll(text)) {
+        if (m.range.first > last) out.add(Run(text.substring(last, m.range.first), styles))
+        out.add(Run("", styles, audioTrack = m.groupValues[1].toInt()))
+        last = m.range.last + 1
+    }
+    if (last < text.length) out.add(Run(text.substring(last), styles))
+    return out
+}
 
 private class Ctx(val side: String, val hierarchicalTags: Set<String> = emptySet()) {
     val nodes = mutableListOf<RenderNode>()
@@ -93,16 +123,20 @@ private class Ctx(val side: String, val hierarchicalTags: Set<String> = emptySet
     var scale: Float = 1f
 
     fun flushText() {
-        val nonEmpty = runs.filter { it.s.isNotEmpty() }
-        if (nonEmpty.isNotEmpty() && nonEmpty.any { it.s.isNotBlank() }) {
-            nodes.add(TextNode(mergeRuns(nonEmpty, hierarchicalTags), align, marginTop, marginBottom, scale))
+        // Audio marker runs are empty-text but must survive (they position an inline replay
+        // glyph), so a block is emitted when it has any non-blank text OR any audio run.
+        val kept = runs.filter { it.s.isNotEmpty() || it.audioTrack != null }
+        if (kept.isNotEmpty() && kept.any { it.s.isNotBlank() || it.audioTrack != null }) {
+            nodes.add(TextNode(mergeRuns(kept, hierarchicalTags), align, marginTop, marginBottom, scale))
         }
         runs.clear()
     }
 
     fun addRun(text: String, styles: Set<String>) {
         if (text.isEmpty()) return
-        runs.add(Run(text, styles))
+        // Split out any inline `[anki:play:q|a:N]` markers into audio runs at their position;
+        // marker-free text (the common case) stays one run.
+        runs.addAll(splitAudioMarkers(text, styles))
     }
 }
 
@@ -139,13 +173,16 @@ private fun mergeRuns(runs: List<Run>, tags: Set<String> = emptySet()): List<Tex
     val merged = mutableListOf<Run>()
     for (r in runs) {
         val last = merged.lastOrNull()
-        if (last != null && last.styles == r.styles) {
+        // Never merge into/across an audio marker run — it must keep its exact position and
+        // its distinct track index. Only merge two plain text runs with identical styles.
+        if (last != null && last.audioTrack == null && r.audioTrack == null && last.styles == r.styles) {
             merged[merged.size - 1] = Run(last.s + r.s, last.styles)
         } else {
             merged.add(r)
         }
     }
     return merged.map { run ->
+        if (run.audioTrack != null) return@map TextRun(s = "", audioTrack = run.audioTrack)
         TextRun(
             s = mapTagLeaves(run.s, tags),
             b = "b" in run.styles,
