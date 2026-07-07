@@ -21,7 +21,12 @@ import com.dvdutch.recall.api.UnsupportedNode
  * the `src` attribute as authored) — NOT a `/v1/media/...` URL. This is the new
  * phone wire contract.
  */
-fun compileHtml(html: String, side: String, css: String = ""): List<RenderNode> {
+fun compileHtml(
+    html: String,
+    side: String,
+    css: String = "",
+    tags: List<String> = emptyList(),
+): List<RenderNode> {
     if (html.isBlank()) return emptyList()
     val hidden = CssHidden.parse(css)
     // The tokenizer never raises on any input; libxml2's `fragment_fromstring`
@@ -29,7 +34,9 @@ fun compileHtml(html: String, side: String, css: String = ""): List<RenderNode> 
     // therefore unreachable in practice, but we keep the never-empty contract:
     // an empty parse simply yields no nodes.
     val root = HtmlTokenizer.parse(html)
-    val ctx = Ctx(side)
+    // Only tags that actually carry a `::` can produce a leaf, so pre-filter to
+    // the hierarchical ones. Empty (the common case) disables the mapping wholly.
+    val ctx = Ctx(side, tags.filter { it.contains("::") }.toSet())
     walk(root, ctx, emptySet(), hidden)
     ctx.flushText()
     return ctx.nodes
@@ -54,14 +61,14 @@ private val STYLE_TAGS = mapOf(
 
 private class Run(val s: String, val styles: Set<String>)
 
-private class Ctx(val side: String) {
+private class Ctx(val side: String, val hierarchicalTags: Set<String> = emptySet()) {
     val nodes = mutableListOf<RenderNode>()
     private val runs = mutableListOf<Run>()
 
     fun flushText() {
         val nonEmpty = runs.filter { it.s.isNotEmpty() }
         if (nonEmpty.isNotEmpty() && nonEmpty.any { it.s.isNotBlank() }) {
-            nodes.add(TextNode(mergeRuns(nonEmpty)))
+            nodes.add(TextNode(mergeRuns(nonEmpty, hierarchicalTags)))
         }
         runs.clear()
     }
@@ -72,7 +79,36 @@ private class Ctx(val side: String) {
     }
 }
 
-private fun mergeRuns(runs: List<Run>): List<TextRun> {
+/**
+ * Rewrites whitespace-delimited tokens that EXACTLY equal one of the note's
+ * hierarchical [tags] (an `a::b::c` tag) to their leaf segment (`c`), preserving
+ * the original whitespace between tokens. Exact-match only: prose or cloze text
+ * that merely contains `::` (and isn't a note tag) is left byte-for-byte intact.
+ * Matches AnkiDroid's prettify-tags `<script>`, which shows the leaf of `{{Tags}}`.
+ */
+private fun mapTagLeaves(s: String, tags: Set<String>): String {
+    if (tags.isEmpty() || !s.contains("::")) return s
+    val sb = StringBuilder()
+    val token = StringBuilder()
+    fun flushToken() {
+        if (token.isEmpty()) return
+        val t = token.toString()
+        sb.append(if (t in tags) t.substringAfterLast("::") else t)
+        token.setLength(0)
+    }
+    for (c in s) {
+        if (c.isPyWhitespace()) {
+            flushToken()
+            sb.append(c)
+        } else {
+            token.append(c)
+        }
+    }
+    flushToken()
+    return sb.toString()
+}
+
+private fun mergeRuns(runs: List<Run>, tags: Set<String> = emptySet()): List<TextRun> {
     val merged = mutableListOf<Run>()
     for (r in runs) {
         val last = merged.lastOrNull()
@@ -84,7 +120,7 @@ private fun mergeRuns(runs: List<Run>): List<TextRun> {
     }
     return merged.map { run ->
         TextRun(
-            s = run.s,
+            s = mapTagLeaves(run.s, tags),
             b = "b" in run.styles,
             i = "i" in run.styles,
             small = "small" in run.styles,
