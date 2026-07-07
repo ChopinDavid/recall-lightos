@@ -1,8 +1,11 @@
 package com.dvdutch.recall.compiler
 
+import com.dvdutch.recall.api.BlockAlign
 import com.dvdutch.recall.api.ClozeNode
 import com.dvdutch.recall.api.ImageNode
 import com.dvdutch.recall.api.RenderNode
+import com.dvdutch.recall.api.RowCell
+import com.dvdutch.recall.api.RowNode
 import com.dvdutch.recall.api.RuleNode
 import com.dvdutch.recall.api.TextNode
 import com.dvdutch.recall.api.TextRun
@@ -29,6 +32,7 @@ fun compileHtml(
 ): List<RenderNode> {
     if (html.isBlank()) return emptyList()
     val hidden = CssHidden.parse(css)
+    val layout = CssTextAlign.parse(css)
     // The tokenizer never raises on any input; libxml2's `fragment_fromstring`
     // ParserError/ValueError fallback (flatten to a single text node) is
     // therefore unreachable in practice, but we keep the never-empty contract:
@@ -37,7 +41,7 @@ fun compileHtml(
     // Only tags that actually carry a `::` can produce a leaf, so pre-filter to
     // the hierarchical ones. Empty (the common case) disables the mapping wholly.
     val ctx = Ctx(side, tags.filter { it.contains("::") }.toSet())
-    walk(root, ctx, emptySet(), hidden)
+    walk(root, ctx, emptySet(), hidden, layout, BlockAlign.START)
     ctx.flushText()
     return ctx.nodes
 }
@@ -65,10 +69,15 @@ private class Ctx(val side: String, val hierarchicalTags: Set<String> = emptySet
     val nodes = mutableListOf<RenderNode>()
     private val runs = mutableListOf<Run>()
 
+    // The block alignment in effect for text flushed right now (Feature 2). Set
+    // by [walk] on entering an aligned block and restored on leaving, so a flush
+    // stamps the alignment of the block that produced the run.
+    var align: BlockAlign = BlockAlign.START
+
     fun flushText() {
         val nonEmpty = runs.filter { it.s.isNotEmpty() }
         if (nonEmpty.isNotEmpty() && nonEmpty.any { it.s.isNotBlank() }) {
-            nodes.add(TextNode(mergeRuns(nonEmpty, hierarchicalTags)))
+            nodes.add(TextNode(mergeRuns(nonEmpty, hierarchicalTags), align))
         }
         runs.clear()
     }
@@ -197,7 +206,14 @@ private fun pyStrip(s: String): String {
     return s.substring(start, end)
 }
 
-private fun walk(el: Element, ctx: Ctx, styles: Set<String>, hidden: CssHidden) {
+private fun walk(
+    el: Element,
+    ctx: Ctx,
+    styles: Set<String>,
+    hidden: CssHidden,
+    layout: CssTextAlign,
+    inheritedAlign: BlockAlign,
+) {
     val tag = el.tag
 
     if (tag in DROPPED) return
@@ -214,6 +230,10 @@ private fun walk(el: Element, ctx: Ctx, styles: Set<String>, hidden: CssHidden) 
         el.tail?.let { ctx.addRun(cleanWs(it), styles) }
         return
     }
+
+    // Feature 2: this element's text-align (inline style wins over class CSS),
+    // else inherit the enclosing block's alignment. Feature 1: a flex-row class.
+    val elAlign = inlineTextAlign(el) ?: layout.alignForClasses(classes) ?: inheritedAlign
 
     if (tag in UNSUPPORTED) {
         ctx.flushText()
@@ -264,24 +284,98 @@ private fun walk(el: Element, ctx: Ctx, styles: Set<String>, hidden: CssHidden) 
         return
     }
 
+    // Feature 1: a flex-row element compiles its ELEMENT children as row cells,
+    // under strict guardrails, else falls through to vertical linearization.
+    if (layout.isFlexRow(classes) && tryCompileFlexRow(el, ctx, hidden, layout, elAlign)) {
+        el.tail?.let { ctx.addRun(cleanWs(it), styles) }
+        return
+    }
+
     val childStyles = STYLE_TAGS[tag]?.let { styles + it } ?: styles
     val isBlock = tag in BLOCK
     if (isBlock) {
         ctx.flushText()
+        ctx.align = elAlign
         if (tag == "li") ctx.addRun("• ", emptySet())
     }
 
     el.text?.let { ctx.addRun(cleanWs(it), childStyles) }
     for (child in el.children) {
-        walk(child, ctx, childStyles, hidden)
+        walk(child, ctx, childStyles, hidden, layout, elAlign)
     }
 
-    if (isBlock) ctx.flushText()
+    if (isBlock) {
+        ctx.flushText()
+        ctx.align = inheritedAlign
+    }
     el.tail?.let { ctx.addRun(cleanWs(it), styles) }
+}
+
+/**
+ * Compile [el]'s ELEMENT children as cells of a [RowNode], appending it to
+ * [ctx]. Returns false (leaving [ctx] untouched) when the bounded guardrails
+ * reject the element, so the caller falls back to vertical linearization:
+ *   - 2–4 element children only;
+ *   - no non-whitespace loose text (element `text` or child `tail`).
+ * `flex-direction: column` is already excluded upstream by [CssTextAlign].
+ *
+ * Cell roles by position: first START/wrap, last END/wrap, middle(s) CENTER/
+ * weight 1. Each cell compiles in its own sub-context (so a divider `hr` becomes
+ * a [RuleNode] spanning that cell), inheriting [rowAlign] as its text-align base.
+ */
+private fun tryCompileFlexRow(
+    el: Element,
+    ctx: Ctx,
+    hidden: CssHidden,
+    layout: CssTextAlign,
+    rowAlign: BlockAlign,
+): Boolean {
+    val kids = el.children.filter { it.tag != null }
+    if (kids.size < 2 || kids.size > 4) return false
+    // Reject any non-whitespace loose text: the element's own text, or the tail
+    // that trails each child before the next sibling.
+    if (!pyStrip(el.text ?: "").isEmpty()) return false
+    if (el.children.any { !pyStrip(it.tail ?: "").isEmpty() }) return false
+
+    val last = kids.size - 1
+    val cells = kids.mapIndexed { i, child ->
+        val align = when (i) {
+            0 -> BlockAlign.START
+            last -> BlockAlign.END
+            else -> BlockAlign.CENTER
+        }
+        val weight = if (i == 0 || i == last) null else 1f
+        val cellCtx = Ctx(ctx.side, ctx.hierarchicalTags)
+        cellCtx.align = align
+        walk(child, cellCtx, emptySet(), hidden, layout, align)
+        cellCtx.flushText()
+        RowCell(nodes = cellCtx.nodes.toList(), weight = weight, align = align)
+    }
+    ctx.flushText()
+    ctx.nodes.add(RowNode(cells))
+    return true
 }
 
 private fun isInlineHidden(el: Element): Boolean =
     CssHidden.declaresHidden(el.attr("style") ?: "")
+
+/** The `text-align` from an element's inline `style="…"`, mapped to [BlockAlign], or null. */
+private fun inlineTextAlign(el: Element): BlockAlign? {
+    val style = el.attr("style") ?: return null
+    if (!style.contains("text-align", ignoreCase = true)) return null
+    var result: BlockAlign? = null
+    for (decl in style.split(";")) {
+        val idx = decl.indexOf(':')
+        if (idx < 0) continue
+        if (decl.substring(0, idx).trim().lowercase() != "text-align") continue
+        when (decl.substring(idx + 1).trim().lowercase()) {
+            "left", "start", "justify" -> result = BlockAlign.START
+            "center" -> result = BlockAlign.CENTER
+            "right", "end" -> result = BlockAlign.END
+        }
+    }
+    return result
+}
 
 // ASCII-only digit check for img width/height, INTENTIONALLY narrower than
 // Python's str.isdigit(). str.isdigit() also accepts Unicode digits (e.g.

@@ -2,11 +2,15 @@ package com.dvdutch.recall.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.AnnotatedString
@@ -15,15 +19,19 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
+import com.dvdutch.recall.api.BlockAlign
 import com.dvdutch.recall.api.ClozeNode
 import com.dvdutch.recall.api.ImageNode
 import com.dvdutch.recall.api.OcclusionNode
 import com.dvdutch.recall.api.RenderNode
+import com.dvdutch.recall.api.RowCell
+import com.dvdutch.recall.api.RowNode
 import com.dvdutch.recall.api.RuleNode
 import com.dvdutch.recall.api.TextNode
 import com.dvdutch.recall.api.TextRun
@@ -103,13 +111,25 @@ private fun clozeToAnnotatedString(node: ClozeNode): AnnotatedString = buildAnno
  * only accepts a plain [String].
  */
 @Composable
-private fun LightAnnotatedCopy(annotated: AnnotatedString, modifier: Modifier = Modifier) {
+private fun LightAnnotatedCopy(
+    annotated: AnnotatedString,
+    modifier: Modifier = Modifier,
+    align: BlockAlign = BlockAlign.START,
+) {
     Text(
         text = annotated,
         modifier = modifier,
         color = LightThemeTokens.colors.content,
         style = LightThemeTokens.typography.copy,
+        textAlign = align.toTextAlign(),
     )
+}
+
+/** Maps the wire [BlockAlign] to a Compose [TextAlign]. */
+private fun BlockAlign.toTextAlign(): TextAlign = when (this) {
+    BlockAlign.START -> TextAlign.Start
+    BlockAlign.CENTER -> TextAlign.Center
+    BlockAlign.END -> TextAlign.End
 }
 
 /**
@@ -125,19 +145,34 @@ fun RenderNodeView(
     mediaLoader: MediaLoader?,
     modifier: Modifier = Modifier,
     masksHidden: Boolean = false,
+    // Whether a block node may claim the full available width. True everywhere
+    // except inside a [RowNode]'s WRAP-content (corner) cell, where a
+    // `fillMaxWidth` would starve the weighted centre cell of width. In that case
+    // the enclosing cell's `horizontalAlignment` already places the content.
+    expandWidth: Boolean = true,
 ) {
     when (node) {
-        is TextNode -> LightAnnotatedCopy(textNodeToAnnotatedString(node), modifier = modifier)
+        is TextNode -> LightAnnotatedCopy(
+            textNodeToAnnotatedString(node),
+            // A non-start text-align only bites when the Text spans the full width.
+            modifier = if (node.align == BlockAlign.START || !expandWidth) {
+                modifier
+            } else {
+                modifier.fillMaxWidth()
+            },
+            align = node.align,
+        )
 
         is ClozeNode -> LightAnnotatedCopy(clozeToAnnotatedString(node), modifier = modifier)
+
+        is RowNode -> RenderRow(node = node, mediaLoader = mediaLoader, modifier = modifier)
 
         is ImageNode ->
             if (mediaLoader != null) MediaImage(node = node, loader = mediaLoader)
             else ImageNodePlaceholder(node)
 
         RuleNode -> Box(
-            modifier = modifier
-                .fillMaxWidth()
+            modifier = (if (expandWidth) modifier.fillMaxWidth() else modifier)
                 .padding(vertical = 0.75f.gridUnitsAsDp())
                 .height(1.dp)
                 .background(LightThemeTokens.colors.contentSecondary),
@@ -195,6 +230,47 @@ fun RenderNodeColumn(
             modifier = dividerModifier,
             masksHidden = masksHidden,
         )
+    }
+}
+
+/**
+ * Renders a [RowNode] as a horizontal [Row] of cells, all TOP-aligned vertically
+ * (so a short corner label flanks the FIRST line of a tall centre column). A cell
+ * with a `null` weight wraps its content (the flanking first/last corners); a
+ * weighted cell takes its share of the leftover width (the centre column). Each
+ * cell stacks its own nodes vertically, horizontally placed per [RowCell.align].
+ */
+@Composable
+private fun RenderRow(node: RowNode, mediaLoader: MediaLoader?, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+    ) {
+        for (cell in node.cells) {
+            RenderRowCell(cell = cell, mediaLoader = mediaLoader)
+        }
+    }
+}
+
+@Composable
+private fun RowScope.RenderRowCell(cell: RowCell, mediaLoader: MediaLoader?) {
+    // A weighted (centre) cell is width-bounded, so its blocks may fill it; a
+    // wrap-content (corner) cell must NOT let a block fill max width or it would
+    // starve the weighted sibling. The Column's horizontalAlignment still places
+    // corner content per the cell's role.
+    val weighted = cell.weight != null
+    val cellModifier = if (weighted) Modifier.weight(cell.weight!!) else Modifier
+    Column(
+        modifier = cellModifier,
+        horizontalAlignment = when (cell.align) {
+            BlockAlign.START -> Alignment.Start
+            BlockAlign.CENTER -> Alignment.CenterHorizontally
+            BlockAlign.END -> Alignment.End
+        },
+    ) {
+        for (child in cell.nodes) {
+            RenderNodeView(node = child, mediaLoader = mediaLoader, expandWidth = weighted)
+        }
     }
 }
 
