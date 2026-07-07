@@ -73,6 +73,13 @@ data class TextRun(
     // parser can flag a "missed" run monochrome-safely. Default false keeps the wire
     // contract and the parity corpus unaffected.
     val underline: Boolean = false,
+    // Inline per-sound replay (AnkiDroid parity). When non-null this run is NOT visible
+    // text but an INLINE AUDIO MARKER sitting at its template position: [audioTrack] is
+    // the 0-based index into the card side's ordered audio list (front_audio/back_audio),
+    // so a tap plays exactly that track. The engine emits it from the backend's
+    // `[anki:play:q|a:N]` markers (see compileHtml); [s] is empty for an audio run. Additive
+    // with a null default, so the parity corpus and every non-audio card are unaffected.
+    val audioTrack: Int? = null,
 )
 
 /**

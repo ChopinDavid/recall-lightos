@@ -152,4 +152,20 @@ class AnnotatedStringMappingTest {
         assertEquals("", result.text)
         assertTrue(result.spanStyles.isEmpty())
     }
+
+    @Test
+    fun `an inline audio run appends an inline-content placeholder at its position`() {
+        // "он " then an audio glyph for track 0. The glyph is an inlineContent placeholder,
+        // so its alt text (🔊) sits right after the word, and the run is NOT plain text.
+        val result = textNodeToAnnotatedString(
+            TextNode(listOf(TextRun("он "), TextRun("", audioTrack = 0))),
+        )
+        assertTrue(result.text.startsWith("он "), "the word precedes the glyph: ${result.text}")
+        // Compose tags inlineContent placeholders with a string annotation carrying the id.
+        val ann = result.getStringAnnotations(0, result.length)
+        assertTrue(
+            ann.any { it.item == audioInlineId(0) },
+            "expected an inlineContent annotation for track 0, got ${ann.map { it.item }}",
+        )
+    }
 }

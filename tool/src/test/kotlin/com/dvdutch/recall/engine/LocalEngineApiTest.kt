@@ -339,18 +339,34 @@ class LocalEngineApiTest {
     }
 
     @Test
-    fun `queue appends an audio placeholder when the card has AV tags`() {
-        // [sound:x.mp3] on the front produces an av tag → audio UnsupportedNode.
+    fun `queue positions an inline audio run at the sound's template spot and drops the aggregate`() {
+        // [sound:x.mp3] on the front → an inline audio run (track 0) AT the marker position,
+        // with NO aggregate audio node (every av tag got an inline home).
         selectDeck(seedNote("Audio", "listen [sound:hello.mp3]", "back"))
         val q = runBlocking { api.queue(20) }
         val front = q.cards.first().front
-        assertTrue(
-            front.any { it is UnsupportedNode && it.kind == "audio" },
-            "expected an audio placeholder node, got $front",
-        )
-        // The [anki:play] marker must never reach the phone as literal text.
+        val audioRuns = front.filterIsInstance<TextNode>().flatMap { it.runs }.filter { it.audioTrack != null }
+        assertEquals(listOf(0), audioRuns.map { it.audioTrack }, "expected one inline audio run for track 0")
+        // The word survives before the glyph; the marker never leaks as literal text.
         val text = front.filterIsInstance<TextNode>().flatMap { it.runs }.joinToString("") { it.s }
+        assertTrue("listen" in text, "the word before the audio must survive, got: $text")
         assertTrue("anki:play" !in text && "sound:" !in text, "AV marker leaked: $text")
+        // No aggregate audio node once every av tag is positioned inline.
+        assertTrue(
+            front.none { it is UnsupportedNode && it.kind == "audio" },
+            "aggregate audio node must be dropped when all tags are inline, got $front",
+        )
+    }
+
+    @Test
+    fun `queue positions distinct inline audio runs per sound in template order`() {
+        // A word audio then a sentence audio, each at its own spot (track 0, track 1).
+        selectDeck(seedNote("MultiAudio", "он [sound:word.mp3] сон [sound:sentence.mp3]", "back"))
+        val card = runBlocking { api.queue(20) }.cards.first()
+        val tracks = card.front.filterIsInstance<TextNode>().flatMap { it.runs }.mapNotNull { it.audioTrack }
+        assertEquals(listOf(0, 1), tracks, "expected two inline audio runs in order, got $tracks")
+        // The ordered filename list still maps index → track for playback.
+        assertEquals(listOf("word.mp3", "sentence.mp3"), card.frontAudio)
     }
 
     @Test

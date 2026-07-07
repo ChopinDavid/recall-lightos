@@ -1,10 +1,14 @@
 package com.dvdutch.recall.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -14,6 +18,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -80,16 +86,27 @@ private const val AUDIO_NODE_KIND = "audio"
 /** Wire value of [ClozeNode.state] for a cloze that is still hidden (question side). */
 private const val CLOZE_STATE_HIDDEN = "hidden"
 
+/** The inlineContent id for the audio-replay glyph at track [track] within a text node. */
+internal fun audioInlineId(track: Int): String = "audio:$track"
+
 /**
  * Pure mapping from a [TextNode]'s runs to a styled [AnnotatedString].
  *
  * Each run's flags collapse into a single [SpanStyle] over that run's range;
- * unstyled runs contribute plain text with no span. Bidi-isolate control
- * characters embedded in a run's string (U+2068/U+2069) are part of the text and
- * pass through unmodified. This function is Compose-runtime-free and unit-tested.
+ * unstyled runs contribute plain text with no span. An inline AUDIO run
+ * ([TextRun.audioTrack] != null) contributes an [appendInlineContent] placeholder
+ * (keyed by [audioInlineId]) at its position — the tappable speaker glyph the caller
+ * supplies via the matching inlineContent map — so the glyph flows INLINE with the
+ * text it follows and wraps naturally. Bidi-isolate control characters embedded in a
+ * run's string (U+2068/U+2069) are part of the text and pass through unmodified. This
+ * function is Compose-runtime-free and unit-tested.
  */
 fun textNodeToAnnotatedString(node: TextNode): AnnotatedString = buildAnnotatedString {
     for (run in node.runs) {
+        if (run.audioTrack != null) {
+            appendInlineContent(audioInlineId(run.audioTrack), "🔊")
+            continue
+        }
         val style = run.toSpanStyle()
         if (style == null) {
             append(run.s)
@@ -144,6 +161,9 @@ private fun LightAnnotatedCopy(
     // Task 1: a bounded font multiplier on the base copy size (1 = no scaling). Both
     // fontSize AND lineHeight scale so the line box tracks the shrunken/grown text.
     scale: Float = 1f,
+    // Inline replay: the map of audio-glyph inlineContent placeholders this string
+    // references (empty for a plain text block), keyed by [audioInlineId].
+    inlineContent: Map<String, InlineTextContent> = emptyMap(),
 ) {
     Text(
         text = annotated,
@@ -152,7 +172,54 @@ private fun LightAnnotatedCopy(
         // Fix C: uniform line boxes so a combining accent can't inflate a line's gap.
         style = cardCopyStyle(LightThemeTokens.typography.copy).scaledBy(scale),
         textAlign = align.toTextAlign(),
+        inlineContent = inlineContent,
     )
+}
+
+/**
+ * The inlineContent map of tappable speaker glyphs for a [TextNode]'s inline audio runs.
+ * Each audio run (track N) maps to an [InlineTextContent] whose placeholder is sized to the
+ * line's text (so the glyph sits on the same line as the word/sentence it follows) with a
+ * ≥44dp tap target via padding that does NOT inflate the line box (the placeholder box stays
+ * ~1em; the extra hit-area is negative-offset padding on the clickable). A tap calls
+ * [onPlayTrack] with N, which plays THAT track only. Empty when the node carries no audio.
+ */
+@Composable
+private fun audioInlineContent(
+    node: TextNode,
+    scale: Float,
+    onPlayTrack: (Int) -> Unit,
+): Map<String, InlineTextContent> {
+    val tracks = node.runs.mapNotNull { it.audioTrack }
+    if (tracks.isEmpty()) return emptyMap()
+    // Glyph box ~ the line text size; tracks the node scale so it matches shrunken/grown text.
+    val glyphEm = 1.1f
+    return tracks.associate { track ->
+        audioInlineId(track) to InlineTextContent(
+            Placeholder(
+                width = glyphEm.em,
+                height = glyphEm.em,
+                placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter,
+            ),
+        ) {
+            // The content fills the placeholder box (sized in em, above); the whole box is the
+            // tap target. Padding on the outer box would inflate the placeholder, so the ≥44dp
+            // reach comes from the surrounding line height plus the box itself — comfortably
+            // tappable on the LP3 while keeping the glyph on the text baseline.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable { onPlayTrack(track) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "🔊",
+                    color = LightThemeTokens.colors.content,
+                    style = cardCopyStyle(LightThemeTokens.typography.copy).scaledBy(scale),
+                )
+            }
+        }
+    }
 }
 
 /**
@@ -192,6 +259,10 @@ fun RenderNodeView(
     // `fillMaxWidth` would starve the weighted centre cell of width. In that case
     // the enclosing cell's `horizontalAlignment` already places the content.
     expandWidth: Boolean = true,
+    // Inline replay seam: a tap on an inline audio glyph (track N) calls this with N, so
+    // the caller plays THAT one track. Default no-op keeps non-study render sites (gallery,
+    // previews) inert.
+    onPlayTrack: (Int) -> Unit = {},
 ) {
     when (node) {
         is TextNode -> LightAnnotatedCopy(
@@ -204,11 +275,12 @@ fun RenderNodeView(
             },
             align = node.align,
             scale = node.scale,
+            inlineContent = audioInlineContent(node, node.scale, onPlayTrack),
         )
 
         is ClozeNode -> LightAnnotatedCopy(clozeToAnnotatedString(node), modifier = modifier)
 
-        is RowNode -> RenderRow(node = node, mediaLoader = mediaLoader, modifier = modifier)
+        is RowNode -> RenderRow(node = node, mediaLoader = mediaLoader, modifier = modifier, onPlayTrack = onPlayTrack)
 
         is ImageNode ->
             if (mediaLoader != null) MediaImage(node = node, loader = mediaLoader)
@@ -280,6 +352,8 @@ fun RenderNodeColumn(
     dividerIndex: Int = -1,
     onNodePositioned: ((androidx.compose.ui.layout.LayoutCoordinates) -> Unit)? = null,
     masksHidden: Boolean = false,
+    // Inline replay seam threaded to each node's audio glyphs (see [RenderNodeView]).
+    onPlayTrack: (Int) -> Unit = {},
 ) {
     // Fix D: the collapsed vertical gap (em) to insert before each block, converted
     // to dp against the card base text size (the copy style's font size) so it scales
@@ -298,6 +372,7 @@ fun RenderNodeColumn(
             mediaLoader = mediaLoader,
             modifier = dividerModifier,
             masksHidden = masksHidden,
+            onPlayTrack = onPlayTrack,
         )
     }
 }
@@ -324,19 +399,28 @@ private fun MarginGap(gapEm: Float) {
  * cell stacks its own nodes vertically, horizontally placed per [RowCell.align].
  */
 @Composable
-private fun RenderRow(node: RowNode, mediaLoader: MediaLoader?, modifier: Modifier = Modifier) {
+private fun RenderRow(
+    node: RowNode,
+    mediaLoader: MediaLoader?,
+    modifier: Modifier = Modifier,
+    onPlayTrack: (Int) -> Unit = {},
+) {
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.Top,
     ) {
         for (cell in node.cells) {
-            RenderRowCell(cell = cell, mediaLoader = mediaLoader)
+            RenderRowCell(cell = cell, mediaLoader = mediaLoader, onPlayTrack = onPlayTrack)
         }
     }
 }
 
 @Composable
-private fun RowScope.RenderRowCell(cell: RowCell, mediaLoader: MediaLoader?) {
+private fun RowScope.RenderRowCell(
+    cell: RowCell,
+    mediaLoader: MediaLoader?,
+    onPlayTrack: (Int) -> Unit = {},
+) {
     // A weighted (centre) cell is width-bounded, so its blocks may fill it; a
     // wrap-content (corner) cell must NOT let a block fill max width or it would
     // starve the weighted sibling. The Column's horizontalAlignment still places
@@ -365,7 +449,7 @@ private fun RowScope.RenderRowCell(cell: RowCell, mediaLoader: MediaLoader?) {
             // collapsed gaps (index >= 1) are inserted — that's what spaces the in-cell
             // divider the same as the top-level one.
             if (index > 0) MarginGap(gapsEm[index])
-            RenderNodeView(node = child, mediaLoader = mediaLoader, expandWidth = weighted)
+            RenderNodeView(node = child, mediaLoader = mediaLoader, expandWidth = weighted, onPlayTrack = onPlayTrack)
         }
     }
 }
