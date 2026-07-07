@@ -4,6 +4,7 @@ import com.dvdutch.recall.api.ClozeNode
 import com.dvdutch.recall.api.ImageNode
 import com.dvdutch.recall.api.OcclusionNode
 import com.dvdutch.recall.api.RenderNode
+import com.dvdutch.recall.api.RowNode
 import com.dvdutch.recall.api.RuleNode
 import com.dvdutch.recall.api.TextNode
 import com.dvdutch.recall.api.UnsupportedNode
@@ -56,6 +57,11 @@ fun nodesToJson(nodes: List<RenderNode>): JsonArray = buildJsonArray {
                     node.h?.let { put("h", JsonPrimitive(it)) }
                 }
                 RuleNode -> buildJsonObject { put("t", JsonPrimitive("rule")) }
+                is RowNode ->
+                    // RowNodes are a phone-side layout enrichment (Feature 1) with no
+                    // Python-reference counterpart, so they are intentionally not parity
+                    // governed; the corpus contains no `display:flex` inputs that produce one.
+                    error("RowNode is not parity-corpus governed")
                 is OcclusionNode ->
                     // OcclusionNodes are emitted directly by the engine (never through the
                     // HTML→node compiler), so they are intentionally not parity-governed and

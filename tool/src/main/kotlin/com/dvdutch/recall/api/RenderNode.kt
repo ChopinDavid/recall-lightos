@@ -24,8 +24,30 @@ import kotlinx.serialization.json.jsonPrimitive
 @Serializable(with = RenderNodeSerializer::class)
 sealed interface RenderNode
 
+/**
+ * Horizontal alignment of a block node's content, mirroring CSS `text-align`.
+ * `start` (the default) is left in LTR; `center`/`end` are honored when the
+ * element (or an ancestor block) resolves to a centering/ending `text-align`,
+ * whether via an inline `style="text-align: …"` or a class rule in the notetype
+ * CSS (including a `var(--name)` that resolves against `:root`).
+ */
 @Serializable
-data class TextNode(val runs: List<TextRun>) : RenderNode
+enum class BlockAlign {
+    @SerialName("start")
+    START,
+
+    @SerialName("center")
+    CENTER,
+
+    @SerialName("end")
+    END,
+}
+
+@Serializable
+data class TextNode(
+    val runs: List<TextRun>,
+    val align: BlockAlign = BlockAlign.START,
+) : RenderNode
 
 @Serializable
 data class TextRun(
@@ -41,6 +63,34 @@ data class TextRun(
     // contract and the parity corpus unaffected.
     val underline: Boolean = false,
 )
+
+/**
+ * A single horizontal cell within a [RowNode]. [weight] `null` means the cell
+ * wraps its content (used for the flanking first/last cells); a non-null weight
+ * is a Compose `Modifier.weight(weight)` share of the leftover width (the middle
+ * cell(s), weight `1`). [align] is the horizontal placement of the cell's content
+ * inside its box: START/END for the corner labels, CENTER for the middle. All
+ * cells are TOP-aligned vertically by the [RowNode] itself, so a short corner
+ * label flanks the FIRST line of a tall centre column.
+ */
+@Serializable
+data class RowCell(
+    val nodes: List<RenderNode>,
+    val weight: Float? = null,
+    val align: BlockAlign = BlockAlign.START,
+)
+
+/**
+ * A horizontal flex row compiled from an element whose class CSS resolved to
+ * `display: flex` (direction row/unset). Its element children each become one
+ * [RowCell]. Only fired under strict guardrails (2–4 element children, no
+ * non-whitespace loose text, not `flex-direction: column`); otherwise the
+ * element falls back to today's vertical linearization. Matches the AnkiDroid
+ * header row: `Index | centre column | D Dispersion`.
+ */
+@Serializable
+@SerialName("row")
+data class RowNode(val cells: List<RowCell>) : RenderNode
 
 @Serializable
 data class ClozeNode(
@@ -165,6 +215,7 @@ object RenderNodeSerializer : JsonContentPolymorphicSerializer<RenderNode>(Rende
             "cloze" -> ClozeNode.serializer()
             "image" -> ImageNode.serializer()
             "rule" -> RuleNode.serializer()
+            "row" -> RowNode.serializer()
             "occlusion" -> OcclusionNode.serializer()
             else -> UnsupportedNodeSerializer(tag ?: "")
         }

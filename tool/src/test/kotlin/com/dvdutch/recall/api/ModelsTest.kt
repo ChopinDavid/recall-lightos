@@ -22,6 +22,7 @@ class ModelsTest {
                 }
                 is ImageNode -> append(node.src)
                 is OcclusionNode -> append(node.image)
+                is RowNode -> node.cells.forEach { append(it.nodes.flatten()) }
                 RuleNode -> Unit
                 is UnsupportedNode -> Unit
             }
