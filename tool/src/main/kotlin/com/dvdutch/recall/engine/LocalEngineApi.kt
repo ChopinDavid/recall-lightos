@@ -158,6 +158,10 @@ class LocalEngineApi(
         occlusionPayload(backend, entry)?.let { return it }
         val rendered = backend.renderExistingCard(card.id, false, true)
         val css = rendered.css
+        // The note's real tags, threaded into the compiler so a `{{Tags}}` value
+        // that is a hierarchical tag (`a::b::c`) renders as its leaf (`c`) — the
+        // prettify-tags `<script>` behaviour we can't run. Exact-match only.
+        val noteTags = backend.getNote(card.noteId).tagsList
         // Assemble the question HTML first: rslib leaves the answer's {{FrontSide}}
         // replacement node empty, so we must inject the rendered front into the back
         // (mirrors TemplateManager.applyCustomFilters(anodes, frontSide = qout.text)).
@@ -169,9 +173,9 @@ class LocalEngineApi(
         // both sides by compileSide so it never renders as garbage text. Normal cards have
         // no marker, so typeAnswer stays null and the card behaves exactly as before.
         val typeAnswer = TypeAnswerMarker.find(frontHtml)
-        val front = compileSide(backend, frontHtml, "front", css, isQuestion = true)
+        val front = compileSide(backend, frontHtml, "front", css, isQuestion = true, tags = noteTags)
         val backHtml = assembleCardSide(rendered.answerNodesList, frontSide = frontHtml)
-        val back = compileSide(backend, backHtml, "back", css, isQuestion = false)
+        val back = compileSide(backend, backHtml, "back", css, isQuestion = false, tags = noteTags)
         val labels = backend.describeNextStates(entry.states)
         return CardPayload(
             cardId = card.id,
@@ -354,6 +358,7 @@ class LocalEngineApi(
         side: String,
         css: String,
         isQuestion: Boolean,
+        tags: List<String> = emptyList(),
     ): CompiledSide {
         // Strip any [[type:Field]] marker BEFORE compiling so it never renders as garbage
         // text (the expected answer is resolved separately in cardPayload). Marker-free
@@ -362,7 +367,7 @@ class LocalEngineApi(
         // v1 offers no cloze type-answer affordance (documented out of scope).
         val markerFree = TypeAnswerMarker.strip(html)
         val stripped = backend.stripAvTags(markerFree)
-        val nodes = compileHtml(stripped, side, css).toMutableList()
+        val nodes = compileHtml(stripped, side, css, tags).toMutableList()
         val audio = soundFilenames(backend.extractAvTags(markerFree, isQuestion).avTagsList)
         if (stripped != markerFree) {
             nodes.add(UnsupportedNode("audio"))
