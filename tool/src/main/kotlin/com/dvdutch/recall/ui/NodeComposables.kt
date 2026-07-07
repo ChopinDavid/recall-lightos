@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -92,6 +93,15 @@ private const val CLOZE_STATE_HIDDEN = "hidden"
  * emoji-box overflow/clipping) rather than a color emoji.
  */
 internal const val AUDIO_GLYPH = "▶︎"
+
+/**
+ * Downward ink re-centering for the ▶ glyph from its baseline-anchored box, as a fraction
+ * of its font size. The placeholder anchors to the BASELINE (not the line center) because
+ * combining accents (e.g. Кири́лл) grow a line's box and shift its center — the baseline is
+ * the one reference they cannot move, so one measured constant lands the glyph on the
+ * x-height optical center of BOTH plain and accented lines (pixel-verified ≤1px on each).
+ */
+private const val AUDIO_GLYPH_INK_OFFSET_EM = 0.20f
 
 /** The inlineContent id for the audio-replay glyph at track [track] within a text node. */
 internal fun audioInlineId(track: Int): String = "audio:$track"
@@ -207,7 +217,7 @@ private fun audioInlineContent(
             Placeholder(
                 width = glyphEm.em,
                 height = glyphEm.em,
-                placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter,
+                placeholderVerticalAlign = PlaceholderVerticalAlign.AboveBaseline,
             ),
         ) {
             // The content fills the placeholder box (sized in em, above); the whole box is the
@@ -220,10 +230,17 @@ private fun audioInlineContent(
                     .clickable { onPlayTrack(track) },
                 contentAlignment = Alignment.Center,
             ) {
+                // Baseline-anchored box + measured downward nudge: re-centers the ▶ INK on
+                // the leading text's x-height middle (see AUDIO_GLYPH_INK_OFFSET_EM).
+                val glyphStyle = cardCopyStyle(LightThemeTokens.typography.copy).scaledBy(scale)
+                val inkNudge = with(androidx.compose.ui.platform.LocalDensity.current) {
+                    (glyphStyle.fontSize.toDp()) * AUDIO_GLYPH_INK_OFFSET_EM
+                }
                 Text(
                     text = AUDIO_GLYPH,
                     color = LightThemeTokens.colors.content,
-                    style = cardCopyStyle(LightThemeTokens.typography.copy).scaledBy(scale),
+                    style = glyphStyle,
+                    modifier = Modifier.offset(y = inkNudge),
                 )
             }
         }
