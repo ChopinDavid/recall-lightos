@@ -34,6 +34,10 @@ fun compileHtml(
     val hidden = CssHidden.parse(css)
     val layout = CssTextAlign.parse(css)
     val margins = CssMargins.parse(css)
+    val fontSize = CssFontSize.parse(css)
+    // The card base px: the font-size on the card root class (e.g. prettify-flashcard's
+    // 28px), else the default. Every per-node scale is measured against this one base.
+    val cardBasePx = fontSize.cardBasePx(CARD_ROOT_CLASSES)
     // The tokenizer never raises on any input; libxml2's `fragment_fromstring`
     // ParserError/ValueError fallback (flatten to a single text node) is
     // therefore unreachable in practice, but we keep the never-empty contract:
@@ -42,10 +46,14 @@ fun compileHtml(
     // Only tags that actually carry a `::` can produce a leaf, so pre-filter to
     // the hierarchical ones. Empty (the common case) disables the mapping wholly.
     val ctx = Ctx(side, tags.filter { it.contains("::") }.toSet())
-    walk(root, ctx, emptySet(), hidden, layout, margins, BlockAlign.START)
+    walk(root, ctx, emptySet(), hidden, layout, margins, fontSize, cardBasePx, BlockAlign.START, emptyList())
     ctx.flushText()
     return ctx.nodes
 }
+
+// The card root class whose declared font-size (if any) sets the base every scale is
+// measured against. Matches the anki-prettify wrapper; absent → CssFontSize default.
+private val CARD_ROOT_CLASSES = listOf("prettify-flashcard", "card")
 
 // tags whose content cannot be meaningfully flattened to text
 private val UNSUPPORTED = setOf("video", "audio", "object", "embed", "iframe", "canvas", "svg", "applet")
@@ -80,10 +88,14 @@ private class Ctx(val side: String, val hierarchicalTags: Set<String> = emptySet
     var marginTop: Float = 0f
     var marginBottom: Float = 0f
 
+    // Task 1: the font scale in effect for text flushed right now (nearest declared
+    // ancestor size / card base, clamped); reset with [align].
+    var scale: Float = 1f
+
     fun flushText() {
         val nonEmpty = runs.filter { it.s.isNotEmpty() }
         if (nonEmpty.isNotEmpty() && nonEmpty.any { it.s.isNotBlank() }) {
-            nodes.add(TextNode(mergeRuns(nonEmpty, hierarchicalTags), align, marginTop, marginBottom))
+            nodes.add(TextNode(mergeRuns(nonEmpty, hierarchicalTags), align, marginTop, marginBottom, scale))
         }
         runs.clear()
     }
@@ -219,7 +231,13 @@ private fun walk(
     hidden: CssHidden,
     layout: CssTextAlign,
     margins: CssMargins,
+    fontSize: CssFontSize,
+    cardBasePx: Float,
     inheritedAlign: BlockAlign,
+    // Ancestor class list, NEAREST-first, of the enclosing blocks that have already
+    // been entered — so this element's own classes are prepended before resolving the
+    // nearest-ancestor font size.
+    ancestorClasses: List<String>,
 ) {
     val tag = el.tag
 
@@ -241,6 +259,11 @@ private fun walk(
     // Fix D: this element's own vertical margins (em) from its class CSS.
     val marginTop = margins.topEmForClasses(classes)
     val marginBottom = margins.bottomEmForClasses(classes)
+
+    // Task 1: the class chain seen from THIS element outward (nearest-first), and the
+    // resulting font scale (nearest ancestor with a declared size wins).
+    val chainClasses = classes + ancestorClasses
+    val scale = fontSize.scaleForClasses(chainClasses, cardBasePx)
 
     // Feature 2 / Fix B: this element's effective PLACEMENT alignment. An
     // inline-block's own text-align governs only its internal content, NOT its
@@ -306,7 +329,10 @@ private fun walk(
     // Feature 1: a flex-row element compiles its ELEMENT children as row cells,
     // under strict guardrails, else falls through to vertical linearization.
     if (layout.isFlexRow(classes) &&
-        tryCompileFlexRow(el, ctx, hidden, layout, margins, elAlign, marginTop, marginBottom)
+        tryCompileFlexRow(
+            el, ctx, hidden, layout, margins, fontSize, cardBasePx,
+            elAlign, marginTop, marginBottom, chainClasses,
+        )
     ) {
         el.tail?.let { ctx.addRun(cleanWs(it), styles) }
         return
@@ -319,12 +345,13 @@ private fun walk(
         ctx.align = elAlign
         ctx.marginTop = marginTop
         ctx.marginBottom = marginBottom
+        ctx.scale = scale
         if (tag == "li") ctx.addRun("• ", emptySet())
     }
 
     el.text?.let { ctx.addRun(cleanWs(it), childStyles) }
     for (child in el.children) {
-        walk(child, ctx, childStyles, hidden, layout, margins, elAlign)
+        walk(child, ctx, childStyles, hidden, layout, margins, fontSize, cardBasePx, elAlign, chainClasses)
     }
 
     if (isBlock) {
@@ -332,6 +359,7 @@ private fun walk(
         ctx.align = inheritedAlign
         ctx.marginTop = 0f
         ctx.marginBottom = 0f
+        ctx.scale = 1f
     }
     el.tail?.let { ctx.addRun(cleanWs(it), styles) }
 }
@@ -354,9 +382,12 @@ private fun tryCompileFlexRow(
     hidden: CssHidden,
     layout: CssTextAlign,
     margins: CssMargins,
+    fontSize: CssFontSize,
+    cardBasePx: Float,
     rowAlign: BlockAlign,
     rowMarginTop: Float,
     rowMarginBottom: Float,
+    rowChainClasses: List<String>,
 ): Boolean {
     val kids = el.children.filter { it.tag != null }
     if (kids.size < 2 || kids.size > 4) return false
@@ -385,7 +416,7 @@ private fun tryCompileFlexRow(
         val weight = if (allExplicit) childFlex[i] else if (i == 0 || i == last) null else 1f
         val cellCtx = Ctx(ctx.side, ctx.hierarchicalTags)
         cellCtx.align = align
-        walk(child, cellCtx, emptySet(), hidden, layout, margins, align)
+        walk(child, cellCtx, emptySet(), hidden, layout, margins, fontSize, cardBasePx, align, rowChainClasses)
         cellCtx.flushText()
         RowCell(nodes = cellCtx.nodes.toList(), weight = weight, align = align)
     }

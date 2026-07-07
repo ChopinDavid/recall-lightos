@@ -141,15 +141,30 @@ private fun LightAnnotatedCopy(
     annotated: AnnotatedString,
     modifier: Modifier = Modifier,
     align: BlockAlign = BlockAlign.START,
+    // Task 1: a bounded font multiplier on the base copy size (1 = no scaling). Both
+    // fontSize AND lineHeight scale so the line box tracks the shrunken/grown text.
+    scale: Float = 1f,
 ) {
     Text(
         text = annotated,
         modifier = modifier,
         color = LightThemeTokens.colors.content,
         // Fix C: uniform line boxes so a combining accent can't inflate a line's gap.
-        style = cardCopyStyle(LightThemeTokens.typography.copy),
+        style = cardCopyStyle(LightThemeTokens.typography.copy).scaledBy(scale),
         textAlign = align.toTextAlign(),
     )
+}
+
+/**
+ * Task 1 — multiplies a copy style's fontSize and lineHeight by [scale] (a no-op at
+ * 1). Pure and Compose-runtime-free so it is unit-tested. Only sp-valued sizes scale;
+ * an unspecified size is left untouched.
+ */
+fun TextStyle.scaledBy(scale: Float): TextStyle {
+    if (scale == 1f) return this
+    val fs = if (fontSize == TextUnit.Unspecified) fontSize else (fontSize.value * scale).sp
+    val lh = if (lineHeight == TextUnit.Unspecified) lineHeight else (lineHeight.value * scale).sp
+    return copy(fontSize = fs, lineHeight = lh)
 }
 
 /** Maps the wire [BlockAlign] to a Compose [TextAlign]. */
@@ -188,6 +203,7 @@ fun RenderNodeView(
                 modifier.fillMaxWidth()
             },
             align = node.align,
+            scale = node.scale,
         )
 
         is ClozeNode -> LightAnnotatedCopy(clozeToAnnotatedString(node), modifier = modifier)
@@ -269,14 +285,8 @@ fun RenderNodeColumn(
     // to dp against the card base text size (the copy style's font size) so it scales
     // with the deck's em rhythm.
     val gapsEm = collapsedTopGapsEm(nodes)
-    val baseSp = LightThemeTokens.typography.copy.fontSize
-    val density = androidx.compose.ui.platform.LocalDensity.current
     nodes.forEachIndexed { index, node ->
-        val gap = gapsEm[index]
-        if (gap > 0f) {
-            val gapDp = with(density) { (gap * baseSp.value).sp.toDp() }
-            androidx.compose.foundation.layout.Spacer(Modifier.height(gapDp))
-        }
+        MarginGap(gapsEm[index])
         val dividerModifier =
             if (onNodePositioned != null && index == dividerIndex) {
                 Modifier.onGloballyPositioned(onNodePositioned)
@@ -290,6 +300,20 @@ fun RenderNodeColumn(
             masksHidden = masksHidden,
         )
     }
+}
+
+/**
+ * The collapsed em gap [gapEm] rendered as a vertical [androidx.compose.foundation.layout.Spacer],
+ * converted to dp against the card base text size (the copy style's font size) so it
+ * scales with the deck's em rhythm. A non-positive gap renders nothing.
+ */
+@Composable
+private fun MarginGap(gapEm: Float) {
+    if (gapEm <= 0f) return
+    val baseSp = LightThemeTokens.typography.copy.fontSize
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val gapDp = with(density) { (gapEm * baseSp.value).sp.toDp() }
+    androidx.compose.foundation.layout.Spacer(Modifier.height(gapDp))
 }
 
 /**
@@ -320,6 +344,12 @@ private fun RowScope.RenderRowCell(cell: RowCell, mediaLoader: MediaLoader?) {
     val weight = cell.weight
     val weighted = weight != null
     val cellModifier = if (weight != null) Modifier.weight(weight) else Modifier
+    // Task 2: stack the cell's blocks with the SAME collapsed em gaps the top-level
+    // column uses ([collapsedTopGapsEm]). Without this the cell dropped every in-cell
+    // margin — so the FIRST divider (inside this centre cell) got no .7em gap while the
+    // SECOND, top-level divider did, making the gap below "he" ~2× the gap above it.
+    // Honoring the gaps here spaces both dividers identically (symmetric around "he").
+    val gapsEm = collapsedTopGapsEm(cell.nodes)
     Column(
         modifier = cellModifier,
         horizontalAlignment = when (cell.align) {
@@ -328,7 +358,13 @@ private fun RowScope.RenderRowCell(cell: RowCell, mediaLoader: MediaLoader?) {
             BlockAlign.END -> Alignment.End
         },
     ) {
-        for (child in cell.nodes) {
+        cell.nodes.forEachIndexed { index, child ->
+            // Skip the cell's LEADING gap (index 0): a cell's own top margin governs its
+            // placement WITHIN the top-aligned row, not intra-cell rhythm, and honoring
+            // it here would shove the whole header column down. Only the BETWEEN-node
+            // collapsed gaps (index >= 1) are inserted — that's what spaces the in-cell
+            // divider the same as the top-level one.
+            if (index > 0) MarginGap(gapsEm[index])
             RenderNodeView(node = child, mediaLoader = mediaLoader, expandWidth = weighted)
         }
     }

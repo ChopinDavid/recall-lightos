@@ -53,6 +53,11 @@ data class TextNode(
     // when the column stacks them.
     val marginTop: Float = 0f,
     val marginBottom: Float = 0f,
+    // Task 1: bounded font SCALE (class font px / card base px, clamped to
+    // [0.35, 1.5]) from the block's class CSS. A multiplier on the LP3 base copy text
+    // size — 1 means no scaling. A phone-side layout enrichment (like [align]/margins),
+    // NOT parity-governed.
+    val scale: Float = 1f,
 ) : RenderNode
 
 @Serializable
