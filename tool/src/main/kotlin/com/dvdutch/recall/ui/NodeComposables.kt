@@ -86,6 +86,13 @@ private const val AUDIO_NODE_KIND = "audio"
 /** Wire value of [ClozeNode.state] for a cloze that is still hidden (question side). */
 private const val CLOZE_STATE_HIDDEN = "hidden"
 
+/**
+ * The inline replay glyph: a PLAY triangle with U+FE0E forcing text presentation, so it
+ * renders as a font glyph (inheriting the content color, respecting font metrics — no
+ * emoji-box overflow/clipping) rather than a color emoji.
+ */
+internal const val AUDIO_GLYPH = "▶︎"
+
 /** The inlineContent id for the audio-replay glyph at track [track] within a text node. */
 internal fun audioInlineId(track: Int): String = "audio:$track"
 
@@ -104,7 +111,7 @@ internal fun audioInlineId(track: Int): String = "audio:$track"
 fun textNodeToAnnotatedString(node: TextNode): AnnotatedString = buildAnnotatedString {
     for (run in node.runs) {
         if (run.audioTrack != null) {
-            appendInlineContent(audioInlineId(run.audioTrack), "🔊")
+            appendInlineContent(audioInlineId(run.audioTrack), AUDIO_GLYPH)
             continue
         }
         val style = run.toSpanStyle()
@@ -192,8 +199,9 @@ private fun audioInlineContent(
 ): Map<String, InlineTextContent> {
     val tracks = node.runs.mapNotNull { it.audioTrack }
     if (tracks.isEmpty()) return emptyMap()
-    // Glyph box ~ the line text size; tracks the node scale so it matches shrunken/grown text.
-    val glyphEm = 1.1f
+    // Glyph box slightly wider than the line text size (headroom against clipping);
+    // tracks the node scale so it matches shrunken/grown text.
+    val glyphEm = 1.3f
     return tracks.associate { track ->
         audioInlineId(track) to InlineTextContent(
             Placeholder(
@@ -213,7 +221,7 @@ private fun audioInlineContent(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = "🔊",
+                    text = AUDIO_GLYPH,
                     color = LightThemeTokens.colors.content,
                     style = cardCopyStyle(LightThemeTokens.typography.copy).scaledBy(scale),
                 )
