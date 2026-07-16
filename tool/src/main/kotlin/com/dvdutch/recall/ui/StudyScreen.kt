@@ -9,8 +9,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,8 +41,6 @@ import com.thelightphone.sdk.ui.LightTextVariant
 import com.thelightphone.sdk.ui.LightTheme
 import com.thelightphone.sdk.ui.LightThemeController
 import com.thelightphone.sdk.ui.LightThemeTokens
-import com.thelightphone.sdk.ui.LightTopBar
-import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.filter
@@ -121,63 +117,29 @@ class StudyScreen(
                     .fillMaxSize()
                     .background(LightThemeTokens.colors.background),
             ) {
-                // LightTopBar exposes a single right-button slot, so the two right
-                // controls (undo + MORE) are overlaid at CenterEnd using the bar's own
-                // metrics (height 3 units, horizontal padding 1 unit — mirrored from
-                // LightTopBar.kt, whose internals are private).
+                // Recall's OWN top bar (RecallTopBar). Study needs two right-slot actions
+                // (undo + MORE), which the SDK's LightTopBar can't carry — its single-button
+                // slot is BY DESIGN (Light issue #75), and Light explicitly permitted spinning
+                // our own TopBar. RecallTopBar is pixel-faithful to LightTopBar (same 3-unit
+                // height, 1-unit padding, BACK icon, centered "Study" title) but exposes a real
+                // two-action right slot. The 0.25-unit bottom pad preserves the old gap to the
+                // counts header.
+                val undoable = state.undoAvailable()
                 Box(modifier = Modifier.padding(bottom = 0.25f.gridUnitsAsDp())) {
-                    LightTopBar(
-                        leftButton = LightBarButton.LightIcon(
-                            icon = LightIcons.BACK,
-                            onClick = { goBack() },
-                        ),
-                        center = LightTopBarCenter.Text("Study"),
-                        rightButton = null,
-                    )
-                    val undoable = state.undoAvailable()
-                    if (state.hasCard() || undoable) {
-                        Row(
-                            modifier = Modifier
-                                .align(Alignment.CenterEnd)
-                                .height(3f.gridUnitsAsDp())
-                                .padding(end = 1f.gridUnitsAsDp()),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            // AnkiDroid-style undo affordance: ALWAYS visible during
-                            // study, ghosted when there is nothing to undo and full
-                            // white (tappable) after a grade — so the control teaches
-                            // that undo exists before it's needed. Fires rslib's own
-                            // undo; the card returns and the counts tick back.
-                            // The ↶ glyph's ink hangs low in its line box (arrow glyphs sit
-                            // near the baseline), so its visual center lands ~0.35 grid units
-                            // below the bar's other elements; the offset re-centers the INK
-                            // against "Study"/"MORE" (measured on-device).
-                            LightText(
-                                text = "↶",
-                                variant = LightTextVariant.Copy,
-                                lighten = !undoable,
-                                modifier = (
-                                    if (undoable) {
-                                        Modifier.clickable(onClick = viewModel::undo)
-                                    } else {
-                                        Modifier
-                                    }
-                                )
-                                    .offset(y = (-0.35f).gridUnitsAsDp())
-                                    .padding(horizontal = 0.5f.gridUnitsAsDp()),
-                            )
-                            // "MORE" opens the card-actions menu, only over a live card.
-                            if (state.hasCard()) {
-                                LightText(
-                                    text = "MORE",
-                                    variant = LightTextVariant.Fine,
-                                    modifier = Modifier
-                                        .clickable(onClick = { actionsOpen = true })
-                                        .padding(start = 0.5f.gridUnitsAsDp()),
+                    RecallTopBar(
+                        title = "Study",
+                        onBack = { goBack() },
+                        rightSlot = {
+                            if (state.hasCard() || undoable) {
+                                StudyTopBarActions(
+                                    undoable = undoable,
+                                    onUndo = viewModel::undo,
+                                    showMore = state.hasCard(),
+                                    onMore = { actionsOpen = true },
                                 )
                             }
-                        }
-                    }
+                        },
+                    )
                 }
 
                 CountsHeader(state.currentCounts(), state.marked())
