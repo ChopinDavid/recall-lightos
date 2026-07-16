@@ -105,7 +105,7 @@ class RecallHomeViewModelTest {
         }
     }
 
-    // ---- Manual sync (the top-bar 🔄 control) --------------------------------------------
+    // ---- Manual sync (the SYNC bottom-bar action) ----------------------------------------
 
     // A tap runs the normal sync on the controller seam, shows in-flight (ghosted) while it
     // runs, then on success reloads the deck list and returns to idle.

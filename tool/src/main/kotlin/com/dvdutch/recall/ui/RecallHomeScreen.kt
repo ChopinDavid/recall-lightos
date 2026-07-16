@@ -22,7 +22,7 @@ import com.thelightphone.sdk.InitialScreen
 import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.ui.LightBarButton
-import com.thelightphone.sdk.ui.LightIcon
+import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightIcons
 import com.thelightphone.sdk.ui.LightScrollView
 import com.thelightphone.sdk.ui.LightText
@@ -35,9 +35,9 @@ import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
 
 /**
- * The ghosted alpha for the sync icon while a manual sync is in flight — the same
+ * The ghosted alpha for the SYNC bottom-bar action while a manual sync is in flight — the same
  * lightened, "not-actionable" treatment the study screen's idle undo glyph uses (there via
- * LightText's `lighten`; an Icon has no `lighten`, so alpha is the composable-agnostic twin).
+ * LightText's `lighten`; the bar is dimmed with alpha, the composable-agnostic twin).
  */
 private const val GHOSTED_ALPHA = 0.35f
 
@@ -83,50 +83,20 @@ class RecallHomeScreen(sealedActivity: SealedLightActivity) :
                     .fillMaxSize()
                     .background(LightThemeTokens.colors.background),
             ) {
-                // LightTopBar exposes a single right-button slot, so the sync (🔄) control is
-                // overlaid immediately LEFT of the real gear at CenterEnd, using the bar's own
-                // metrics (height 3 units, horizontal padding 1 unit — mirrored from
-                // LightTopBar.kt, whose internals are private; same pattern as StudyScreen). The
-                // gear stays the real rightButton; the sync icon is offset left of it by the
-                // gear's own 2-unit icon width plus a small gap so the two sit evenly spaced.
-                // No bottom padding on this Box: the overlay Row is centered within it, so any
-                // padding here would push the 🔄 below the gear's optical center. The 1-unit
-                // gap under the bar is applied to the body content instead (below).
-                Box {
-                    LightTopBar(
-                        center = LightTopBarCenter.Text("Recall"),
-                        rightButton = LightBarButton.LightIcon(
-                            icon = LightIcons.SETTINGS,
-                            onClick = { navigateTo(::SettingsScreen) },
-                            contentDescription = "Settings",
-                        ),
-                    )
-                    val syncing = state.syncState is SyncState.InFlight
-                    Row(
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .height(3f.gridUnitsAsDp())
-                            // Clear the gear (2-unit icon) plus a 1-unit gap, on top of the
-                            // bar's own 1-unit end padding, so 🔄 sits just left of the gear.
-                            .padding(end = 4f.gridUnitsAsDp()),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // The sync icon renders exactly like the gear (same SDK LightIcon
-                        // composable → same 2-unit size, same theme-aware drawable + content
-                        // tint). While a sync is in flight it renders GHOSTED (the established
-                        // idle-control alpha treatment) and ignores taps.
-                        LightIcon(
-                            icon = LightIcons.REFRESH,
-                            contentDescription = "Sync now",
-                            modifier = (
-                                if (syncing) Modifier else Modifier.clickable(onClick = viewModel::sync)
-                            ).alpha(if (syncing) GHOSTED_ALPHA else 1f),
-                        )
-                    }
-                }
+                // The gear is the bar's sole right button — the SDK's single-button-per-side
+                // slot is BY DESIGN (Light issue #75). Manual sync no longer overlays a 🔄 icon
+                // here; it moved to a dedicated bottom bar (see below), the traditional home for
+                // extra actions per Light's own guidance.
+                LightTopBar(
+                    center = LightTopBarCenter.Text("Recall"),
+                    rightButton = LightBarButton.LightIcon(
+                        icon = LightIcons.SETTINGS,
+                        onClick = { navigateTo(::SettingsScreen) },
+                        contentDescription = "Settings",
+                    ),
+                )
 
-                // The 1-unit gap under the top bar (previously the bar's own bottom padding,
-                // moved here so it doesn't shift the overlaid 🔄 off the gear's optical center).
+                // The natural 1-unit gap under the top bar before the body.
                 Spacer(modifier = Modifier.height(1f.gridUnitsAsDp()))
 
                 // A single lightened line above the deck list when the last manual sync failed;
@@ -142,23 +112,54 @@ class RecallHomeScreen(sealedActivity: SealedLightActivity) :
                     )
                 }
 
-                when (val mode = state.mode) {
-                    is HomeMode.Loading,
-                    is HomeMode.NeedsFirstRun,
-                    is HomeMode.NeedsAttention -> CenteredMessage("…")
+                // The body takes the remaining height so the SYNC bar can pin to the screen
+                // bottom with the deck list scrolling above it.
+                Box(modifier = Modifier.weight(1f)) {
+                    when (val mode = state.mode) {
+                        is HomeMode.Loading,
+                        is HomeMode.NeedsFirstRun,
+                        is HomeMode.NeedsAttention -> CenteredMessage("…")
 
-                    is HomeMode.Error -> ErrorBody(
-                        message = mode.message,
-                        onRetry = viewModel::load,
-                    )
+                        is HomeMode.Error -> ErrorBody(
+                            message = mode.message,
+                            onRetry = viewModel::load,
+                        )
 
-                    is HomeMode.Loaded -> DeckList(
-                        rows = mode.rows,
-                        onOpenDeck = { deckId ->
-                            navigateTo(screenFactory = { StudyScreen(it, deckId) })
-                        },
-                        onToggle = viewModel::toggle,
-                    )
+                        is HomeMode.Loaded -> DeckList(
+                            rows = mode.rows,
+                            onOpenDeck = { deckId ->
+                                navigateTo(screenFactory = { StudyScreen(it, deckId) })
+                            },
+                            onToggle = viewModel::toggle,
+                        )
+                    }
+                }
+
+                // Manual sync lives in a bottom bar now (Light issue #75: extra actions belong
+                // in the bottom bar, not a second top-bar button). Visible in Loaded AND Error
+                // modes — sync is how you clear staleness or recover — but hidden during the
+                // transient/routing modes (Loading, first-run, needs-attention), which either
+                // show a spinner or navigate away. A single SYNC text action, rendered exactly
+                // like StudyScreen's REVEAL bottom bar. While a sync is InFlight the label is
+                // ghosted (the same lightened, not-actionable treatment) and drops taps.
+                when (state.mode) {
+                    is HomeMode.Loaded, is HomeMode.Error -> {
+                        val syncing = state.syncState is SyncState.InFlight
+                        LightBottomBar(
+                            items = listOf(
+                                LightBarButton.Text(
+                                    text = "SYNC",
+                                    onClick = if (syncing) {
+                                        { /* ghosted: in-flight taps are no-ops */ }
+                                    } else {
+                                        viewModel::sync
+                                    },
+                                ),
+                            ),
+                            modifier = if (syncing) Modifier.alpha(GHOSTED_ALPHA) else Modifier,
+                        )
+                    }
+                    else -> Unit
                 }
             }
         }
