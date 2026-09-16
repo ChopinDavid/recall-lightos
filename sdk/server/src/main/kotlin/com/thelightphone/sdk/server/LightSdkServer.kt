@@ -219,6 +219,50 @@ object LightSdkServer {
             Log.e(TAG, "OpenDialer not configured by server: phoneNumber=$phoneNumber")
         }
 
+    /**
+     * Return the best current location fix available to the server, or empty coordinates
+     *
+     * Settable from enclosing application!! May be run on any thread
+     */
+    var onGetCurrentLocation: (callingUid: Int) -> LightResult<LightServiceMethod.GetCurrentLocation.Response> =
+        { _ ->
+            Log.e(TAG, "GetCurrentLocation not configured by server")
+            LightResult.Error(LightResult.ErrorCode.Unknown, "GetCurrentLocation not configured")
+        }
+
+    /**
+     * Returns the device's saved default location, or empty coordinates
+     *
+     * Settable from enclosing application!! May be run on any thread
+     */
+    var onGetDefaultLocation: (callingUid: Int) -> LightResult<LightServiceMethod.GetDefaultLocation.Response> =
+        { _ ->
+            Log.e(TAG, "GetDefaultLocation not configured by server")
+            LightResult.Error(LightResult.ErrorCode.Unknown, "GetDefaultLocation not configured")
+        }
+
+    /**
+     * Requests a 30 second lease for location updates
+     *
+     * Settable from enclosing application!! May be run on any thread
+     */
+    var onRequestLocationUpdates: (callingUid: Int) -> LightResult<Unit> =
+        { _ ->
+            Log.e(TAG, "RequestLocationUpdates not configured by server")
+            LightResult.Error(LightResult.ErrorCode.Unknown, "RequestLocationUpdates not configured")
+        }
+
+    /**
+     * Releases any previously requested location update lease
+     *
+     * Settable from enclosing application!! May be run on any thread
+     */
+    var onReleaseLocationUpdates: (callingUid: Int) -> LightResult<Unit> =
+        { _ ->
+            Log.e(TAG, "ReleaseLocationUpdates not configured by server")
+            LightResult.Error(LightResult.ErrorCode.Unknown, "ReleaseLocationUpdates not configured")
+        }
+
     var foregroundSelfWithCallback: (componentToReturnTo: ComponentName) -> Unit = {
         Log.e(TAG, "Server wants to foreground itself but does not know how!")
     }
@@ -241,6 +285,8 @@ object LightSdkServer {
                 Manifest.permission.CAMERA,
                 Manifest.permission.READ_MEDIA_AUDIO,
                 Manifest.permission.RECORD_AUDIO,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
             ).contains(permissionName)
         }
 

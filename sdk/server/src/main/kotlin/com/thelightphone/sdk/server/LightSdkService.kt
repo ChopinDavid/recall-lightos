@@ -243,7 +243,43 @@ class LightSdkService : Service() {
                 )
             }
 
-            null -> {
+            LightServiceMethod.GetCurrentLocation -> {
+                when (val result = LightSdkServer.onGetCurrentLocation(callingUid)) {
+                    is LightResult.Success -> LightResult.Success(
+                        LightServiceMethod.GetCurrentLocation.encodeResponse(result.data)
+                    )
+                    is LightResult.Error -> result
+                }
+            }
+
+            LightServiceMethod.GetDefaultLocation -> {
+                when (val result = LightSdkServer.onGetDefaultLocation(callingUid)) {
+                    is LightResult.Success -> LightResult.Success(
+                        LightServiceMethod.GetDefaultLocation.encodeResponse(result.data)
+                    )
+                    is LightResult.Error -> result
+                }
+            }
+
+            LightServiceMethod.RequestLocationUpdates -> {
+                when (val result = LightSdkServer.onRequestLocationUpdates(callingUid)) {
+                    is LightResult.Success -> LightResult.Success(
+                        LightServiceMethod.RequestLocationUpdates.encodeResponse(Unit)
+                    )
+                    is LightResult.Error -> result
+                }
+            }
+
+            LightServiceMethod.ReleaseLocationUpdates -> {
+                when (val result = LightSdkServer.onReleaseLocationUpdates(callingUid)) {
+                    is LightResult.Success -> LightResult.Success(
+                        LightServiceMethod.ReleaseLocationUpdates.encodeResponse(Unit)
+                    )
+                    is LightResult.Error -> result
+                }
+            }
+
+            null, is LightServiceMethod.CustomServiceMethod<*, *> -> {
                 // The app that wraps this server may be able to handle custom methods
                 LightSdkServer.customServiceMethodResolver.invoke(callingUid, methodId, payload)
             }
