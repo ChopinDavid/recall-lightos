@@ -20,5 +20,5 @@ fun SealedLightContext.hasLocationPermission(): Boolean {
         androidContext,
         Manifest.permission.ACCESS_COARSE_LOCATION,
     ) == PackageManager.PERMISSION_GRANTED
-    fine || coarse
+    return fine || coarse
 }
