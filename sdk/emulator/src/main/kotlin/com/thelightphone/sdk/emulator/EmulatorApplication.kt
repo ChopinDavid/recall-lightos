@@ -78,6 +78,7 @@ class EmulatorApplication : Application() {
                 updateValidSignatures()
                 _installedToolsRefreshCount.value++
             }
+            with(EmulatorLocationHelper) { initLocationHelper(this@EmulatorApplication) }
         }
         updateValidSignatures()
         EmulatorHttpServer(this).start()
