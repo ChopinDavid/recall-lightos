@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- RELEASE overlay (the Light SDK plugin generates the main manifest from
+     lighttool.toml and bans a src/main manifest; build-type overlays are the
+     supported merge path — src/debug has the same allowance for the emulator
+     hub). Self-hosted Anki sync servers speak plain HTTP by default (a LAN
+     endpoint like http://192.168.x.x:8080), and custom-server sync is this
+     tool's primary sync path, so cleartext must be permitted in release too —
+     AnkiDroid ships the same allowance for the same reason. Users who want
+     TLS can front the server with a reverse proxy and use https://. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:usesCleartextTraffic="true" />
+</manifest>
