@@ -2,7 +2,7 @@
 id = "com.dvdutch.recall"
 label = "Recall"
 versionCode = 1
-versionName = "0.1"
+versionName = "0.1.0"
 permissions = ["android.permission.INTERNET"]
 
 # serverPackage = which package hosts the Light server this tool binds to. The SDK
