@@ -29,7 +29,9 @@ Everything scheduling- and sync-related is **upstream Anki code, never reimpleme
 - Sync is rslib's own sync client — byte-for-byte the same code path AnkiDroid uses. The only write the client ever performs is `answerCard` with the scheduling states the backend itself issued.
 - Card HTML is compiled to native Compose by a small renderer, parity-tested against a Python reference over 22,000+ real card sides.
 
-Currently syncs with **self-hosted sync servers** ([Anki sync server docs](https://docs.ankiweb.net/sync-server.html)). AnkiWeb access requires permission from Ankitects and has been requested.
+Currently syncs with **self-hosted sync servers** — see **[Syncing Recall with your own server](docs/sync-server.md)** for the ten-minute setup (server on your machine, then the app). AnkiWeb access requires permission from Ankitects and has been requested.
+
+Scheduling configuration — including FSRS parameters, desired retention, and optimization — is managed in Anki desktop; Recall applies whatever the synced collection specifies (FSRS and SM-2 both supported, via Anki's own backend).
 
 ## Status
 
@@ -44,4 +46,4 @@ Known limitations: content that requires a browser engine doesn't render (deck `
 
 ## License
 
-AGPL-3.0, like the Anki ecosystem it builds on.
+Recall — everything under `tool/` — is **AGPL-3.0** (see [`tool/LICENSE`](tool/LICENSE)), like the Anki ecosystem it builds on. The rest of the repository is the [light-sdk](https://github.com/lightphone/light-sdk) fork it builds against, under Light's own **MIT** license (see [`LICENSE`](LICENSE)).
