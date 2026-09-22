@@ -49,7 +49,7 @@ class LightFileShare internal constructor(private val androidContext: Context) {
     }
 
     fun getUri(relativePath: String): Uri {
-        val authority = "${androidContext.packageName}.lightfiles"
+        val authority = "${androidContext.packageName}.lightfileprovider"
         return "content://$authority/$relativePath".toUri()
     }
 

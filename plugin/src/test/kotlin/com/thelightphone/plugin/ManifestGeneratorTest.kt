@@ -185,10 +185,10 @@ class ManifestGeneratorTest {
         val xml = render(capabilities = listOf("tool-manager-provider"))
 
         assertTrue(
-            xml.contains("""android:name="com.thelightphone.sdk.LightFileProvider""""),
+            xml.contains("""android:name="com.thelightphone.toolmanager.LightFileProvider""""),
             "expected LightFileProvider; got:\n$xml"
         )
-        assertTrue(xml.contains("""android:authorities="${'$'}{applicationId}.lightfiles""""))
+        assertTrue(xml.contains("""android:authorities="${'$'}{applicationId}.lightfileprovider""""))
         assertTrue(
             xml.contains("""android:name="com.thelightphone.toolmanager.TOOL_MANAGER_PROVIDER""""),
             "expected the tool manager provider marker; got:\n$xml"
