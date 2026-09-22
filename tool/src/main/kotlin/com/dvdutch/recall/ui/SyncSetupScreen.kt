@@ -80,6 +80,9 @@ class SyncSetupScreen(sealedActivity: SealedLightActivity) :
 
                     StepHeading(steps[0])
                     Body(SyncSetupMessages.STEP1_BODY)
+                    Body(SyncSetupMessages.STEP1_CHECK_LEAD, topGap = 0.5f)
+                    CommandLine(SyncSetupMessages.STEP1_CHECK_CMD)
+                    Note(SyncSetupMessages.STEP1_CHECK_NOTE)
                     Body(SyncSetupMessages.STEP1_CMD1_LEAD, topGap = 0.5f)
                     CommandLine(SyncSetupMessages.STEP1_CMD1)
                     Body(SyncSetupMessages.STEP1_CMD2_LEAD, topGap = 0.5f)
