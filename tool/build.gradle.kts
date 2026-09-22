@@ -214,6 +214,13 @@ if (coverageEnabled) {
                     "**/*ComposableSingletons*",
                     "**/R.class",
                     "**/R$*.class",
+                    // Compose UI is verified ON-DEVICE (emulator gates: screenshots, pixel
+                    // measurements, the release smoke test) — unit-line coverage cannot see
+                    // that and reported the whole layer as ~0%, drowning the logic signal.
+                    // Coverage here measures the UNIT-TESTABLE surface: engine, compiler,
+                    // study machine, view models. Rule that keeps this honest: logic lives
+                    // OUTSIDE ui/ (compiler/, engine/, study/, prefs/) where it stays counted.
+                    "**/ui/**",
                 )
             },
         )

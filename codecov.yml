@@ -20,6 +20,10 @@ coverage:
 # Only :tool is instrumented; everything else is Light's SDK (out of scope). Focus the
 # report on our own source so SDK/example/generated code doesn't skew the numbers.
 ignore:
+  # Compose UI layer: verified on-device via emulator gates (screenshots/pixel checks +
+  # the release smoke test), which line coverage cannot represent — counted at ~0% it
+  # only obscured the logic coverage. Logic lives outside ui/ and stays measured.
+  - "tool/src/main/kotlin/com/dvdutch/recall/ui/**"
   - "sdk/**"
   - "plugin/**"
   - "lint-rules/**"
