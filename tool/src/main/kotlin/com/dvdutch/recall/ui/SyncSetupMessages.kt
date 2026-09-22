@@ -102,8 +102,10 @@ object SyncSetupMessages {
     /** Lead-in to the run command. */
     /** Tells a novice literally what to do with the block that follows. */
     const val STEP1_RUN_LEAD: String =
-        "Then start the server. Type each line below and press Enter after " +
-            "each one. The first four are settings; the last one starts it:"
+        "Then start the server. Type each command below and press \u201CEnter\u201D " +
+            "at the end of it. An indented line is the same command " +
+            "continuing, not a new one. The first four are settings; the last " +
+            "one starts it:"
 
     /**
      * `export` per line, NOT the docs' backslash-continued one-liner: at 1080px

@@ -9,6 +9,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.material3.Text
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextIndent
+import androidx.compose.ui.unit.sp
 import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.SimpleLightScreen
 import com.thelightphone.sdk.ui.LightBarButton
@@ -171,10 +175,20 @@ private fun Body(text: String, topGap: Float = 0f) {
  */
 @Composable
 private fun CommandLine(text: String) {
-    LightText(
+    // Direct Text rather than LightText: the HANGING INDENT is load-bearing. At
+    // 1080px long commands wrap, and David road-tested that a wrapped command is
+    // indistinguishable from the next command — he pressed Enter at a wrap. With
+    // firstLine flush and continuations indented, "starts at the edge" = new
+    // command, "indented" = same command continuing. LightText exposes no
+    // TextStyle injection, so this borrows its Copy tokens directly.
+    val base = LightThemeTokens.typography.copy
+    Text(
         text = text,
-        variant = LightTextVariant.Copy,
-        monospace = true,
+        color = LightThemeTokens.colors.content,
+        style = base.copy(
+            fontFamily = FontFamily.Monospace,
+            textIndent = TextIndent(firstLine = 0.sp, restLine = base.fontSize * 1.2),
+        ),
         modifier = Modifier.padding(
             start = 1f.gridUnitsAsDp(),
             top = 0.25f.gridUnitsAsDp(),
