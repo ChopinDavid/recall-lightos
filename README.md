@@ -9,7 +9,7 @@ A review-only, [Anki](https://apps.ankiweb.net/)-compatible spaced-repetition cl
 
 ## Demo
 
-https://github.com/user-attachments/assets/7d07f3b2-ab14-4f2e-8149-7a9cfa5f55f0
+https://github.com/user-attachments/assets/dab2ba62-8b0e-4165-9af4-c1d4fbb638e8
 
 ## What it does
 
