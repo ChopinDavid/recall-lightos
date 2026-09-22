@@ -29,13 +29,13 @@ Everything scheduling- and sync-related is **upstream Anki code, never reimpleme
 - Sync is rslib's own sync client — byte-for-byte the same code path AnkiDroid uses. The only write the client ever performs is `answerCard` with the scheduling states the backend itself issued.
 - Card HTML is compiled to native Compose by a small renderer, parity-tested against a Python reference over 22,000+ real card sides.
 
-Currently syncs with **self-hosted sync servers** — see **[Syncing Recall with your own server](docs/sync-server.md)** for the ten-minute setup (server on your machine, then the app). AnkiWeb access requires permission from Ankitects and has been requested.
+Syncs with **self-hosted sync servers** — see **[Syncing Recall with your own server](docs/sync-server.md)** for the ten-minute setup (server on your machine, then the app). Syncing with **AnkiWeb is not yet available**: it requires permission from Ankitects, which we have requested and are currently awaiting. Until then, a self-hosted server is the sync path.
 
 Scheduling configuration — including FSRS parameters, desired retention, and optimization — is managed in Anki desktop; Recall applies whatever the synced collection specifies (FSRS and SM-2 both supported, via Anki's own backend).
 
 ## Status
 
-Working on the Light Phone III emulator; real-device deployment is pending Light's third-party tool infrastructure. Not yet distributed.
+**0.1.0** (tag `recall-v0.1.0`): feature-complete for review-only studying and smoke-tested end-to-end on the minified release build. Runs as a daily driver on the Light Phone III emulator against a self-hosted sync server. Installation on physical LP3 hardware is pending Light's Tool Manager sideload rollout; distribution awaits Light's Tool Library. Not yet distributed.
 
 Known limitations: content that requires a browser engine doesn't render (deck `<script>`s, full MathJax typesetting, CSS-layout-art decks); TTS-only audio is unsupported.
 
