@@ -132,11 +132,19 @@ object SyncSetupMessages {
     /** Step 2 title. */
     const val STEP2_TITLE: String = "In Anki on your computer"
 
-    /** Step 2 body — the desktop-side seeding walk-through. */
+    /**
+     * Step 2 body — the desktop-side seeding walk-through. localhost, not a LAN
+     * address: Anki runs on the same computer as the server, so no address needs
+     * finding here. (An earlier draft said "the address from step 1", which
+     * pointed at nothing — David's road-test caught the dangling reference.
+     * The LAN-address hunt belongs to step 3 only, where the phone needs it.)
+     */
     const val STEP2_BODY: String =
-        "Open Preferences → Syncing, choose self-hosted sync server, and enter the " +
-            "address from step 1. Restart Anki, press Sync, log in with those same " +
-            "credentials, and choose Upload when it asks which side to keep."
+        "Open Preferences → Syncing, choose self-hosted sync server, and enter " +
+            "http://localhost:8080/ — Anki and the server are on the same " +
+            "computer, so localhost is the address. Restart Anki, press Sync, " +
+            "log in with the username and password you chose, and choose Upload " +
+            "when it asks which side to keep."
 
     /** The media reassurance — a real question users have, answered where they'll ask it. */
     const val STEP2_MEDIA_NOTE: String =
@@ -150,10 +158,11 @@ object SyncSetupMessages {
      * so the doc and the phone agree when a user reads both.
      */
     const val STEP3_BODY: String =
-        "Find your computer's local network address, something like 192.168.1.20. " +
-            "Back on the previous screen, enter http://192.168.1.20:8080/ (with your " +
-            "own address in place of the example), plus the username and password " +
-            "you set as SYNC_USER1. Then download your collection."
+        "The phone needs your computer's network address. On a Mac it's in " +
+            "System Settings → Wi-Fi → Details; it looks like 192.168.1.20. " +
+            "Back on the previous screen, enter http://192.168.1.20:8080/ (with " +
+            "your own address in place of the example), plus your username and " +
+            "password. Then download your collection."
 
     /** Lead-in to the printed guide location. */
     const val GUIDE_LEAD: String = "The full guide, with more options, lives at:"
