@@ -285,4 +285,266 @@ class OcclusionTest {
         val rect = out.filterIsInstance<OcclusionShapeState.Rect>().single()
         assertEquals(0.1363, rect.left, 1e-9)
     }
+
+    /**
+     * Only one dimension known is not enough to scale: the x and y axes are scaled by
+     * DIFFERENT factors, so a half-known pair would distort every shape. Both must be > 0.
+     */
+    @Test
+    fun `resolveShapes declines to scale when only one natural dimension is known`() {
+        val wOnly = resolveShapes(fractionalNote(), testedOrdinal = 1, isBack = false, naturalW = 1550, naturalH = 0)
+            .filterIsInstance<OcclusionShapeState.Rect>().single()
+        assertEquals(0.1363, wOnly.left, 1e-9)
+        val hOnly = resolveShapes(fractionalNote(), testedOrdinal = 1, isBack = false, naturalW = 0, naturalH = 1240)
+            .filterIsInstance<OcclusionShapeState.Rect>().single()
+        assertEquals(0.1363, hOnly.left, 1e-9)
+    }
+
+    /**
+     * A note whose every shape is unparseable has NO coordinates, so it must not be
+     * classified fractional (there is nothing to scale, and `all {}` on an empty list is
+     * vacuously true — the guard that `coords.isNotEmpty()` exists to defeat).
+     */
+    @Test
+    fun `resolveShapes treats a coordinate-free note as non-fractional`() {
+        val n = ParsedOcclusion(
+            occludeInactive = false,
+            occlusions = listOf(RawOcclusion(1, listOf(RawShape("text", mapOf("text" to "label"))))),
+        )
+        assertEquals(emptyList(), resolveShapes(n, testedOrdinal = 1, isBack = false, naturalW = 800, naturalH = 600))
+    }
+
+    // ---- parseShape rejection paths ------------------------------------------
+
+    @Test
+    fun `parseShape skips an ellipse missing its radii`() {
+        // Every ellipse prop is required: without rx/ry there is no curve to draw.
+        val base = mapOf("left" to "1", "top" to "2", "width" to "3", "height" to "4")
+        assertNull(parseShape("ellipse", base, ShapeState.MASKED))
+        assertNull(parseShape("ellipse", base + ("rx" to "5"), ShapeState.MASKED))
+        assertNull(parseShape("ellipse", base + ("ry" to "5"), ShapeState.MASKED))
+    }
+
+    @Test
+    fun `parseShape skips a shape whose prop is non-numeric`() {
+        // A non-numeric value is dropped rather than guessed at.
+        assertNull(
+            parseShape(
+                "rect",
+                mapOf("left" to "auto", "top" to "2", "width" to "3", "height" to "4"),
+                ShapeState.MASKED,
+            ),
+        )
+    }
+
+    @Test
+    fun `parseShape skips a polygon with fewer than two points`() {
+        // A single point (or none) cannot form an outline.
+        assertNull(parseShape("polygon", mapOf("points" to "10,10"), ShapeState.MASKED))
+        assertNull(parseShape("polygon", mapOf("points" to ""), ShapeState.MASKED))
+        assertNull(parseShape("polygon", emptyMap(), ShapeState.MASKED))
+    }
+
+    @Test
+    fun `parseShape drops malformed polygon pairs but keeps the well-formed ones`() {
+        // "5" has no comma; "7,8,9" has too many; "a,b" is non-numeric — each pair is
+        // judged on its own so one typo doesn't discard the whole shape.
+        val s = parseShape(
+            "polygon",
+            mapOf("points" to "1,2 5 7,8,9 a,b 3,4"),
+            ShapeState.CONTEXT,
+        ) as OcclusionShapeState.Polygon
+        assertEquals(listOf(Pt(1.0, 2.0), Pt(3.0, 4.0)), s.points)
+    }
+
+    @Test
+    fun `parseShape drops a polygon left with one good point after malformed pairs`() {
+        assertNull(parseShape("polygon", mapOf("points" to "1,2 oops nope"), ShapeState.MASKED))
+    }
+
+    // ---- imageDims: header sniffing ------------------------------------------
+    // Natural dims decide whether fractional coords can be scaled (above), and Android's
+    // BitmapFactory is unavailable in unit tests — so the sniffer is pure and must read
+    // each format's header exactly. Fixtures are minimal real headers, byte for byte.
+
+    private fun bytes(vararg v: Int): ByteArray = ByteArray(v.size) { v[it].toByte() }
+
+    private fun be16(n: Int) = listOf((n shr 8) and 0xFF, n and 0xFF)
+    private fun le16(n: Int) = listOf(n and 0xFF, (n shr 8) and 0xFF)
+
+    /** PNG: 8-byte signature, IHDR length+type, then big-endian width/height. */
+    private fun png(w: Int, h: Int): ByteArray = bytes(
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+        *(be16(0) + be16(w) + be16(0) + be16(h)).toIntArray(),
+    )
+
+    private fun List<Int>.toIntArray(): IntArray = IntArray(size) { this[it] }
+
+    @Test
+    fun `imageDims reads PNG dimensions`() {
+        assertEquals(ImageDims(1550, 1240), imageDims(png(1550, 1240)))
+    }
+
+    @Test
+    fun `imageDims rejects a truncated PNG header`() {
+        // IHDR dims live at offsets 16..23; anything shorter cannot be read.
+        assertNull(imageDims(png(100, 100).copyOf(23)))
+    }
+
+    @Test
+    fun `imageDims rejects bytes with a corrupt PNG signature`() {
+        val b = png(100, 100)
+        b[3] = 0x00 // 'G' of "PNG" clobbered
+        assertNull(imageDims(b))
+    }
+
+    @Test
+    fun `imageDims reads GIF dimensions little-endian`() {
+        // "GIF89a" then little-endian width/height at offsets 6/8.
+        val gif = bytes(
+            'G'.code, 'I'.code, 'F'.code, '8'.code, '9'.code, 'a'.code,
+            *(le16(640) + le16(480)).toIntArray(),
+        )
+        assertEquals(ImageDims(640, 480), imageDims(gif))
+    }
+
+    @Test
+    fun `imageDims reads a GIF87a header too`() {
+        val gif = bytes(
+            'G'.code, 'I'.code, 'F'.code, '8'.code, '7'.code, 'a'.code,
+            *(le16(11) + le16(22)).toIntArray(),
+        )
+        assertEquals(ImageDims(11, 22), imageDims(gif))
+    }
+
+    @Test
+    fun `imageDims rejects a truncated GIF header`() {
+        assertNull(imageDims(bytes('G'.code, 'I'.code, 'F'.code, '8'.code, '9'.code, 'a'.code, 0x80, 0x02)))
+    }
+
+    /** Builds a 30-byte RIFF/WEBP header for the given sub-format tail. */
+    private fun webp(fourthCc: List<Int>, tail: List<Int>): ByteArray {
+        val head = listOf(
+            'R'.code, 'I'.code, 'F'.code, 'F'.code, 0, 0, 0, 0,
+            'W'.code, 'E'.code, 'B'.code, 'P'.code,
+        ) + fourthCc
+        val all = (head + tail).toMutableList()
+        while (all.size < 30) all.add(0)
+        return bytes(*all.toIntArray())
+    }
+
+    @Test
+    fun `imageDims reads lossy VP8 webp dimensions masking the flag bits`() {
+        // "VP8 ": 14-bit width/height at offsets 26/28; the top 2 bits are scale flags
+        // and must be masked off, so 0xC000-set bits must NOT leak into the size.
+        val tail = MutableList(14) { 0 } // offsets 16..29
+        val w = 320 or 0xC000 // upper 2 bits set — pure scale flags
+        val h = 240 or 0xC000
+        tail[10] = w and 0xFF; tail[11] = (w shr 8) and 0xFF   // offsets 26,27
+        tail[12] = h and 0xFF; tail[13] = (h shr 8) and 0xFF   // offsets 28,29
+        val b = webp(listOf('V'.code, 'P'.code, '8'.code, ' '.code), tail)
+        assertEquals(ImageDims(320, 240), imageDims(b))
+    }
+
+    @Test
+    fun `imageDims reads lossless VP8L webp dimensions as width minus one packed`() {
+        // "VP8L": 14-bit (width-1) then 14-bit (height-1) packed from offset 21.
+        val bits = (800 - 1) or ((600 - 1) shl 14)
+        val tail = MutableList(14) { 0 }
+        for (k in 0..3) tail[5 + k] = (bits shr (8 * k)) and 0xFF // offsets 21..24
+        val b = webp(listOf('V'.code, 'P'.code, '8'.code, 'L'.code), tail)
+        assertEquals(ImageDims(800, 600), imageDims(b))
+    }
+
+    @Test
+    fun `imageDims reads extended VP8X webp canvas dimensions`() {
+        // "VP8X": 24-bit (canvas width-1) at offset 24, (height-1) at offset 27.
+        val tail = MutableList(14) { 0 }
+        val w = 4096 - 1
+        val h = 2160 - 1
+        for (k in 0..2) tail[8 + k] = (w shr (8 * k)) and 0xFF  // offsets 24..26
+        for (k in 0..2) tail[11 + k] = (h shr (8 * k)) and 0xFF // offsets 27..29
+        val b = webp(listOf('V'.code, 'P'.code, '8'.code, 'X'.code), tail)
+        assertEquals(ImageDims(4096, 2160), imageDims(b))
+    }
+
+    @Test
+    fun `imageDims rejects a RIFF container that is not WEBP`() {
+        // A WAV file is also RIFF; it must not be sniffed as an image.
+        val b = webp(listOf('f'.code, 'm'.code, 't'.code, ' '.code), List(14) { 0 })
+        b[8] = 'W'.code.toByte(); b[9] = 'A'.code.toByte()
+        b[10] = 'V'.code.toByte(); b[11] = 'E'.code.toByte()
+        assertNull(imageDims(b))
+    }
+
+    @Test
+    fun `imageDims rejects an unknown WEBP sub-format`() {
+        assertNull(imageDims(webp(listOf('V'.code, 'P'.code, '9'.code, '?'.code), List(14) { 0 })))
+    }
+
+    @Test
+    fun `imageDims rejects a truncated WEBP header`() {
+        assertNull(imageDims(webp(listOf('V'.code, 'P'.code, '8'.code, ' '.code), List(14) { 0 }).copyOf(29)))
+    }
+
+    /**
+     * JPEG: SOI, then markers walked until an SOFn frame header, whose payload carries
+     * height then width (in that order — the one easy field to transpose).
+     */
+    private fun jpeg(segments: List<List<Int>>, sofMarker: Int, w: Int, h: Int): ByteArray {
+        val out = mutableListOf(0xFF, 0xD8)
+        for (seg in segments) out.addAll(seg)
+        // SOFn: marker, length (8), precision, height, width, components
+        out.addAll(listOf(0xFF, sofMarker) + be16(8) + listOf(8) + be16(h) + be16(w) + listOf(1))
+        return bytes(*out.toIntArray())
+    }
+
+    @Test
+    fun `imageDims reads baseline JPEG dimensions height before width`() {
+        assertEquals(ImageDims(1024, 768), imageDims(jpeg(emptyList(), 0xC0, 1024, 768)))
+    }
+
+    @Test
+    fun `imageDims reads progressive JPEG SOF2 dimensions`() {
+        assertEquals(ImageDims(640, 400), imageDims(jpeg(emptyList(), 0xC2, 640, 400)))
+    }
+
+    @Test
+    fun `imageDims skips JPEG APP and DHT segments to reach the frame header`() {
+        // A real JPEG opens with APP0/JFIF and usually a DHT; both are length-skipped.
+        // DHT (0xC4) sits inside the 0xC0..0xCF range and must NOT be read as a frame.
+        val app0 = listOf(0xFF, 0xE0) + be16(16) + List(14) { 0 }
+        val dht = listOf(0xFF, 0xC4) + be16(6) + List(4) { 0 }
+        assertEquals(ImageDims(200, 100), imageDims(jpeg(listOf(app0, dht), 0xC0, 200, 100)))
+    }
+
+    @Test
+    fun `imageDims ignores JPEG fill bytes before a marker`() {
+        // 0xFF padding may precede a marker; the walker must skip the run, not mis-read it.
+        val padded = listOf(0xFF, 0xFF, 0xFF, 0xE0) + be16(6) + List(4) { 0 }
+        assertEquals(ImageDims(50, 25), imageDims(jpeg(listOf(padded), 0xC0, 50, 25)))
+    }
+
+    @Test
+    fun `imageDims returns null for a JPEG with no frame header`() {
+        // SOI plus only APP segments: nothing declares dimensions.
+        val app0 = listOf(0xFF, 0xE0) + be16(20) + List(18) { 0 }
+        val b = bytes(*(listOf(0xFF, 0xD8) + app0).toIntArray())
+        assertNull(imageDims(b))
+    }
+
+    @Test
+    fun `imageDims returns null for a JPEG segment with a nonsense length`() {
+        // A declared length < 2 cannot advance the walker — bail rather than loop.
+        val bad = listOf(0xFF, 0xE0, 0x00, 0x00) + List(12) { 0 }
+        val b = bytes(*(listOf(0xFF, 0xD8) + bad).toIntArray())
+        assertNull(imageDims(b))
+    }
+
+    @Test
+    fun `imageDims returns null for empty and non-image bytes`() {
+        assertNull(imageDims(ByteArray(0)))
+        assertNull(imageDims("not an image at all, just prose".toByteArray()))
+    }
 }
