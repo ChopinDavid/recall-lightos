@@ -54,7 +54,7 @@ object SyncSetupMessages {
     /** Step 1 lead-in. Python 3.9+ is the real prerequisite from docs/sync-server.md. */
     const val STEP1_BODY: String =
         "You need Python 3.9 or newer on a computer your phone can reach over " +
-            "your home network. Install Anki's sync server:"
+            "your home network. Then, install Anki's sync server:"
 
     /** Verbatim from docs/sync-server.md. */
     const val STEP1_PIP_COMMAND: String = "pip install anki"
@@ -105,7 +105,7 @@ object SyncSetupMessages {
      * so the doc and the phone agree when a user reads both.
      */
     const val STEP3_BODY: String =
-        "Find your computer's local network address — something like 192.168.1.20. " +
+        "Find your computer's local network address, something like 192.168.1.20. " +
             "Back on the previous screen, enter http://192.168.1.20:8080/ (with your " +
             "own address in place of the example), plus the username and password " +
             "you set as SYNC_USER1. Then download your collection."
@@ -127,8 +127,8 @@ object SyncSetupMessages {
      * fact about where the request stands, without promising a date.
      */
     const val FOOTNOTE: String =
-        "Signing in with your AnkiWeb username and password — syncing straight to " +
-            "AnkiWeb — needs the Anki team's approval for third-party apps. We've " +
+        "Signing in with your AnkiWeb username and password, syncing straight to " +
+            "AnkiWeb, needs the Anki team's approval for third-party apps. We've " +
             "requested it and it's in progress. Until then, a self-hosted server is " +
             "the way Recall syncs."
 
