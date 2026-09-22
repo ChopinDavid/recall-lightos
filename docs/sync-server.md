@@ -11,18 +11,25 @@ takes about ten minutes.
 
 ## 1. Run the sync server on your computer
 
-You need Python 3.9+ on any always-on-ish machine on your network (a
-desktop, a home server, a Raspberry Pi).
+You need Python 3.10+ (the floor the `anki` package itself declares) on any
+always-on-ish machine on your network (a desktop, a home server, a Raspberry
+Pi). Install into a virtual environment — bare `pip install` is refused on
+modern Homebrew/Linux Pythons:
 
 ```bash
-pip install anki
+python3 -m venv ~/anki-server
+~/anki-server/bin/pip install anki
 
 SYNC_USER1=you:your-password \
 SYNC_BASE=~/anki-sync-data \
 SYNC_HOST=0.0.0.0 \
 SYNC_PORT=8080 \
-python -m anki.syncserver
+~/anki-server/bin/python -m anki.syncserver
 ```
+
+> Troubleshooting: if pip installs `anki 2.1.x` or errors about `ankirspy`,
+> your `python3` is older than 3.10 — install a newer Python and rerun the
+> two install commands with it.
 
 - `SYNC_USER1` is `username:password` — you'll enter these in Recall.
 - `SYNC_BASE` is where the server stores collections. Back it up like you'd

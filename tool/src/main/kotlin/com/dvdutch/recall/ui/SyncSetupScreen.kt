@@ -80,7 +80,8 @@ class SyncSetupScreen(sealedActivity: SealedLightActivity) :
 
                     StepHeading(steps[0])
                     Body(SyncSetupMessages.STEP1_BODY)
-                    CommandLine(SyncSetupMessages.STEP1_PIP_COMMAND)
+                    SyncSetupMessages.STEP1_INSTALL_LINES.forEach { CommandLine(it) }
+                    Note(SyncSetupMessages.STEP1_TROUBLESHOOT)
                     Body(SyncSetupMessages.STEP1_RUN_LEAD)
                     // One env var per line: the backslash-continued shell form from the
                     // docs wraps into an unreadable mess at 1080px, and a user copying

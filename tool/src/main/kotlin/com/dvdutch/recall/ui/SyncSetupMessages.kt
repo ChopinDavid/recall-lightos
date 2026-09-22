@@ -51,16 +51,35 @@ object SyncSetupMessages {
     /** Step 1 title. */
     const val STEP1_TITLE: String = "On your computer"
 
-    /** Step 1 lead-in. Python 3.9+ is the real prerequisite from docs/sync-server.md. */
+    /**
+     * Step 1 lead-in. The floor is 3.10 because that is what the anki package
+     * itself declares (requires_python >=3.10); an older interpreter makes pip
+     * silently fall back to anki 2.1.35 (2020) and fail on ankirspy — the exact
+     * trap David hit road-testing these instructions on a stock Python 3.9.
+     */
     const val STEP1_BODY: String =
-        "You need Python 3.9 or newer on a computer your phone can reach over " +
-            "your home network. Then, install Anki's sync server:"
+        "You need Python 3.10 or newer on a computer your phone can reach over " +
+            "your home network. Then, install Anki's sync server into its own " +
+            "little environment:"
 
     /**
-     * Verbatim from docs/sync-server.md, plus the python3 -m form for machines
-     * where bare `pip` is missing or points at the wrong Python (stock macOS).
+     * A venv, not a bare pip install: bare pip is refused outright on modern
+     * Homebrew/Linux Pythons (externally managed environments), and on machines
+     * with several Pythons it can quietly pick an old one. The venv pins both.
      */
-    const val STEP1_PIP_COMMAND: String = "pip install anki or python3 -m pip install anki"
+    val STEP1_INSTALL_LINES: List<String> = listOf(
+        "python3 -m venv ~/anki-server",
+        "~/anki-server/bin/pip install anki",
+    )
+
+    /**
+     * The old-Python failure is distinctive — teach the signature so nobody
+     * has to decode a pip resolver error on their own.
+     */
+    const val STEP1_TROUBLESHOOT: String =
+        "If pip installs anki 2.1.x or errors about ankirspy, your python3 is " +
+            "older than 3.10. Install a newer Python and rerun the two commands " +
+            "with it."
 
     /** Lead-in to the run command. */
     const val STEP1_RUN_LEAD: String = "Then run it with these settings:"
@@ -78,8 +97,8 @@ object SyncSetupMessages {
         "SYNC_PORT=8080",
     )
 
-    /** Verbatim from docs/sync-server.md. */
-    const val STEP1_RUN_COMMAND: String = "python -m anki.syncserver"
+    /** The venv's python, so it runs regardless of what bare `python` points at. */
+    const val STEP1_RUN_COMMAND: String = "~/anki-server/bin/python -m anki.syncserver"
 
     /** What the env vars mean, in one line each — enough to not need the docs. */
     const val STEP1_NOTE: String =

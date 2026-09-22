@@ -42,13 +42,30 @@ class SyncSetupMessagesTest {
     // ---- Part 2: HOW — the steps, verbatim-accurate against docs/sync-server.md ----
 
     @Test
-    fun `step one gives the pip install command verbatim`() {
-        assertEquals("pip install anki or python3 -m pip install anki", SyncSetupMessages.STEP1_PIP_COMMAND)
+    fun `step one requires python 3_10 — the floor the anki package itself declares`() {
+        assertTrue(SyncSetupMessages.STEP1_BODY.contains("Python 3.10 or newer"))
+    }
+
+    @Test
+    fun `step one installs into a venv — bare pip is refused on managed pythons`() {
+        assertEquals(
+            listOf(
+                "python3 -m venv ~/anki-server",
+                "~/anki-server/bin/pip install anki",
+            ),
+            SyncSetupMessages.STEP1_INSTALL_LINES,
+        )
+    }
+
+    @Test
+    fun `step one teaches the old-python failure signature`() {
+        assertTrue(SyncSetupMessages.STEP1_TROUBLESHOOT.contains("ankirspy"))
+        assertTrue(SyncSetupMessages.STEP1_TROUBLESHOOT.contains("3.10"))
     }
 
     @Test
     fun `step one gives the syncserver run command verbatim`() {
-        assertEquals("python -m anki.syncserver", SyncSetupMessages.STEP1_RUN_COMMAND)
+        assertEquals("~/anki-server/bin/python -m anki.syncserver", SyncSetupMessages.STEP1_RUN_COMMAND)
     }
 
     @Test
