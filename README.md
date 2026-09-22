@@ -35,7 +35,7 @@ Scheduling configuration — including FSRS parameters, desired retention, and o
 
 ## Status
 
-**0.1.0** (tag `recall-v0.1.0`): feature-complete for review-only studying and smoke-tested end-to-end on the minified release build. Runs as a daily driver on the Light Phone III emulator against a self-hosted sync server. Installation on physical LP3 hardware is pending Light's Tool Manager sideload rollout; distribution awaits Light's Tool Library. Not yet distributed.
+**0.1.0** (tag `v0.1.0`): feature-complete for review-only studying and smoke-tested end-to-end on the minified release build. Runs as a daily driver on the Light Phone III emulator against a self-hosted sync server. Installation on physical LP3 hardware is pending Light's Tool Manager sideload rollout; distribution awaits Light's Tool Library. Not yet distributed.
 
 Known limitations: content that requires a browser engine doesn't render (deck `<script>`s, full MathJax typesetting, CSS-layout-art decks); TTS-only audio is unsupported.
 
