@@ -56,8 +56,11 @@ object SyncSetupMessages {
         "You need Python 3.9 or newer on a computer your phone can reach over " +
             "your home network. Then, install Anki's sync server:"
 
-    /** Verbatim from docs/sync-server.md. */
-    const val STEP1_PIP_COMMAND: String = "pip install anki"
+    /**
+     * Verbatim from docs/sync-server.md, plus the python3 -m form for machines
+     * where bare `pip` is missing or points at the wrong Python (stock macOS).
+     */
+    const val STEP1_PIP_COMMAND: String = "pip install anki or python3 -m pip install anki"
 
     /** Lead-in to the run command. */
     const val STEP1_RUN_LEAD: String = "Then run it with these settings:"

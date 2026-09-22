@@ -43,7 +43,7 @@ class SyncSetupMessagesTest {
 
     @Test
     fun `step one gives the pip install command verbatim`() {
-        assertEquals("pip install anki", SyncSetupMessages.STEP1_PIP_COMMAND)
+        assertEquals("pip install anki or python3 -m pip install anki", SyncSetupMessages.STEP1_PIP_COMMAND)
     }
 
     @Test
