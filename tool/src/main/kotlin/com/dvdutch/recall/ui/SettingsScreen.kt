@@ -201,12 +201,16 @@ private fun SettingsMain(
                 modifier = Modifier.padding(vertical = 0.5f.gridUnitsAsDp()),
             )
 
-            // Dev-only row into the render-node gallery.
-            SettingRow(
-                label = "Developer",
-                value = "Render gallery",
-                onClick = onOpenGallery,
-            )
+            // Dev-only row into the render-node gallery — DEBUG builds only. The
+            // comment used to claim dev-only without enforcing it; David found the
+            // row on a release build (exactly what Light's vetting would flag).
+            if (com.dvdutch.recall.BuildConfig.DEBUG) {
+                SettingRow(
+                    label = "Developer",
+                    value = "Render gallery",
+                    onClick = onOpenGallery,
+                )
+            }
         }
     }
 }
