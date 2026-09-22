@@ -75,10 +75,10 @@ class SyncSetupMessagesTest {
     fun `step one gives the four environment variables verbatim`() {
         assertEquals(
             listOf(
-                "SYNC_USER1=you:password",
-                "SYNC_BASE=~/anki-sync-data",
-                "SYNC_HOST=0.0.0.0",
-                "SYNC_PORT=8080",
+                "export SYNC_USER1=you:password",
+                "export SYNC_BASE=~/anki-sync-data",
+                "export SYNC_HOST=0.0.0.0",
+                "export SYNC_PORT=8080",
             ),
             SyncSetupMessages.STEP1_ENV_LINES,
         )

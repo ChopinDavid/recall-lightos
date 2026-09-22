@@ -100,19 +100,23 @@ object SyncSetupMessages {
             "with it."
 
     /** Lead-in to the run command. */
-    const val STEP1_RUN_LEAD: String = "Then run it with these settings:"
+    /** Tells a novice literally what to do with the block that follows. */
+    const val STEP1_RUN_LEAD: String =
+        "Then start the server. Type each line below and press Enter after " +
+            "each one. The first four are settings; the last one starts it:"
 
     /**
-     * The four environment variables, verbatim from docs/sync-server.md. Rendered
-     * one per line rather than as a single backslash-continued shell line: at
-     * 1080px the continued form wraps into nonsense, and a user copying by eye
-     * needs each name=value to sit on its own line.
+     * `export` per line, NOT the docs' backslash-continued one-liner: at 1080px
+     * the continued form wraps into nonsense, and bare NAME=value lines typed
+     * one per Enter don't survive to the next command — a novice following the
+     * screen literally would start a server that ignores every setting
+     * (David's road-test question exposed exactly this).
      */
     val STEP1_ENV_LINES: List<String> = listOf(
-        "SYNC_USER1=you:password",
-        "SYNC_BASE=~/anki-sync-data",
-        "SYNC_HOST=0.0.0.0",
-        "SYNC_PORT=8080",
+        "export SYNC_USER1=you:password",
+        "export SYNC_BASE=~/anki-sync-data",
+        "export SYNC_HOST=0.0.0.0",
+        "export SYNC_PORT=8080",
     )
 
     /** The venv's python, so it runs regardless of what bare `python` points at. */
@@ -120,9 +124,10 @@ object SyncSetupMessages {
 
     /** What the env vars mean, in one line each — enough to not need the docs. */
     const val STEP1_NOTE: String =
-        "SYNC_USER1 is the username and password you'll enter on this phone. " +
-            "SYNC_HOST=0.0.0.0 is what makes the server reachable from the phone " +
-            "rather than only from the computer itself."
+        "In the first line, replace you:password with a username and password " +
+            "of your own choosing. They are what you'll enter on this phone. " +
+            "When the server is running it prints a 'listening' line. Leave " +
+            "that window open: closing it stops the server."
 
     /** Step 2 title. */
     const val STEP2_TITLE: String = "In Anki on your computer"
