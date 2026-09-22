@@ -67,10 +67,18 @@ object SyncSetupMessages {
      * Homebrew/Linux Pythons (externally managed environments), and on machines
      * with several Pythons it can quietly pick an old one. The venv pins both.
      */
-    val STEP1_INSTALL_LINES: List<String> = listOf(
-        "python3 -m venv ~/anki-server",
-        "~/anki-server/bin/pip install anki",
-    )
+    /**
+     * Rendered as TWO separately-labeled commands ("First:" / "Then:"), never as
+     * adjacent mono lines: at 1080px each command wraps across lines, making a
+     * wrap indistinguishable from a command boundary — David road-tested the
+     * adjacent form and typed both commands as one (venv then treats the second
+     * command's words as extra directories to create). Prose labels carry the
+     * boundary and cannot be mistyped into a terminal.
+     */
+    const val STEP1_CMD1_LEAD: String = "First:"
+    const val STEP1_CMD1: String = "python3 -m venv ~/anki-server"
+    const val STEP1_CMD2_LEAD: String = "Then:"
+    const val STEP1_CMD2: String = "~/anki-server/bin/pip install anki"
 
     /**
      * The old-Python failure is distinctive — teach the signature so nobody
