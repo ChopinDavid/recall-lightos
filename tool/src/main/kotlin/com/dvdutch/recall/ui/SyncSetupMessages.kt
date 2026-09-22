@@ -60,7 +60,7 @@ object SyncSetupMessages {
     const val STEP1_BODY: String =
         "You need Python 3.10 or newer on a computer your phone can reach over " +
             "your home network. Then, install Anki's sync server into its own " +
-            "little environment:"
+            "environment:"
 
     /**
      * A venv, not a bare pip install: bare pip is refused outright on modern
