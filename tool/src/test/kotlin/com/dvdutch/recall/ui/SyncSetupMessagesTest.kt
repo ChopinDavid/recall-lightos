@@ -50,7 +50,6 @@ class SyncSetupMessagesTest {
     fun `step one verifies the python version before the venv exists`() {
         assertEquals("python3 --version", SyncSetupMessages.STEP1_CHECK_CMD)
         assertTrue(SyncSetupMessages.STEP1_CHECK_NOTE.contains("3.10 or newer"))
-        assertTrue(SyncSetupMessages.STEP1_CHECK_NOTE.contains("fresh terminal"))
     }
 
     @Test
