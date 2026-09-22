@@ -158,7 +158,7 @@ class SyncSetupMessagesTest {
 
     @Test
     fun `the first-run row asks the setup question in the user's words`() {
-        assertEquals("how do I set this up?", SyncSetupMessages.FIRST_RUN_ROW_LABEL)
+        assertEquals("\u201CHow do I set this up?\u201D", SyncSetupMessages.FIRST_RUN_ROW_LABEL)
     }
 
     @Test

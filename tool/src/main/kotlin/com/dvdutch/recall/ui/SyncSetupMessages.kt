@@ -23,7 +23,7 @@ object SyncSetupMessages {
     const val TITLE: String = "Sync setup"
 
     /** The underlined tappable row on the first-run screen — phrased as the user's question. */
-    const val FIRST_RUN_ROW_LABEL: String = "how do I set this up?"
+    const val FIRST_RUN_ROW_LABEL: String = "\u201CHow do I set this up?\u201D"
 
     /** The equivalent row in Settings — named for what it is, since the user is not mid-setup. */
     const val SETTINGS_ROW_LABEL: String = "sync setup help"

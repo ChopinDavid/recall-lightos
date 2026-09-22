@@ -25,7 +25,7 @@ import com.thelightphone.sdk.ui.gridUnitsAsDp
 
 /**
  * The in-app sync setup onboarding, reachable from BOTH [FirstRunScreen] (via
- * "how do I set this up?") and [SettingsScreen] (via "sync setup help").
+ * “How do I set this up?”) and [SettingsScreen] (via "sync setup help").
  *
  * This screen exists because the Light Phone III has no browser. A normal app
  * would link to docs; here there is nowhere to link TO from the device, so the
