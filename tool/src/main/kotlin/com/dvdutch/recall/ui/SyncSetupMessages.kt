@@ -81,13 +81,13 @@ object SyncSetupMessages {
      * road-test failure: a freshly-installed 3.14 that his still-open
      * terminal didn't see yet built him a 3.9 venv.
      */
-    const val STEP1_CHECK_LEAD: String = "Check your Python first:"
+    const val STEP1_CHECK_LEAD: String = "Check your Python:"
     const val STEP1_CHECK_CMD: String = "python3 --version"
     const val STEP1_CHECK_NOTE: String = "It must say 3.10 or newer."
 
-    const val STEP1_CMD1_LEAD: String = "First:"
+    const val STEP1_CMD1_LEAD: String = "Create the environment:"
     const val STEP1_CMD1: String = "python3 -m venv ~/anki-server"
-    const val STEP1_CMD2_LEAD: String = "Then:"
+    const val STEP1_CMD2_LEAD: String = "Install into it:"
     const val STEP1_CMD2: String = "~/anki-server/bin/pip install anki"
 
     /**

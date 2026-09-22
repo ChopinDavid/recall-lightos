@@ -54,9 +54,9 @@ class SyncSetupMessagesTest {
 
     @Test
     fun `step one installs into a venv as two separately-labeled commands`() {
-        assertEquals("First:", SyncSetupMessages.STEP1_CMD1_LEAD)
+        assertEquals("Create the environment:", SyncSetupMessages.STEP1_CMD1_LEAD)
         assertEquals("python3 -m venv ~/anki-server", SyncSetupMessages.STEP1_CMD1)
-        assertEquals("Then:", SyncSetupMessages.STEP1_CMD2_LEAD)
+        assertEquals("Install into it:", SyncSetupMessages.STEP1_CMD2_LEAD)
         assertEquals("~/anki-server/bin/pip install anki", SyncSetupMessages.STEP1_CMD2)
     }
 
