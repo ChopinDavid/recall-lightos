@@ -24,7 +24,9 @@ import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightIcons
+import com.thelightphone.sdk.ui.LightScrollBarPosition
 import com.thelightphone.sdk.ui.LightScrollView
+import com.thelightphone.sdk.ui.scrollBarGutterUnits
 import com.thelightphone.sdk.ui.LightText
 import com.thelightphone.sdk.ui.LightTextVariant
 import com.thelightphone.sdk.ui.LightTheme
@@ -176,10 +178,14 @@ private fun DeckList(
         CenteredMessage("no decks")
         return
     }
+    // Start padding equals the scroll view's reserved trailing scrollbar gutter, so the
+    // deck names' leading inset visually matches the counts' trailing inset (1u horizontal
+    // padding read as lopsided: 1u leading vs 1u + 2u gutter trailing — David's report).
+    // No end padding: the gutter IS the trailing inset, and the bar occupies it when shown.
     LightScrollView(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 1f.gridUnitsAsDp()),
+            .padding(start = scrollBarGutterUnits(LightScrollBarPosition.Outside).gridUnitsAsDp()),
     ) {
         rows.forEach { row ->
             DeckListRow(
