@@ -99,6 +99,7 @@ class SettingsScreen(sealedActivity: SealedLightActivity) :
                         onEditPassword = viewModel::openEditPassword,
                         onTestLogin = viewModel::testLogin,
                         onOpenGallery = { navigateTo(::GalleryScreen) },
+                        onOpenHelp = { navigateTo(::SyncSetupScreen) },
                     )
                 }
             }
@@ -141,6 +142,7 @@ private fun SettingsMain(
     onEditPassword: () -> Unit,
     onTestLogin: () -> Unit,
     onOpenGallery: () -> Unit,
+    onOpenHelp: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         LightTopBar(
@@ -199,6 +201,20 @@ private fun SettingsMain(
                 variant = LightTextVariant.Fine,
                 lighten = true,
                 modifier = Modifier.padding(vertical = 0.5f.gridUnitsAsDp()),
+            )
+
+            // The same sync-setup onboarding the first-run screen offers, reachable
+            // later from Settings — a user re-pointing Recall at a new server (or
+            // rebuilding one) needs the commands again, and on a browserless phone
+            // this screen is the only place to get them. NOT DEBUG-gated: release
+            // users are precisely the audience.
+            LightText(
+                text = SyncSetupMessages.SETTINGS_ROW_LABEL,
+                variant = LightTextVariant.Copy,
+                underline = true,
+                modifier = Modifier
+                    .clickable(onClick = onOpenHelp)
+                    .padding(vertical = 1f.gridUnitsAsDp()),
             )
 
             // Dev-only row into the render-node gallery — DEBUG builds only. The

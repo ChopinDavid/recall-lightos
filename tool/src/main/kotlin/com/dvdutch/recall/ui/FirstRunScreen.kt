@@ -19,6 +19,7 @@ import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.rememberKeyboardOptions
 import com.thelightphone.sdk.ui.LightIcons
+import com.thelightphone.sdk.ui.LightScrollView
 import com.thelightphone.sdk.ui.LightText
 import com.thelightphone.sdk.ui.LightTextInputEditor
 import com.thelightphone.sdk.ui.LightTextVariant
@@ -96,6 +97,7 @@ class FirstRunScreen(sealedActivity: SealedLightActivity) :
                                 failure = (phase as? FirstRunPhase.Failed)?.reason,
                                 onEdit = viewModel::openEditor,
                                 onDownload = viewModel::startDownload,
+                                onOpenHelp = { navigateTo(::SyncSetupScreen) },
                             )
                         }
                     }
@@ -111,8 +113,13 @@ private fun IntroBody(
     failure: String?,
     onEdit: (FirstRunField) -> Unit,
     onDownload: () -> Unit,
+    onOpenHelp: () -> Unit,
 ) {
-    Column(
+    // Scrollable: the help row below is the LAST thing on this screen, and with a
+    // long endpoint value plus the http warning plus a download-failure line the
+    // fixed column could push it off a 1080px screen. On a browserless phone an
+    // unreachable help row is the same as no help at all.
+    LightScrollView(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 1f.gridUnitsAsDp()),
@@ -157,6 +164,19 @@ private fun IntroBody(
                     .padding(vertical = 1f.gridUnitsAsDp()),
             )
         }
+
+        // The only setup guidance reachable from the device — this phone has no
+        // browser, so a user who doesn't yet know what to type here has nowhere
+        // else to go. Kept unconditional (not gated on canDownload): the user who
+        // has entered nothing is exactly the one who needs it.
+        LightText(
+            text = SyncSetupMessages.FIRST_RUN_ROW_LABEL,
+            variant = LightTextVariant.Copy,
+            underline = true,
+            modifier = Modifier
+                .clickable(onClick = onOpenHelp)
+                .padding(vertical = 1f.gridUnitsAsDp()),
+        )
     }
 }
 
