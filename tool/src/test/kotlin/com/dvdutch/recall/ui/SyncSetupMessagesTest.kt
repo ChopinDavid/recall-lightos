@@ -115,16 +115,9 @@ class SyncSetupMessagesTest {
     }
 
     @Test
-    fun `step three gives an example local address and the endpoint shape`() {
+    fun `step three names the sync endpoint, matching the Welcome field and the card`() {
         val body = SyncSetupMessages.STEP3_BODY
-        assertTrue(body.contains("192.168.1.20"), "shows an example LAN address: $body")
-        assertTrue(body.contains("http://"), "shows the endpoint scheme: $body")
-        assertTrue(body.contains("8080"), "shows the port: $body")
-    }
-
-    @Test
-    fun `step three tells the user to enter the endpoint and credentials here on the phone`() {
-        val body = SyncSetupMessages.STEP3_BODY
+        assertTrue(body.contains("sync endpoint"), "uses the Welcome screen's term: $body")
         assertTrue(body.contains("username"), "names username: $body")
         assertTrue(body.contains("password"), "names password: $body")
     }

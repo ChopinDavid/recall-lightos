@@ -178,14 +178,14 @@ object SyncSetupMessages {
      * Step 3 body. The example address is the same one docs/sync-server.md uses,
      * so the doc and the phone agree when a user reads both.
      */
+    /**
+     * One sentence. "Sync endpoint" (not "address") — the same term the
+     * Welcome screen's field and the setup command's printed card use, so all
+     * three surfaces name the value identically (David's consistency pass).
+     */
     const val STEP3_BODY: String =
-        "Enter the address, username, and password the setup command " +
-            "printed. Set it up by hand instead? The phone needs your " +
-            "computer's network address. On a Mac it's in " +
-            "System Settings → Wi-Fi → Details; it looks like 192.168.1.20. " +
-            "Back on the previous screen, enter http://192.168.1.20:8080/ (with " +
-            "your own address in place of the example), plus your username and " +
-            "password. Then download your collection."
+        "enter the sync endpoint, username, and password the setup command " +
+            "printed. Then download your collection."
 
     /** Lead-in to the printed guide location. */
     const val GUIDE_LEAD: String = "The full guide, with more options, lives at:"

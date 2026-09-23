@@ -94,30 +94,6 @@ class SyncSetupScreen(sealedActivity: SealedLightActivity) :
                     StepHeading(steps[2])
                     Body(SyncSetupMessages.STEP3_BODY)
 
-                    // The by-hand alternative, verbatim from the pre-script era — every
-                    // line of it was hardened by David's road-test.
-                    SectionHeading(SyncSetupMessages.MANUAL_HEADING, topGap = 1.5f)
-                    Body(SyncSetupMessages.STEP1_BODY)
-                    Body(SyncSetupMessages.STEP1_CHECK_LEAD, topGap = 0.5f)
-                    CommandLine(SyncSetupMessages.STEP1_CHECK_CMD)
-                    Note(SyncSetupMessages.STEP1_CHECK_NOTE)
-                    Body(SyncSetupMessages.STEP1_CMD1_LEAD, topGap = 0.5f)
-                    CommandLine(SyncSetupMessages.STEP1_CMD1)
-                    Body(SyncSetupMessages.STEP1_CMD2_LEAD, topGap = 0.5f)
-                    CommandLine(SyncSetupMessages.STEP1_CMD2)
-                    Note(SyncSetupMessages.STEP1_TROUBLESHOOT)
-                    Body(SyncSetupMessages.STEP1_RUN_LEAD)
-                    // One env var per line: the backslash-continued shell form from the
-                    // docs wraps into an unreadable mess at 1080px, and a user copying
-                    // these by eye needs each name=value whole on its own line.
-                    SyncSetupMessages.STEP1_ENV_LINES.forEach { CommandLine(it) }
-                    CommandLine(SyncSetupMessages.STEP1_RUN_COMMAND)
-                    Note(SyncSetupMessages.STEP1_NOTE)
-
-                    // The guide location, printed as text — there is no browser here.
-                    Body(SyncSetupMessages.GUIDE_LEAD, topGap = 1.5f)
-                    CommandLine(SyncSetupMessages.GUIDE_URL)
-
                     // 3. FOOTNOTE — lightened Fine, last.
                     LightText(
                         text = SyncSetupMessages.FOOTNOTE,
