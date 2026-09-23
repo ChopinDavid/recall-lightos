@@ -39,6 +39,17 @@ class SyncSetupMessagesTest {
         )
     }
 
+    @Test
+    fun `step one leads with the setup script via a short typeable url`() {
+        assertEquals("github.com/ChopinDavid/recall-server", SyncSetupMessages.STEP1_EASY_URL)
+        assertTrue(SyncSetupMessages.STEP1_EASY_AFTER.contains("prints the address"))
+    }
+
+    @Test
+    fun `the manual walk survives as an appendix`() {
+        assertTrue(SyncSetupMessages.MANUAL_HEADING.contains("by hand"))
+    }
+
     // ---- Part 2: HOW — the steps, verbatim-accurate against docs/sync-server.md ----
 
     @Test

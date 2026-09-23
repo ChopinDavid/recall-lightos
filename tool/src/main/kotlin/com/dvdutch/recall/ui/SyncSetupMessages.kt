@@ -57,6 +57,25 @@ object SyncSetupMessages {
      * silently fall back to anki 2.1.35 (2020) and fail on ankirspy — the exact
      * trap David hit road-testing these instructions on a stock Python 3.9.
      */
+    /**
+     * The script route replaced the manual walk as step 1: David road-tested
+     * the manual funnel through seven failures, then we automated it
+     * (github.com/ChopinDavid/recall-server). The phone shows the SHORT repo
+     * address, never the long curl line: the user transcribes by eye to a
+     * computer, and the computer's browser gives them copy-paste there.
+     */
+    const val STEP1_EASY_BODY: String =
+        "Open this page in a browser:"
+    const val STEP1_EASY_URL: String = "github.com/ChopinDavid/recall-server"
+    const val STEP1_EASY_AFTER: String =
+        "Copy the one-line setup command from that page into the Terminal " +
+            "app and press “Enter”. It sets the server up, keeps it " +
+            "running, and prints the address, username, and password to " +
+            "enter in Anki and here."
+
+    /** Appendix heading for the by-hand alternative. */
+    const val MANUAL_HEADING: String = "Prefer to set it up by hand?"
+
     const val STEP1_BODY: String =
         "You need Python 3.10 or newer on a computer your phone can reach over " +
             "your home network. Then, install Anki's sync server into its own " +
@@ -160,7 +179,9 @@ object SyncSetupMessages {
      * so the doc and the phone agree when a user reads both.
      */
     const val STEP3_BODY: String =
-        "The phone needs your computer's network address. On a Mac it's in " +
+        "Enter the address, username, and password the setup command " +
+            "printed. Set it up by hand instead? The phone needs your " +
+            "computer's network address. On a Mac it's in " +
             "System Settings → Wi-Fi → Details; it looks like 192.168.1.20. " +
             "Back on the previous screen, enter http://192.168.1.20:8080/ (with " +
             "your own address in place of the example), plus your username and " +

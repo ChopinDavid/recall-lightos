@@ -83,6 +83,20 @@ class SyncSetupScreen(sealedActivity: SealedLightActivity) :
                     val steps = SyncSetupMessages.stepHeadings()
 
                     StepHeading(steps[0])
+                    Body(SyncSetupMessages.STEP1_EASY_BODY)
+                    CommandLine(SyncSetupMessages.STEP1_EASY_URL)
+                    Body(SyncSetupMessages.STEP1_EASY_AFTER, topGap = 0.5f)
+
+                    StepHeading(steps[1])
+                    Body(SyncSetupMessages.STEP2_BODY)
+                    Note(SyncSetupMessages.STEP2_MEDIA_NOTE)
+
+                    StepHeading(steps[2])
+                    Body(SyncSetupMessages.STEP3_BODY)
+
+                    // The by-hand alternative, verbatim from the pre-script era — every
+                    // line of it was hardened by David's road-test.
+                    SectionHeading(SyncSetupMessages.MANUAL_HEADING, topGap = 1.5f)
                     Body(SyncSetupMessages.STEP1_BODY)
                     Body(SyncSetupMessages.STEP1_CHECK_LEAD, topGap = 0.5f)
                     CommandLine(SyncSetupMessages.STEP1_CHECK_CMD)
@@ -99,13 +113,6 @@ class SyncSetupScreen(sealedActivity: SealedLightActivity) :
                     SyncSetupMessages.STEP1_ENV_LINES.forEach { CommandLine(it) }
                     CommandLine(SyncSetupMessages.STEP1_RUN_COMMAND)
                     Note(SyncSetupMessages.STEP1_NOTE)
-
-                    StepHeading(steps[1])
-                    Body(SyncSetupMessages.STEP2_BODY)
-                    Note(SyncSetupMessages.STEP2_MEDIA_NOTE)
-
-                    StepHeading(steps[2])
-                    Body(SyncSetupMessages.STEP3_BODY)
 
                     // The guide location, printed as text — there is no browser here.
                     Body(SyncSetupMessages.GUIDE_LEAD, topGap = 1.5f)

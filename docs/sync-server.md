@@ -11,7 +11,13 @@ takes about ten minutes.
 
 ## 1. Run the sync server on your computer
 
-You need Python 3.10+ (the floor the `anki` package itself declares) on any
+**The easy way — one command:** visit
+[github.com/ChopinDavid/recall-server](https://github.com/ChopinDavid/recall-server)
+and paste its one-line setup command into your terminal. It installs a
+prebuilt server binary, generates credentials, starts it at every login, and
+prints the address, username, and password for steps 2 and 3. Skip to step 2.
+
+**The manual way:** You need Python 3.10+ (the floor the `anki` package itself declares) on any
 always-on-ish machine on your network (a desktop, a home server, a Raspberry
 Pi). Install into a virtual environment — bare `pip install` is refused on
 modern Homebrew/Linux Pythons:
