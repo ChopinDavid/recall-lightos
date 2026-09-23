@@ -143,7 +143,7 @@ object SyncSetupMessages {
      */
     const val STEP2_BODY: String =
         "Open Preferences → Syncing, choose self-hosted sync server, and enter " +
-            "http://localhost:8080/ — Anki and the server are on the same " +
+            "http://localhost:8080/. Anki and the server are on the same " +
             "computer, so localhost is the address. Restart Anki, press Sync, " +
             "log in with the username and password you chose, and choose Upload " +
             "when it asks which side to keep."
