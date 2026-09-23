@@ -29,7 +29,7 @@ Everything scheduling- and sync-related is **upstream Anki code, never reimpleme
 - Sync is rslib's own sync client — byte-for-byte the same code path AnkiDroid uses. The only write the client ever performs is `answerCard` with the scheduling states the backend itself issued.
 - Card HTML is compiled to native Compose by a small renderer, parity-tested against a Python reference over 22,000+ real card sides.
 
-Syncs with **self-hosted sync servers** — see **[Syncing Recall with your own server](docs/sync-server.md)** for the ten-minute setup (server on your machine, then the app). Syncing with **AnkiWeb is not yet available**: it requires permission from Ankitects, which we have requested and are currently awaiting. Until then, a self-hosted server is the sync path.
+Syncs with **self-hosted sync servers**. The companion **[recall-server](https://github.com/ChopinDavid/recall-server)** sets one up on your computer with a single command (prebuilt binaries of Anki's official sync server, auto-start, printed credentials); **[Syncing Recall with your own server](docs/sync-server.md)** covers that path and the manual one, then pointing the app at it. Syncing with **AnkiWeb is not yet available**: it requires permission from Ankitects, which we have requested and are currently awaiting. Until then, a self-hosted server is the sync path.
 
 Scheduling configuration — including FSRS parameters, desired retention, and optimization — is managed in Anki desktop; Recall applies whatever the synced collection specifies (FSRS and SM-2 both supported, via Anki's own backend).
 
