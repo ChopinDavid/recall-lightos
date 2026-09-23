@@ -160,12 +160,21 @@ object SyncSetupMessages {
      * pointed at nothing — David's road-test caught the dangling reference.
      * The LAN-address hunt belongs to step 3 only, where the phone needs it.)
      */
+    /**
+     * Matches what desktop Anki actually shows (David road-tested): the login
+     * form labels the username field “email” (AnkiWeb heritage; a plain
+     * username works), and a “save preferences and sync now?” prompt can
+     * appear before any which-side question — hence “say yes” and the
+     * conditional “if it asks”.
+     */
     const val STEP2_BODY: String =
         "Open Preferences → Syncing, choose self-hosted sync server, and enter " +
             "http://localhost:8080/. Anki and the server are on the same " +
             "computer, so localhost is the address. Restart Anki, press Sync, " +
-            "log in with the username and password from step 1, and choose “Upload” " +
-            "when it asks which side to keep."
+            "and log in with the username and password from step 1. Anki labels " +
+            "the username field “email”; the username goes there. Say yes " +
+            "when it offers to sync, and choose “Upload” if it asks which " +
+            "side to keep."
 
     /** The media reassurance — a real question users have, answered where they'll ask it. */
     const val STEP2_MEDIA_NOTE: String =

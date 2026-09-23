@@ -96,6 +96,13 @@ class SyncSetupMessagesTest {
     }
 
     @Test
+    fun `step two matches desktop anki's real dialogs`() {
+        val body = SyncSetupMessages.STEP2_BODY
+        assertTrue(body.contains("“email”"), "warns about the email-labeled field: $body")
+        assertTrue(body.contains("if it asks"), "which-side prompt is conditional: $body")
+    }
+
+    @Test
     fun `step two walks the anki desktop preferences path`() {
         val body = SyncSetupMessages.STEP2_BODY
         assertTrue(body.contains("Preferences"), "names Preferences: $body")
