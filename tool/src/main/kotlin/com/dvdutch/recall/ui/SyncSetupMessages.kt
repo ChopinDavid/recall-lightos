@@ -164,7 +164,7 @@ object SyncSetupMessages {
         "Open Preferences → Syncing, choose self-hosted sync server, and enter " +
             "http://localhost:8080/. Anki and the server are on the same " +
             "computer, so localhost is the address. Restart Anki, press Sync, " +
-            "log in with the username and password you chose, and choose Upload " +
+            "log in with the username and password from step 1, and choose Upload " +
             "when it asks which side to keep."
 
     /** The media reassurance — a real question users have, answered where they'll ask it. */
