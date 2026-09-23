@@ -84,7 +84,7 @@ class SyncSetupScreen(sealedActivity: SealedLightActivity) :
 
                     StepHeading(steps[0])
                     Body(SyncSetupMessages.STEP1_EASY_BODY)
-                    CommandLine(SyncSetupMessages.STEP1_EASY_URL)
+                    UrlLine(SyncSetupMessages.STEP1_EASY_URL)
                     Body(SyncSetupMessages.STEP1_EASY_AFTER, topGap = 0.5f)
 
                     StepHeading(steps[1])
@@ -156,6 +156,25 @@ private fun Body(text: String, topGap: Float = 0f) {
  * reason, not a decorative one: it disambiguates 0/O and 1/l/I in an address or
  * a password the user is copying by eye.
  */
+/**
+ * A URL to read and retype in a browser — monospace for transcription accuracy
+ * but at Fine size: it is an address, not a terminal command, and the full
+ * command-block treatment (Copy-size + hanging indent) made it shout.
+ */
+@Composable
+private fun UrlLine(text: String) {
+    LightText(
+        text = text,
+        variant = LightTextVariant.Fine,
+        monospace = true,
+        modifier = Modifier.padding(
+            start = 1f.gridUnitsAsDp(),
+            top = 0.25f.gridUnitsAsDp(),
+            bottom = 0.25f.gridUnitsAsDp(),
+        ),
+    )
+}
+
 @Composable
 private fun CommandLine(text: String) {
     // Direct Text rather than LightText: the HANGING INDENT is load-bearing. At
