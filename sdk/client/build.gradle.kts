@@ -25,6 +25,7 @@ android {
     defaultConfig {
         minSdk = rootProject.ext["minSdk"] as Int
         buildConfigField("String", "LIGHT_VAPID_KEY", "\"$vapidPublicKey\"")
+        consumerProguardFiles("consumer-rules.pro")
     }
 
     buildFeatures {
@@ -61,6 +62,10 @@ dependencies {
     api(libs.androidx.room.runtime)
     api(libs.androidx.room.ktx)
     implementation(libs.androidx.work.runtime)
+    implementation(libs.androidx.media3.common)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.session)
+    api(libs.light.toolmanager.client)
     lintChecks(project(":lint-rules"))
 
     testImplementation(libs.kotlin.test)

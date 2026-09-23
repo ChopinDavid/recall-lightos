@@ -7,8 +7,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import com.thelightphone.lp3Keyboard.ui.KeyboardOptions
-import com.thelightphone.lp3Keyboard.ui.defaultEmojis
 import com.thelightphone.lp3Keyboard.ui.parseEmojiString
+import com.thelightphone.lp3Keyboard.ui.viewmodel.defaultEmojis
 import com.thelightphone.sdk.shared.LightServiceMethod
 import com.thelightphone.sdk.shared.error
 import com.thelightphone.sdk.shared.getOrNull
@@ -40,7 +40,8 @@ suspend fun refreshKeyboardOptions(): KeyboardOptions? {
         // not using currently - may want to move into LayoutOptions in Lp3Keyboard source
         displayReturn = true,
         displayVoice = result.displayVoice,
-        enableKeyAnimation = result.enableKeyAnimation
+        enableKeyAnimation = result.enableKeyAnimation,
+        swipeEnabled = result.swipeEnabled == true // nullable
     )
 }
 
@@ -48,7 +49,10 @@ private var cachedOptions = defaultKeyboardOptions()
 
 @Composable
 fun rememberKeyboardOptions(
-    initialOptions: KeyboardOptions = cachedOptions
+    initialOptions: KeyboardOptions = cachedOptions,
+    // temporarily force opt-in for dictation key.
+    // We don't support it in LP3 keyboard as of 0.0.19
+    allowDictationKey: Boolean = false
 ): StateFlow<KeyboardOptions> {
     val flow = remember { MutableStateFlow(initialOptions) }
     val scope = rememberCoroutineScope()
@@ -57,10 +61,12 @@ fun rememberKeyboardOptions(
     SideEffect {
         refreshJob.value?.cancel()
         refreshJob.value = scope.launch {
-            refreshKeyboardOptions()?.let {
-                cachedOptions = it
-                flow.value = it
-            }
+            refreshKeyboardOptions()
+                ?.let { it.copy(displayVoice = it.displayVoice && allowDictationKey) }
+                ?.let {
+                    cachedOptions = it
+                    flow.value = it
+                }
         }
     }
     return flow

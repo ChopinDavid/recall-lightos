@@ -25,7 +25,7 @@ class LightSdkService : Service() {
 
     // TODO something more robust
     private val tokensByUid = mutableMapOf<Int, String>()
-    private val settings by lazy { LightSdkServerSettings(this) }
+    private val settings by lazy { LightSdkServer.provideSdkSettings(this) }
 
     private fun verifyCallerIsInstalledClient(callingId: Int): Boolean {
         val packages = packageManager.getPackagesForUid(callingId) ?: return false
@@ -42,7 +42,7 @@ class LightSdkService : Service() {
                 Intent(LightConstants.ACTION_SDK_MARKER).setPackage(packageName),
                 PackageManager.GET_META_DATA
             ).isNotEmpty()
-            hasMarker && LightSdkServer.isPackageAllowed(clientFilterLevel, packageName)
+            hasMarker && LightSdkServer.isPackageAllowed(clientFilterLevel, this, packageName)
         }
     }
 
@@ -81,7 +81,7 @@ class LightSdkService : Service() {
                             Log.w(TAG, "Rejected request with invalid token from uid=$callingUid")
                             reply?.apply {
                                 writeNoException()
-                                writeInt(LightResult.ErrorCode.NoPermission.ordinal)
+                                writeInt(LightResult.ErrorCode.InvalidToken.ordinal)
                                 writeString("invalid token")
                             }
                             return true
@@ -198,11 +198,6 @@ class LightSdkService : Service() {
                         "Server has not defined a component to allow permission acceptance."
                     )
                 } else {
-                    startActivity(
-                        Intent(this@LightSdkService, component).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                    )
                     val componentName =
                         ComponentName(
                             this@LightSdkService,
@@ -218,7 +213,73 @@ class LightSdkService : Service() {
                 }
             }
 
-            null -> {
+            LightServiceMethod.GetUserPreferences -> {
+                val preferencesSnapshot = settings.userPreferences
+                LightResult.Success(
+                    LightServiceMethod.GetUserPreferences.encodeResponse(preferencesSnapshot)
+                )
+            }
+
+            LightServiceMethod.DeviceKeyEvent -> {
+                val request = LightServiceMethod.DeviceKeyEvent.decodeRequest(payload!!)
+                LightSdkServer.onDeviceKeyEvent(callingUid, request)
+                LightResult.Success(
+                    LightServiceMethod.DeviceKeyEvent.encodeResponse(Unit)
+                )
+            }
+
+            LightServiceMethod.OpenDialer -> {
+                val request = LightServiceMethod.OpenDialer.decodeRequest(payload!!)
+                val phoneNumber = request.phoneNumber.trim()
+                if (phoneNumber.isEmpty()) {
+                    return@runCatching LightResult.Error(
+                        LightResult.ErrorCode.InvalidParameters,
+                        "missing phoneNumber",
+                    )
+                }
+                LightSdkServer.onOpenDialer(callingUid, phoneNumber)
+                LightResult.Success(
+                    LightServiceMethod.OpenDialer.encodeResponse(Unit)
+                )
+            }
+
+            LightServiceMethod.GetCurrentLocation -> {
+                when (val result = LightSdkServer.onGetCurrentLocation(callingUid)) {
+                    is LightResult.Success -> LightResult.Success(
+                        LightServiceMethod.GetCurrentLocation.encodeResponse(result.data)
+                    )
+                    is LightResult.Error -> result
+                }
+            }
+
+            LightServiceMethod.GetDefaultLocation -> {
+                when (val result = LightSdkServer.onGetDefaultLocation(callingUid)) {
+                    is LightResult.Success -> LightResult.Success(
+                        LightServiceMethod.GetDefaultLocation.encodeResponse(result.data)
+                    )
+                    is LightResult.Error -> result
+                }
+            }
+
+            LightServiceMethod.RequestLocationUpdates -> {
+                when (val result = LightSdkServer.onRequestLocationUpdates(callingUid)) {
+                    is LightResult.Success -> LightResult.Success(
+                        LightServiceMethod.RequestLocationUpdates.encodeResponse(Unit)
+                    )
+                    is LightResult.Error -> result
+                }
+            }
+
+            LightServiceMethod.ReleaseLocationUpdates -> {
+                when (val result = LightSdkServer.onReleaseLocationUpdates(callingUid)) {
+                    is LightResult.Success -> LightResult.Success(
+                        LightServiceMethod.ReleaseLocationUpdates.encodeResponse(Unit)
+                    )
+                    is LightResult.Error -> result
+                }
+            }
+
+            null, is LightServiceMethod.CustomServiceMethod<*, *> -> {
                 // The app that wraps this server may be able to handle custom methods
                 LightSdkServer.customServiceMethodResolver.invoke(callingUid, methodId, payload)
             }
