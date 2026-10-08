@@ -5,6 +5,13 @@ versionCode = 1
 versionName = "0.1.0"
 permissions = ["android.permission.INTERNET"]
 
+# cleartext-http: self-hosted Anki sync servers speak plain HTTP by default (a LAN
+# endpoint like http://192.168.x.x:8080), and custom-server sync is this tool's
+# primary sync path, so cleartext must be permitted in every build, including
+# Light-built ones (which ignore src/debug and src/release manifest overlays).
+# Users who want TLS can front the server with a reverse proxy and use https://.
+capabilities = ["cleartext-http"]
+
 # serverPackage = which package hosts the Light server this tool binds to. The SDK
 # (LightSdkApplication) reads it from the generated LIGHT_SERVER_PACKAGE manifest
 # meta-data at runtime to UnifiedPush.saveDistributor(...) and LightServiceConnection
@@ -14,8 +21,13 @@ permissions = ["android.permission.INTERNET"]
 # `com.thelightphone.sdk.emulator` (installed per docs/system_app). On a real LP3 /
 # Light's production build service it is `com.lightos`.
 #
+# The SDK plugin rejects any value other than `com.lightos` unless the build passes
+# -DlightSdk.allowAltServerPackage=true. CI passes it; locally, set it once with
+# `systemProp.lightSdk.allowAltServerPackage=true` in ~/.gradle/gradle.properties.
+#
 # SUBMISSION-DAY: flip this to "com.lightos" ONLY when building for Light's build
-# service / real LP3 hardware. Do NOT flip for local dev — the emulator has no
-# `com.lightos` package, so the SDK bind would fail and the tool would not receive
-# Light-server data on the emulator.
+# service / real LP3 hardware. Light's builder never passes the flag, so a submission
+# left on the emulator package fails the build. Do NOT flip for local dev — the
+# emulator has no `com.lightos` package, so the SDK bind would fail and the tool
+# would not receive Light-server data on the emulator.
 serverPackage = "com.thelightphone.sdk.emulator"

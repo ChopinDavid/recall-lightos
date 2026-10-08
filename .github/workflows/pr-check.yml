@@ -37,4 +37,4 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Run check
-        run: ./gradlew check --stacktrace
+        run: ./gradlew check -DlightSdk.allowAltServerPackage=true --stacktrace
