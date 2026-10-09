@@ -95,13 +95,13 @@ object PeriodicSync {
      * itself non-fatal, so this only interprets its [SyncInfo].
      */
     suspend fun runOnce(controller: SyncController?): LightJobResult {
-        if (controller == null) return LightJobResult.Success()
-        if (controller.needsAttention.value) return LightJobResult.Success()
+        if (controller == null) return LightJobResult.Success(outputFilePath = null, message = null)
+        if (controller.needsAttention.value) return LightJobResult.Success(outputFilePath = null, message = null)
         val info: SyncInfo = controller.sync(media = true)
         return when {
-            info.synced -> LightJobResult.Success()
+            info.synced -> LightJobResult.Success(outputFilePath = null, message = null)
             // A FULL_* just latched — a retry cannot resolve it; do not reschedule early.
-            controller.needsAttention.value -> LightJobResult.Success()
+            controller.needsAttention.value -> LightJobResult.Success(outputFilePath = null, message = null)
             // Otherwise the failure was transient (network/server); back off and retry.
             else -> LightJobResult.Retry
         }
