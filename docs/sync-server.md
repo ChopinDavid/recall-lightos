@@ -13,7 +13,8 @@ takes about ten minutes.
 
 **The easy way — one command:** visit
 [github.com/ChopinDavid/recall-server](https://github.com/ChopinDavid/recall-server)
-and paste its one-line setup command into your terminal. It installs a
+and paste the one-line setup command for your computer into the Terminal app
+(macOS/Linux) or Command Prompt (Windows). It installs a
 prebuilt server binary, asks you to choose a username and password (press
 Enter to accept your login name and a random password), starts it at every
 login, and prints the address, username, and password for steps 2 and 3.

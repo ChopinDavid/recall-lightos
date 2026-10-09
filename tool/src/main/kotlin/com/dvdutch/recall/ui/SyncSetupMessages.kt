@@ -68,8 +68,9 @@ object SyncSetupMessages {
         "Open this page in a browser:"
     const val STEP1_EASY_URL: String = "github.com/ChopinDavid/recall-server"
     const val STEP1_EASY_AFTER: String =
-        "Copy the one-line setup command from that page into the Terminal " +
-            "app and press “Enter”. It sets the server up, keeps it " +
+        "Copy the one-line setup command for your computer from that page " +
+            "into the Terminal app (or Command Prompt on Windows) and press " +
+            "“Enter”. It sets the server up, keeps it " +
             "running, and prints the address, username, and password to " +
             "enter in the Anki desktop app and here."
 
