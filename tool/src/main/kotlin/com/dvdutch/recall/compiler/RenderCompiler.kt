@@ -396,6 +396,25 @@ private fun walk(
         return
     }
 
+    // Furigana: <ruby>猫<rt>ねこ</rt></ruby>. A browser sets the reading above the base;
+    // in a line of text it reads as 猫(ねこ), the reading small. <rp> holds the fallback
+    // parentheses browsers hide, so it is dropped (its tail kept) to avoid doubling them.
+    if (tag == "rp") {
+        el.tail?.let { ctx.addRun(tailWs(it), styles) }
+        return
+    }
+    if (tag == "rt") {
+        val small = styles + "small"
+        ctx.addRun("(", small)
+        el.text?.let { ctx.addRun(textWs(it), small) }
+        for (child in el.children) {
+            walk(child, ctx, small, hidden, layout, margins, fontSize, cardBasePx, elAlign, chainClasses, inPre)
+        }
+        ctx.addRun(")", small)
+        el.tail?.let { ctx.addRun(tailWs(it), styles) }
+        return
+    }
+
     if (tag == "br") {
         // Inside <pre> the break keeps the preformatted styles so it stays verbatim.
         ctx.addRun("\n", if (pre) styles else emptySet())
