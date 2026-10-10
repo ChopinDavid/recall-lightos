@@ -151,9 +151,39 @@ class MediaLoader(
     }
 }
 
-/** Production byte→bitmap decode. Android-runtime only; emulator-verified. */
-private fun decodeImageBitmap(bytes: ByteArray): ImageBitmap? =
-    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+/**
+ * Production byte→bitmap decode. Android-runtime only; emulator-verified. Images are
+ * always fit to the screen width, so a large photo is decoded downsampled (see
+ * [decodeSampleSize]) instead of at full size — a 12 MP photo would otherwise take
+ * ~48 MB, enough to run the app out of memory with a few cached. A decode that still
+ * runs out of memory falls back to the placeholder.
+ */
+private fun decodeImageBitmap(bytes: ByteArray): ImageBitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    val options = BitmapFactory.Options().apply {
+        inSampleSize = decodeSampleSize(bounds.outWidth, bounds.outHeight)
+    }
+    return try {
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.asImageBitmap()
+    } catch (_: OutOfMemoryError) {
+        null
+    }
+}
+
+/** Largest dimension a card image is decoded at; ~2× the LP3's 1080 px screen width. */
+private const val MAX_DECODE_PX = 2048
+
+/**
+ * The power-of-two `inSampleSize` that brings a [width]×[height] image within
+ * [maxPx] on both sides (1 for unknown or already-small images). Pure and unit-tested.
+ */
+fun decodeSampleSize(width: Int, height: Int, maxPx: Int = MAX_DECODE_PX): Int {
+    if (width <= 0 || height <= 0) return 1
+    var sample = 1
+    while (width / sample > maxPx || height / sample > maxPx) sample *= 2
+    return sample
+}
 
 /**
  * How a decoded `<img>` bitmap is sized on screen. This is the pure sizing decision;
