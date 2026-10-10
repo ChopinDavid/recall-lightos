@@ -7,6 +7,7 @@ import com.dvdutch.recall.api.CardPayload
 import com.dvdutch.recall.api.Counts
 import com.dvdutch.recall.api.RenderNode
 import com.dvdutch.recall.engine.parseTypeAnswerDiff
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -86,6 +87,12 @@ sealed interface FailCause {
 
     /** The bridge returned a per-item `"error"` status for the graded answer. */
     data object AnswerRejected : FailCause
+
+    /**
+     * Anything else the engine threw (e.g. rslib's not-found for a deck deleted on
+     * desktop, or an unreadable media file). [detail] is the raw message, for logs.
+     */
+    data class Engine(val detail: String?) : FailCause
 }
 
 /**
@@ -537,7 +544,9 @@ class StudyMachine(
     /**
      * Runs [block], mapping any [BridgeError] onto [StudyState.Failed]:
      * [BridgeError.Unauthorized] is terminal (`retriable = false`); every other
-     * error is transient (`retriable = true`).
+     * error is transient (`retriable = true`). Any other exception from the engine
+     * becomes a retriable [FailCause.Engine] instead of crashing the app; coroutine
+     * cancellation still propagates.
      */
     private inline fun guard(block: () -> Unit) {
         try {
@@ -547,6 +556,10 @@ class StudyMachine(
                 FailCause.Transport(e),
                 retriable = e !is BridgeError.Unauthorized,
             )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            _state.value = StudyState.Failed(FailCause.Engine(e.message), retriable = true)
         }
     }
 

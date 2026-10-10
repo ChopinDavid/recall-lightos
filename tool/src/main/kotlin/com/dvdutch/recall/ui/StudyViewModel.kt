@@ -7,10 +7,12 @@ import com.dvdutch.recall.api.EngineApi
 import com.dvdutch.recall.audio.CardAudioPlayer
 import com.dvdutch.recall.engine.RecallEngine
 import com.dvdutch.recall.study.StudyMachine
+import com.dvdutch.recall.study.FailCause
 import com.dvdutch.recall.study.StudyState
 import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SimpleLightScreen
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -75,6 +77,15 @@ class StudyViewModel(
         CardAudioPlayer(resolve = engine.storage::mediaFile)
     },
 ) : LightViewModel<Unit>() {
+
+    /**
+     * Last-resort net for work launched on [driver]: an engine exception that escapes
+     * the machine's own guard (e.g. opening the collection in [begin]) becomes a
+     * retriable failure screen instead of crashing the app.
+     */
+    private val failOnCrash = CoroutineExceptionHandler { _, e ->
+        _state.value = StudyState.Failed(FailCause.Engine(e.message), retriable = true)
+    }
 
     private val scope: CoroutineScope = injectedScope ?: viewModelScope
 
@@ -141,7 +152,7 @@ class StudyViewModel(
         val m = machine
         val clean = com.dvdutch.recall.prefs.TextSanitizer.sanitizeCredential(raw)
         _typeAnswerEditing.value = false
-        if (m != null) scope.launch(driver) {
+        if (m != null) scope.launch(driver + failOnCrash) {
             m.setTypedAnswer(clean)
             m.reveal()
         }
@@ -150,7 +161,7 @@ class StudyViewModel(
     /** Starts (or restarts, on retry) the session. Idempotent per screen show. */
     fun begin() {
         if (machine != null) return
-        scope.launch(driver) {
+        scope.launch(driver + failOnCrash) {
             engine.openCollection()
             val controller = engine.controller().takeIf { it.configured }
             val api = engine.api(controller)
@@ -168,7 +179,7 @@ class StudyViewModel(
 
     fun reveal() {
         val m = machine ?: return
-        scope.launch(driver) { m.reveal() }
+        scope.launch(driver + failOnCrash) { m.reveal() }
     }
 
     fun grade(rating: String) {
@@ -177,7 +188,7 @@ class StudyViewModel(
         // card. The next card's auto-play would supersede it anyway, but grading may
         // reach Finished (no next card), and a lingering track then would be wrong.
         audioPlayer?.stop()
-        scope.launch(driver) { m.grade(rating) }
+        scope.launch(driver + failOnCrash) { m.grade(rating) }
     }
 
     /**
@@ -189,7 +200,7 @@ class StudyViewModel(
     fun undo() {
         val m = machine ?: return
         audioPlayer?.stop()
-        scope.launch(driver) { m.undo() }
+        scope.launch(driver + failOnCrash) { m.undo() }
     }
 
     /**
@@ -199,7 +210,7 @@ class StudyViewModel(
     fun buryCard() {
         val m = machine ?: return
         audioPlayer?.stop()
-        scope.launch(driver) { m.buryCurrent() }
+        scope.launch(driver + failOnCrash) { m.buryCurrent() }
     }
 
     /**
@@ -209,7 +220,7 @@ class StudyViewModel(
     fun suspendCard() {
         val m = machine ?: return
         audioPlayer?.stop()
-        scope.launch(driver) { m.suspendCurrent() }
+        scope.launch(driver + failOnCrash) { m.suspendCurrent() }
     }
 
     /**
@@ -219,7 +230,7 @@ class StudyViewModel(
      */
     fun toggleMark() {
         val m = machine ?: return
-        scope.launch(driver) { m.toggleMarkCurrent() }
+        scope.launch(driver + failOnCrash) { m.toggleMarkCurrent() }
     }
 
     /** Plays [filenames] for the current side; a no-op empty list clears playback. */
@@ -230,7 +241,7 @@ class StudyViewModel(
     /** Retry the whole session after a retriable failure by re-starting it. */
     fun retry() {
         val m = machine ?: return begin()
-        scope.launch(driver) { m.start() }
+        scope.launch(driver + failOnCrash) { m.start() }
     }
 
     /** Best-effort finish; safe to call from both hide and back. */
@@ -242,7 +253,7 @@ class StudyViewModel(
         // MediaPlayer un-released.
         audioPlayer?.release()
         val m = machine
-        scope.launch(driver) {
+        scope.launch(driver + failOnCrash) {
             runCatching { m?.finish() }
         }
     }

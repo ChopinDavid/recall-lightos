@@ -28,6 +28,8 @@ private class FakeBridge : EngineApi {
     sealed interface Outcome<out T> {
         data class Ok<T>(val value: T) : Outcome<T>
         data class Fail(val error: BridgeError) : Outcome<Nothing>
+        /** Any other engine exception (rslib errors are not [BridgeError]s). */
+        data class Crash(val error: Exception) : Outcome<Nothing>
     }
 
     val startScript = ArrayDeque<Outcome<StudyStartResponse>>()
@@ -51,6 +53,7 @@ private class FakeBridge : EngineApi {
     private fun <T> ArrayDeque<Outcome<T>>.next(): T = when (val o = removeFirst()) {
         is Outcome.Ok -> o.value
         is Outcome.Fail -> throw o.error
+        is Outcome.Crash -> throw o.error
     }
 
     override suspend fun studyStart(deckId: Long): StudyStartResponse {
@@ -604,6 +607,21 @@ class StudyMachineTest {
         }
         assertEquals(listOf(2L, 3L, 4L, 5L, 6L), served)
         assertTrue(m.state.value is StudyState.Finished, "was ${m.state.value}")
+    }
+
+    // A non-BridgeError engine exception (e.g. rslib not-found for a deck deleted on
+    // desktop) must become a retriable failure, not crash the app.
+    @Test
+    fun engineExceptionBecomesRetriableFailure() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Crash(IllegalStateException("deck not found")))
+        val m = machine(bridge)
+        m.start()
+
+        val state = m.state.value
+        assertTrue(state is StudyState.Failed, "was $state")
+        assertEquals(FailCause.Engine("deck not found"), state.cause)
+        assertTrue(state.retriable)
     }
 
     // 401 mid-session -> Failed(retriable=false).

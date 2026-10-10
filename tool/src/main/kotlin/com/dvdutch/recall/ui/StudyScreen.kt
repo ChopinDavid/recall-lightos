@@ -650,6 +650,7 @@ private fun failMessage(cause: FailCause): String = when (cause) {
         else -> SettingsMessages.errorLine(cause.error, "")
     }
     FailCause.AnswerRejected -> "answer rejected — try again"
+    is FailCause.Engine -> "something went wrong — try again"
 }
 
 @Composable

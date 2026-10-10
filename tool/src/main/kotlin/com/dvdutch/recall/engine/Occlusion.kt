@@ -267,7 +267,9 @@ private fun jpegDims(b: ByteArray): ImageDims? {
         if (u8(b, i) != 0xFF) { i++; continue }
         var marker = u8(b, i + 1)
         // Skip fill bytes (0xFF padding).
-        while (marker == 0xFF && i + 1 < b.size) { i++; marker = u8(b, i + 1) }
+        while (marker == 0xFF && i + 2 < b.size) { i++; marker = u8(b, i + 1) }
+        // A truncated file can end inside the padding or the marker's length field.
+        if (i + 3 >= b.size) return null
         // SOF markers carry frame dimensions (exclude DHT/DAC/SOS/RST/APP/COM).
         val isSof = marker in 0xC0..0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC
         val len = (u8(b, i + 2) shl 8) or u8(b, i + 3)

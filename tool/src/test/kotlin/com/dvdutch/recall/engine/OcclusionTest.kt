@@ -387,6 +387,14 @@ class OcclusionTest {
     }
 
     @Test
+    fun `imageDims survives a JPEG truncated inside marker padding`() {
+        // SOI, an APP0 marker of length 2, then 0xFF fill bytes running to the end.
+        val bytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte(), 0, 2) +
+            ByteArray(10) { 0xFF.toByte() }
+        assertNull(imageDims(bytes))
+    }
+
+    @Test
     fun `imageDims rejects a truncated PNG header`() {
         // IHDR dims live at offsets 16..23; anything shorter cannot be read.
         assertNull(imageDims(png(100, 100).copyOf(23)))
