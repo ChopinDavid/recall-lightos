@@ -21,12 +21,18 @@ fun fieldTextForCompare(fieldHtml: String): String {
     // Drop `[sound:...]` and `[anki:...]` bracket refs before compiling — they are
     // media/playback markers, never part of the expected answer text.
     val noMedia = BRACKET_MEDIA.replace(fieldHtml, "")
+    // Like Anki's html_to_text_line: separate blocks and <br> line breaks become a
+    // single space, so `<div>New</div><div>York</div>` and `New<br>York` both expect
+    // "New York" (joining blocks with nothing gave "NewYork").
     return compileHtml(noMedia, side = "front")
         .filterIsInstance<TextNode>()
-        .flatMap { it.runs }
-        .joinToString("") { it.s }
-        .trim()
+        .joinToString(" ") { node -> node.runs.joinToString("") { it.s } }
+        .split(WHITESPACE)
+        .filter { it.isNotEmpty() }
+        .joinToString(" ")
 }
+
+private val WHITESPACE = Regex("""\s+""")
 
 // `[sound:x.mp3]` and `[anki:play:...]`-style refs; non-greedy up to the first ].
 private val BRACKET_MEDIA = Regex("""\[(?:sound|anki):[^]]*]""")

@@ -43,4 +43,11 @@ class FieldTextTest {
     fun `surrounding whitespace is trimmed and interior collapsed`() {
         assertEquals("New York", fieldTextForCompare("  New   York  "))
     }
+
+    @Test
+    fun `blocks and line breaks become single spaces, as in Anki`() {
+        assertEquals("New York", fieldTextForCompare("<div>New</div><div>York</div>"))
+        assertEquals("New York", fieldTextForCompare("New<br>York"))
+        assertEquals("New York", fieldTextForCompare("New <br> <br> York"))
+    }
 }
