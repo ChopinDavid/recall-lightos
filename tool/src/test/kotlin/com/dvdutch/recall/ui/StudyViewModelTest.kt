@@ -58,8 +58,8 @@ class StudyViewModelTest {
         override suspend fun buryCard(cardId: Long) { buryArgs.add(cardId) }
         override suspend fun suspendCard(cardId: Long) { suspendArgs.add(cardId) }
         override suspend fun toggleMark(noteId: Long): Boolean { markArgs.add(noteId); return true }
-        override suspend fun compareTypedAnswer(expected: String, provided: String, noCase: Boolean): String {
-            compareArgs.add(Triple(expected, provided, noCase)); return compareResult
+        override suspend fun compareTypedAnswer(expected: String, provided: String, ignoreAccents: Boolean): String {
+            compareArgs.add(Triple(expected, provided, ignoreAccents)); return compareResult
         }
     }
 

@@ -53,8 +53,9 @@ interface EngineApi {
      * [com.dvdutch.recall.engine.parseTypeAnswerDiff] turns into styled render nodes.
      *
      * [expected] is the resolved expected answer ([CardPayload.typeAnswerExpected]);
-     * [provided] is what the user typed. When [noCase] is true (an `[[type:nc:Field]]`
-     * marker) both sides are lowercased before comparison, so the diff is case-insensitive.
+     * [provided] is what the user typed. The comparison is case-sensitive, as in Anki;
+     * when [ignoreAccents] is true (an `[[type:nc:Field]]` marker, "no combining") accents
+     * and other combining marks are ignored.
      */
-    suspend fun compareTypedAnswer(expected: String, provided: String, noCase: Boolean = false): String
+    suspend fun compareTypedAnswer(expected: String, provided: String, ignoreAccents: Boolean = false): String
 }

@@ -192,7 +192,7 @@ class LocalEngineApi(
             typeAnswerExpected = typeAnswer?.let {
                 expectedAnswer(backend, card.noteId, it.field, it.cloze, card.templateIdx)
             },
-            typeAnswerNoCase = typeAnswer?.noCase ?: false,
+            typeAnswerIgnoreAccents = typeAnswer?.ignoreAccents ?: false,
         )
     }
 
@@ -514,19 +514,17 @@ class LocalEngineApi(
 
     /**
      * Computes the type-answer grading diff via rslib's own `compareAnswer` (never a local
-     * diff). The third `combining` arg is false: we do the standard NFC comparison Anki
-     * uses by default. For an `[[type:nc:Field]]` marker ([noCase] true) both sides are
-     * lowercased first, so the comparison — and therefore the diff — is case-insensitive
-     * (mirrors AnkiDroid's no-case handling). Confined to [EngineHolder.lane].
+     * diff), exactly as Anki desktop does: case-sensitive, and the third `combining` arg is
+     * true (accents and other combining marks count) except for an `[[type:nc:Field]]`
+     * marker ([ignoreAccents] true), where "nc" means "no combining" — so "cafe" matches
+     * "café". Confined to [EngineHolder.lane].
      */
     override suspend fun compareTypedAnswer(
         expected: String,
         provided: String,
-        noCase: Boolean,
+        ignoreAccents: Boolean,
     ): String = withContext(holder.lane) {
-        val exp = if (noCase) expected.lowercase() else expected
-        val prov = if (noCase) provided.lowercase() else provided
-        holder.backend().compareAnswer(exp, prov, false)
+        holder.backend().compareAnswer(expected, provided, !ignoreAccents)
     }
 
     /** Applies one answer; MUST be called on [EngineHolder.lane]. */

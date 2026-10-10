@@ -13,7 +13,8 @@ package com.dvdutch.recall.engine
  *
  * Three shapes exist, matching AnkiDroid's type-answer handling:
  *   - `[[type:Field]]`        plain, case-sensitive compare;
- *   - `[[type:nc:Field]]`     "no combining"/no-case compare — case-insensitive;
+ *   - `[[type:nc:Field]]`     "no combining" compare — accents/diacritics ignored (still
+ *     case-sensitive, as in Anki);
  *   - `[[type:cloze:Field]]`  cloze type-answer: the expected answer is the CURRENT card's
  *     cloze deletion text(s) for its ordinal (rslib's `extractClozeForTyping`), not the whole
  *     field; case-sensitive. Resolved in LocalEngineApi.expectedAnswer.
@@ -21,8 +22,8 @@ package com.dvdutch.recall.engine
 data class TypeAnswerMarker(
     /** The referenced note field name — the field whose text is the expected answer. */
     val field: String,
-    /** True for `[[type:nc:Field]]`: compare case-insensitively. */
-    val noCase: Boolean,
+    /** True for `[[type:nc:Field]]` ("no combining"): ignore accents and other combining marks. */
+    val ignoreAccents: Boolean,
     /** True for `[[type:cloze:Field]]`: expected answer is the current card's cloze deletion(s). */
     val cloze: Boolean,
 ) {
@@ -41,7 +42,7 @@ data class TypeAnswerMarker(
             val prefix = m.groupValues[1]
             return TypeAnswerMarker(
                 field = m.groupValues[2].trim(),
-                noCase = prefix == "nc:",
+                ignoreAccents = prefix == "nc:",
                 cloze = prefix == "cloze:",
             )
         }

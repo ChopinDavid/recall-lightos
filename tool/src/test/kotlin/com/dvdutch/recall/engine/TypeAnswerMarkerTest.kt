@@ -18,7 +18,7 @@ class TypeAnswerMarkerTest {
     fun `plain marker is detected the field is named and no-case is off`() {
         val marker = TypeAnswerMarker.find("Capital of France? [[type:Back]]")
         assertEquals("Back", marker?.field)
-        assertFalse(marker!!.noCase, "a plain type marker is case-sensitive")
+        assertFalse(marker!!.ignoreAccents, "a plain type marker counts accents")
         assertFalse(marker.cloze, "a plain type marker is not a cloze marker")
     }
 
@@ -26,7 +26,7 @@ class TypeAnswerMarkerTest {
     fun `no-case marker sets the field and the no-case flag`() {
         val marker = TypeAnswerMarker.find("[[type:nc:Back]]")
         assertEquals("Back", marker?.field)
-        assertTrue(marker!!.noCase, "an nc: marker must be case-insensitive")
+        assertTrue(marker!!.ignoreAccents, "an nc: marker ignores accents")
         assertFalse(marker.cloze)
     }
 
@@ -35,7 +35,7 @@ class TypeAnswerMarkerTest {
         val marker = TypeAnswerMarker.find("[[type:cloze:Text]]")
         assertEquals("Text", marker?.field)
         assertTrue(marker!!.cloze, "a cloze type marker must set the cloze flag")
-        assertFalse(marker.noCase)
+        assertFalse(marker.ignoreAccents)
     }
 
     @Test

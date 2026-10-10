@@ -102,9 +102,9 @@ private class FakeBridge : EngineApi {
     override suspend fun compareTypedAnswer(
         expected: String,
         provided: String,
-        noCase: Boolean,
+        ignoreAccents: Boolean,
     ): String {
-        compareArgs.add(Triple(expected, provided, noCase))
+        compareArgs.add(Triple(expected, provided, ignoreAccents))
         return compareScript.next()
     }
 }
@@ -1107,8 +1107,8 @@ class StudyMachineTest {
 
     // --- Type-answer cards -------------------------------------------------------
 
-    private fun typeCard(id: Long, states: String, expected: String, noCase: Boolean = false) =
-        card(id, states).copy(typeAnswerExpected = expected, typeAnswerNoCase = noCase)
+    private fun typeCard(id: Long, states: String, expected: String, ignoreAccents: Boolean = false) =
+        card(id, states).copy(typeAnswerExpected = expected, typeAnswerIgnoreAccents = ignoreAccents)
 
     private fun startWith(bridge: FakeBridge, card: CardPayload, now: () -> Long = clock(1_000L)): StudyMachine {
         bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 1), sync)))
@@ -1158,13 +1158,13 @@ class StudyMachineTest {
     }
 
     @Test
-    fun `an nc type-answer card lowers case in the compare call`() = runBlocking {
+    fun `an nc type-answer card asks the compare to ignore accents`() = runBlocking {
         val bridge = FakeBridge()
-        val m = startWith(bridge, typeCard(1, "s1", "Paris", noCase = true))
+        val m = startWith(bridge, typeCard(1, "s1", "café", ignoreAccents = true))
         bridge.compareScript.add(FakeBridge.Outcome.Ok("<code id=typeans></code>"))
-        m.setTypedAnswer("paris")
+        m.setTypedAnswer("cafe")
         m.reveal()
-        assertEquals(Triple("Paris", "paris", true), bridge.compareArgs.single())
+        assertEquals(Triple("café", "cafe", true), bridge.compareArgs.single())
     }
 
     @Test

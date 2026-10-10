@@ -270,7 +270,7 @@ class StudyMachine(
         val expected = card.typeAnswerExpected ?: return null
         val typed = typedAnswer ?: return TypeAnswerReveal.Expected(expected)
         return try {
-            val diffHtml = client.compareTypedAnswer(expected, typed, card.typeAnswerNoCase)
+            val diffHtml = client.compareTypedAnswer(expected, typed, card.typeAnswerIgnoreAccents)
             TypeAnswerReveal.Diff(parseTypeAnswerDiff(diffHtml))
         } catch (_: Throwable) {
             // The diff is a display nicety, not grading: any compare/parse failure falls

@@ -80,7 +80,7 @@ data class CardPayload(
     @SerialName("type_answer_expected") val typeAnswerExpected: String? = null,
     // True when the marker was `[[type:nc:Field]]` — compare case-insensitively. Only
     // meaningful when [typeAnswerExpected] is non-null. Additive, defaults false.
-    @SerialName("type_answer_no_case") val typeAnswerNoCase: Boolean = false,
+    @SerialName("type_answer_ignore_accents") val typeAnswerIgnoreAccents: Boolean = false,
 )
 
 @Serializable

@@ -245,8 +245,8 @@ class LocalEngineApiTest {
                 (it.typeAnswerExpected ?: "").contains("France") },
             "no card may resolve to the whole field: $expected",
         )
-        // Cloze type markers carry no nc: prefix — case-sensitive compare.
-        assertTrue(cards.all { !it.typeAnswerNoCase }, "cloze type is case-sensitive")
+        // Cloze type markers carry no nc: prefix — accents count.
+        assertTrue(cards.all { !it.typeAnswerIgnoreAccents }, "cloze type counts accents")
 
         // The marker must never leak into the rendered front text.
         val frontText = cards.first().front.filterIsInstance<TextNode>()
@@ -267,7 +267,7 @@ class LocalEngineApiTest {
 
         // The expected answer is resolved from the Back field, HTML-stripped.
         assertEquals("Paris", card.typeAnswerExpected, "expected answer must resolve to the Back field")
-        assertEquals(false, card.typeAnswerNoCase, "a plain type marker is case-sensitive")
+        assertEquals(false, card.typeAnswerIgnoreAccents, "a plain type marker counts accents")
 
         // A back with the marker stripped too (it appears on the answer side as well).
         val backText = card.back.filterIsInstance<TextNode>()
@@ -280,7 +280,7 @@ class LocalEngineApiTest {
         selectDeck(seedNote("Normal", "q", "a"))
         val card = runBlocking { api.queue(20) }.cards.first()
         assertNull(card.typeAnswerExpected, "a normal card must not carry an expected answer")
-        assertEquals(false, card.typeAnswerNoCase)
+        assertEquals(false, card.typeAnswerIgnoreAccents)
     }
 
     @Test
@@ -295,12 +295,27 @@ class LocalEngineApiTest {
         assertTrue(runs.any { it.strike || it.underline }, "a wrong char must be flagged: $runs")
     }
 
+    private fun allGood(diff: String) = "typeBad" !in diff && "typeMissed" !in diff
+
     @Test
-    fun `compareTypedAnswer with noCase lowercases both sides so case differences match`() {
+    fun `compareTypedAnswer counts accents by default, as Anki does`() {
+        seedNote("CmpAccent", "q", "a")
+        val diff = runBlocking { api.compareTypedAnswer("café", "cafe") }
+        assertTrue(!allGood(diff), "a missing accent must be flagged on a plain type card: $diff")
+    }
+
+    @Test
+    fun `compareTypedAnswer ignores accents for an nc marker`() {
         seedNote("CmpNc", "q", "a")
-        val diff = runBlocking { api.compareTypedAnswer("Paris", "paris", noCase = true) }
-        // Case-insensitive: "paris" vs "Paris" is an exact match, so no typeBad/typeMissed.
-        assertTrue("typeBad" !in diff && "typeMissed" !in diff, "nc compare should be all-good: $diff")
+        val diff = runBlocking { api.compareTypedAnswer("café", "cafe", ignoreAccents = true) }
+        assertTrue(allGood(diff), "nc (no combining) must ignore the accent: $diff")
+    }
+
+    @Test
+    fun `compareTypedAnswer stays case-sensitive for an nc marker`() {
+        seedNote("CmpNcCase", "q", "a")
+        val diff = runBlocking { api.compareTypedAnswer("Paris", "paris", ignoreAccents = true) }
+        assertTrue(!allGood(diff), "nc ignores accents, not case: $diff")
     }
 
     @Test
