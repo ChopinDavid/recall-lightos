@@ -27,6 +27,7 @@ import androidx.compose.ui.text.style.TextAlign
 import com.dvdutch.recall.api.BridgeError
 import com.dvdutch.recall.api.CardPayload
 import com.dvdutch.recall.api.Counts
+import com.dvdutch.recall.api.RenderNode
 import com.dvdutch.recall.api.SyncInfo
 import com.dvdutch.recall.study.FailCause
 import com.dvdutch.recall.study.StudyState
@@ -419,10 +420,11 @@ private fun androidx.compose.foundation.layout.ColumnScope.CardBody(
             // Inline per-sound replay: a tap on an audio glyph (track N) plays THAT track only,
             // resolved through the same play seam auto-play/replay use (never a whole-side play).
             onPlayTrack = { track -> onReplay(trackFilenames(sideAudio, track)) },
-            // The answer boundary is the first back node past the {{FrontSide}} prefix, i.e.
-            // index == the number of front nodes (the <hr> rule if the template has one, else
-            // the first answer node). Only meaningful on the back; −1 on the front never fires.
-            dividerIndex = if (showBack) card.front.size else -1,
+            // The answer boundary: the first back node that differs from the front. For a
+            // {{FrontSide}} back that's the <hr> rule (or first answer node); for a cloze,
+            // whose back re-renders the text with the answer filled in, it's the top, so the
+            // revealed answer stays in view. Only meaningful on the back; −1 never fires.
+            dividerIndex = if (showBack) answerStartIndex(card.front, card.back) else -1,
             onNodePositioned = if (showBack) {
                 { coords -> dividerWindowY = coords.positionInWindow().y }
             } else {
@@ -667,4 +669,16 @@ private fun androidx.compose.foundation.layout.ColumnScope.CenteredMessage(text:
     ) {
         LightText(text = text, variant = LightTextVariant.Copy, align = TextAlign.Center)
     }
+}
+
+/**
+ * Where the answer starts on the back: the length of the longest prefix the back shares
+ * with the front. A `{{FrontSide}}<hr id=answer>{{Back}}` back repeats the question, so
+ * this is the front's size; a cloze back differs from its first node, so this is 0.
+ * Pure and unit-tested.
+ */
+fun answerStartIndex(front: List<RenderNode>, back: List<RenderNode>): Int {
+    var i = 0
+    while (i < front.size && i < back.size && front[i] == back[i]) i++
+    return i
 }
