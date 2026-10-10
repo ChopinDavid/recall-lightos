@@ -27,7 +27,11 @@ class CardAudioPlayerTest {
      * Records every interaction and exposes [fireCompletion] to simulate a track finishing.
      * A shared [log] across all instances lets tests assert the global start order.
      */
-    private class FakeMediaPlayback(private val log: MutableList<String>) : MediaPlayback {
+    private class FakeMediaPlayback(
+        private val log: MutableList<String>,
+        /** When true, [prepare] throws like MediaPlayer does for a corrupt or unsupported file. */
+        private val failPrepare: Boolean = false,
+    ) : MediaPlayback {
         var source: String? = null
         var prepared = false
         var started = false
@@ -36,7 +40,10 @@ class CardAudioPlayerTest {
         private var onCompletion: (() -> Unit)? = null
 
         override fun setDataSource(path: String) { source = path }
-        override fun prepare() { prepared = true }
+        override fun prepare() {
+            if (failPrepare) throw java.io.IOException("Prepare failed.: status=0x1")
+            prepared = true
+        }
         override fun start() {
             started = true
             log.add("start:${name(source)}")
@@ -325,5 +332,24 @@ class CardAudioPlayerTest {
         assertTrue(b.started)
         assertFalse(a.started == b.started && a === b)
         cleanup()
+    }
+
+    @Test
+    fun `an unplayable track is skipped instead of crashing`() {
+        val log = mutableListOf<String>()
+        val bad = FakeMediaPlayback(log, failPrepare = true)
+        val good = FakeMediaPlayback(log)
+        val (resolve, cleanup) = resolverFor("bad.spx", "good.mp3")
+        try {
+            val player = CardAudioPlayer(resolve, Factory(listOf(bad, good)), inline)
+            player.play(listOf("bad.spx", "good.mp3"))
+            assertTrue(bad.released, "the failed player must be released")
+            assertEquals(listOf("release:bad.spx", "start:good.mp3"), log)
+            // Stopping now stops the good track; the failed one never became current.
+            player.stop()
+            assertEquals("stop:good.mp3", log[2])
+        } finally {
+            cleanup()
+        }
     }
 }

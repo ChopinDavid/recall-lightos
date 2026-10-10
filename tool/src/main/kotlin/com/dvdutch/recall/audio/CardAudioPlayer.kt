@@ -2,7 +2,9 @@ package com.dvdutch.recall.audio
 
 import android.media.MediaPlayer
 import java.io.File
-import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 /**
  * The minimal playback surface [CardAudioPlayer] drives. Modelling only the six calls the
@@ -46,9 +48,7 @@ interface MediaPlayback {
 class CardAudioPlayer(
     private val resolve: (String) -> File?,
     private val factory: () -> MediaPlayback = { RealMediaPlayback() },
-    private val runner: (Runnable) -> Unit =
-        Executors.newSingleThreadExecutor { r -> Thread(r, "CardAudioPlayer").apply { isDaemon = true } }
-            .let { exec -> { work: Runnable -> exec.execute(work) } },
+    private val runner: (Runnable) -> Unit = serialAudioRunner(),
 ) {
     /** The player currently prepared/started, if any. Mutated only on [runner]. */
     private var current: MediaPlayback? = null
@@ -94,8 +94,8 @@ class CardAudioPlayer(
     /** Stops+releases [current] if present and clears the reference. Runs only on [runner]. */
     private fun stopCurrentLocked() {
         current?.let { player ->
-            player.stop()
-            player.release()
+            runCatching { player.stop() }
+            runCatching { player.release() }
         }
         current = null
     }
@@ -111,9 +111,18 @@ class CardAudioPlayer(
             val file = resolve(name)
             if (file == null || !file.isFile) continue // missing media → skip gracefully
             val player = factory()
+            try {
+                player.setDataSource(file.absolutePath)
+                player.prepare()
+            } catch (e: Exception) {
+                // Unplayable (corrupt, 0-byte from an interrupted media sync, or an
+                // unsupported format): skip to the next track. An exception escaping this
+                // background thread would crash the app.
+                runCatching { player.release() }
+                continue
+            }
+            // Only a prepared player becomes current, so stop() never hits an unprepared one.
             current = player
-            player.setDataSource(file.absolutePath)
-            player.prepare()
             player.setOnCompletion {
                 runner {
                     // Inert if this player was replaced/stopped/released in the meantime.
@@ -123,7 +132,13 @@ class CardAudioPlayer(
                     advanceLocked(session)
                 }
             }
-            player.start()
+            try {
+                player.start()
+            } catch (e: Exception) {
+                runCatching { player.release() }
+                current = null
+                continue
+            }
             return
         }
         // Nothing left to play in this session.
@@ -147,4 +162,16 @@ class RealMediaPlayback : MediaPlayback {
     }
     override fun stop() = player.stop()
     override fun release() = player.release()
+}
+
+/**
+ * The production [CardAudioPlayer] runner: one worker thread, so player mutations stay
+ * serialized in order, which exits after 30 s idle. Each study session builds a player,
+ * and a plain single-thread executor's thread would otherwise live forever.
+ */
+private fun serialAudioRunner(): (Runnable) -> Unit {
+    val exec = ThreadPoolExecutor(0, 1, 30, TimeUnit.SECONDS, LinkedBlockingQueue()) { r ->
+        Thread(r, "CardAudioPlayer").apply { isDaemon = true }
+    }
+    return { work -> exec.execute(work) }
 }
