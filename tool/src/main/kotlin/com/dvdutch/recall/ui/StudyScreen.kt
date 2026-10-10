@@ -29,6 +29,7 @@ import com.dvdutch.recall.api.CardPayload
 import com.dvdutch.recall.api.Counts
 import com.dvdutch.recall.api.RenderNode
 import com.dvdutch.recall.api.RuleNode
+import com.dvdutch.recall.api.TextNode
 import com.dvdutch.recall.api.SyncInfo
 import com.dvdutch.recall.study.FailCause
 import com.dvdutch.recall.study.StudyState
@@ -689,8 +690,19 @@ private fun androidx.compose.foundation.layout.ColumnScope.CenteredMessage(text:
  */
 fun answerStartIndex(front: List<RenderNode>, back: List<RenderNode>): Int {
     var i = 0
-    while (i < front.size && i < back.size && front[i] == back[i]) i++
+    while (i < front.size && i < back.size && sameContent(front[i], back[i])) i++
     return i
+}
+
+/**
+ * Node equality ignoring layout: a back that wraps `{{FrontSide}}` in a styled div
+ * (`text-align`, a font size, margins) still repeats the front's content, and that's
+ * what decides where the answer starts.
+ */
+private fun sameContent(a: RenderNode, b: RenderNode): Boolean = when {
+    a is TextNode && b is TextNode -> a.runs == b.runs
+    a is RuleNode && b is RuleNode -> true
+    else -> a == b
 }
 
 /**

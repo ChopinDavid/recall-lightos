@@ -625,6 +625,24 @@ class StudyMachineTest {
         assertEquals(5_000L, bridge.answerArgs.single().single().msTaken)
     }
 
+    // A checkpoint whose sync pulled changes re-fetches the queue on the front, so a card
+    // reviewed or edited on desktop during the pause isn't graded with stale states.
+    @Test
+    fun checkpointAfterASyncRefetchesTheQueueOnTheFront() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 2), sync)))
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(listOf(card(1, "s1-old"), card(2, "s2")), counts(new = 2))))
+        bridge.finishScript.add(FakeBridge.Outcome.Ok(SyncInfo(synced = true, detail = "ok")))
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(listOf(card(1, "s1-fresh")), counts(new = 1))))
+        val m = machine(bridge)
+        m.start()
+        m.checkpoint()
+        val state = m.state.value
+        assertTrue(state is StudyState.ShowingFront, "was $state")
+        assertEquals("s1-fresh", state.card.states)
+        assertEquals(1, state.counts.new)
+    }
+
     // A non-BridgeError engine exception (e.g. rslib not-found for a deck deleted on
     // desktop) must become a retriable failure, not crash the app.
     @Test

@@ -382,6 +382,8 @@ class StudyViewModelTest {
         withVm { vm, env ->
             env.api.startScript.add(StudyStartResponse(counts(new = 1), SyncInfo(true, "ok")))
             env.api.queueScript.add(QueueResponse(listOf(card(1)), counts(new = 1)))
+            // The pause's sync re-fetches the queue on the front: the same card, fresh states.
+            env.api.queueScript.add(QueueResponse(listOf(card(1)), counts(new = 1)))
             vm.begin()
             waitFor { vm.state.value is StudyState.ShowingFront }
 

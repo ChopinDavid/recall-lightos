@@ -42,4 +42,11 @@ class AnswerStartIndexTest {
         val noRule = side("Capital of Brazil?<br>Type it:", "back")
         assertEquals(typeAnswerBlockIndex(front, noRule), answerStartIndex(front, noRule))
     }
+
+    @Test
+    fun `a styled FrontSide wrapper on the back still counts as the question`() {
+        val front = side("Which nerve innervates the diaphragm?", "front")
+        val back = side("""<div style="text-align:center">Which nerve innervates the diaphragm?</div><hr id=answer>Phrenic nerve""", "back")
+        assertEquals(1, answerStartIndex(front, back))
+    }
 }

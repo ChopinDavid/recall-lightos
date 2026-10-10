@@ -340,23 +340,38 @@ class StudyMachine(
     }
 
     /**
+     * Saves progress mid-session — the same sync (and backup) [finish] runs — without
+     * ending it. Used when the app is paused (screen timeout, switching away).
+     * Best-effort: a failed sync is ignored, as it is at session start. After a sync
+     * that pulled changes, a card buffered here may have been reviewed or edited on
+     * desktop, and grading it would be rejected as stale — so when the front is showing,
+     * the queue is re-fetched (as after undo) and the session continues from the engine's
+     * fresh head card. A revealed back is left alone; its grade, if stale, advances
+     * without counting.
+     */
+    suspend fun checkpoint() {
+        val info = try {
+            client.studyFinish()
+        } catch (_: BridgeError) {
+            return
+        }
+        if (info.synced && _state.value is StudyState.ShowingFront) {
+            guard {
+                val response = client.queue()
+                buffer.clear()
+                buffer.addAll(response.cards)
+                counts = response.counts
+                engineHasUndoableOp = response.undoableAnswer
+                settle()
+            }
+        }
+    }
+
+    /**
      * Ends the session, calling `studyFinish` best-effort. Always transitions to
      * [StudyState.Finished]: on success it carries the returned sync info, on any
      * failure it carries `sync = null`.
      */
-    /**
-     * Saves progress mid-session — the same sync (and backup) [finish] runs — without
-     * ending it: the state, buffer, and counts are untouched, so studying resumes where
-     * it left off. Used when the app is paused (screen timeout, switching away).
-     * Best-effort: a failed sync is ignored, as it is at session start.
-     */
-    suspend fun checkpoint() {
-        try {
-            client.studyFinish()
-        } catch (_: BridgeError) {
-        }
-    }
-
     suspend fun finish() {
         val sync = try {
             client.studyFinish()

@@ -101,7 +101,7 @@ class MathUnicodeTest {
             "\\(\\ce{SO4^2-}\\)" to "SO₄²⁻",
             // unknown commands keep a brace argument, else their letters
             "\\(\\vec{v} \\cdot \\mathfrak{A}\\)" to "v · A",
-            "\\(a \\\\ b\\)" to "a \n b",
+            "\\(a \\\\ b\\)" to "a   b",
         )
         for ((src, want) in cases) assertEquals(want, m(src), "for input: $src")
     }

@@ -149,7 +149,10 @@ private class Ctx(val side: String, val hierarchicalTags: Set<String> = emptySet
         // Audio marker runs are empty-text but must survive (they position an inline replay
         // glyph), so a block is emitted when it has any non-blank text OR any audio run.
         val kept = runs.filter { it.s.isNotEmpty() || it.audioTrack != null }
-        if (kept.isNotEmpty() && kept.any { it.s.isNotBlank() || it.audioTrack != null }) {
+        // A <br> between two clozes ({{c1::Na}}<br>{{c1::K}}) is whitespace-only but is
+        // content: it keeps each cloze on its own line when the line is joined.
+        val breakOnOpenLine = !boundary && lineOpen && kept.any { '\n' in it.s }
+        if (kept.isNotEmpty() && (kept.any { it.s.isNotBlank() || it.audioTrack != null } || breakOnOpenLine)) {
             nodes.add(
                 TextNode(
                     mergeRuns(kept, hierarchicalTags), align, marginTop, marginBottom, scale,
@@ -463,7 +466,8 @@ private fun walk(
         ctx.marginTop = marginTop
         ctx.marginBottom = marginBottom
         ctx.scale = scale
-        // A heading's default size applies only when the card CSS doesn't size it.
+        // A heading's default size applies unless the card CSS sizes it by CLASS
+        // (CssFontSize reads class selectors only; a bare `h2 { font-size }` rule is not seen).
         if (scale == 1f) HEADING_SCALE[tag]?.let { ctx.scale = it }
         if (tag == "li") ctx.addRun("• ", emptySet())
         if (tag == "tr" || tag == "table") ctx.cellsInRow = 0

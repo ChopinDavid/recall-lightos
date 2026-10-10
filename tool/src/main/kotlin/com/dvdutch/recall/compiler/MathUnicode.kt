@@ -308,7 +308,7 @@ internal object MathUnicode {
                             i = i1
                             out.append(renderChem(arg))
                         }
-                        name == "\\" -> out.append('\n') // line break
+                        name == "\\" -> out.append(' ') // line break: whitespace collapses anyway
                         name == "text" || name == "mathrm" || name == "mathbf" ||
                             name == "mathit" || name == "operatorname" ||
                             name == "mathcal" || name == "mathbb" -> {

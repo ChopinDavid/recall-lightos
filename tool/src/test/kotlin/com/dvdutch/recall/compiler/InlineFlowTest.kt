@@ -114,4 +114,12 @@ class InlineFlowTest {
         assertEquals("Sodium + chlorine", text(layout("""<span class="cloze">Sodium</span> + chlorine<br>""", "back").single()))
         assertEquals("text\n", text(layout("text<br><br>", "back").single()))
     }
+
+    @Test
+    fun `a line break between two clozes keeps them on separate lines`() {
+        val front = layout("""<span class="cloze">[...]</span><br><span class="cloze">[...]</span><br><span class="cloze">[...]</span>""", "front")
+        assertEquals("[...]\n[...]\n[...]", text(front.single()))
+        val back = layout("""<span class="cloze">Na</span> <br> <span class="cloze">K</span>""", "back")
+        assertEquals("Na\nK", text(back.single()))
+    }
 }
