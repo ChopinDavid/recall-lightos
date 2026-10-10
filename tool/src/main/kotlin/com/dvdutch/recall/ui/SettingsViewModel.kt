@@ -85,7 +85,8 @@ class SettingsViewModel(
         val endpoint = prefs[RecallPreferences.SYNC_ENDPOINT] ?: RecallPreferences.DEFAULT_SYNC_ENDPOINT
         val username = prefs[RecallPreferences.SYNC_USERNAME].orEmpty()
         val password = prefs[RecallPreferences.SYNC_PASSWORD].orEmpty()
-        updateState { it.copy(endpoint = endpoint, username = username, password = password) }
+        val lastSync = prefs[RecallPreferences.LAST_SYNC_MILLIS]
+        updateState { it.copy(endpoint = endpoint, username = username, password = password, lastSync = lastSync) }
     }
 
     private suspend fun updateState(transform: (SettingsUiState) -> SettingsUiState) {

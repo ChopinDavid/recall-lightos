@@ -2,6 +2,7 @@ package com.dvdutch.recall.prefs
 
 import com.dvdutch.recall.BuildConfig
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 
@@ -33,6 +34,9 @@ object RecallPreferences {
      * Home can route to AttentionScreen even sessions/restarts after the divergence latched.
      */
     val NEEDS_ATTENTION = booleanPreferencesKey("needs_attention")
+
+    /** Epoch millis of the last clean sync, for Settings' "last sync" line; absent = never. */
+    val LAST_SYNC_MILLIS = longPreferencesKey("last_sync_millis")
 
     /**
      * Local-only deck collapse state: the set of deck ids the user has EXPANDED

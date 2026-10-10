@@ -56,6 +56,12 @@ open class SyncController(
      */
     private val persistNeedsAttention: suspend (Boolean) -> Unit = {},
     /**
+     * Durable sink for the last clean sync time ([lastSync] is in-memory and dies with the
+     * controller). [RecallEngine.controller] wires this to DataStore so Settings can show
+     * "last sync: 5m ago" across sessions.
+     */
+    private val persistLastSync: suspend (Long) -> Unit = {},
+    /**
      * The on-disk collection file, for the empty-server download guard ([fullDownload]):
      * a guarded download backs this file up before the transfer so a wipe-to-empty or a
      * mid-transfer failure can be rolled back. Null disables the guard (the caller has no
@@ -158,7 +164,9 @@ open class SyncController(
                     detail = "needs attention: full sync required",
                 )
             }
-            _lastSync.value = System.currentTimeMillis()
+            val now = System.currentTimeMillis()
+            _lastSync.value = now
+            persistLastSync(now)
             SyncInfo(synced = true, detail = "ok")
         }
     }

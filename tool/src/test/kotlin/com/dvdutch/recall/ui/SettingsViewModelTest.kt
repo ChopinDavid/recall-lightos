@@ -132,6 +132,7 @@ class SettingsViewModelTest {
                         it[RecallPreferences.SYNC_ENDPOINT] = "https://saved.example/"
                         it[RecallPreferences.SYNC_USERNAME] = "bob"
                         it[RecallPreferences.SYNC_PASSWORD] = "pw"
+                        it[RecallPreferences.LAST_SYNC_MILLIS] = 1_700_000_000_000L
                     }
                 }
             },
@@ -141,6 +142,9 @@ class SettingsViewModelTest {
             }
             assertEquals("bob", vm.uiState.value.username)
             assertEquals("pw", vm.uiState.value.password)
+            // The last clean sync is persisted by the engine's controller; Settings reads it
+            // back, so the line never says "never" after a sync has happened.
+            assertEquals(1_700_000_000_000L, vm.uiState.value.lastSync)
         }
     }
 }

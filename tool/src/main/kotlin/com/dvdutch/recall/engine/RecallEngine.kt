@@ -48,6 +48,7 @@ open class RecallEngine(
             syncConfig(),
             holder,
             persistNeedsAttention = ::writeNeedsAttention,
+            persistLastSync = ::writeLastSync,
             // The collection file for the empty-server download guard: a guarded
             // fullDownload backs this up before the transfer so a wipe-to-empty (or a
             // mid-transfer failure) rolls back instead of silently erasing the phone.
@@ -60,6 +61,10 @@ open class RecallEngine(
 
     private suspend fun writeNeedsAttention(value: Boolean) {
         dataStore.edit { it[RecallPreferences.NEEDS_ATTENTION] = value }
+    }
+
+    private suspend fun writeLastSync(millis: Long) {
+        dataStore.edit { it[RecallPreferences.LAST_SYNC_MILLIS] = millis }
     }
 
     /**
