@@ -122,14 +122,47 @@ private class Ctx(val side: String, val hierarchicalTags: Set<String> = emptySet
     // ancestor size / card base, clamped); reset with [align].
     var scale: Float = 1f
 
-    fun flushText() {
+    // Whether the next node continues the current line: true after a node emitted
+    // inside a block with no block boundary since. Lets [InlineFlow] join a cloze with
+    // the text around it. Phone-side layout only; the parity-governed output is unchanged.
+    private var lineOpen = false
+
+    // A whitespace-only gap was dropped while the line was open (e.g. between two
+    // clozes); the next cloze records it as [ClozeNode.spaceBefore].
+    private var spaceBeforeNext = false
+
+    /**
+     * Emits the pending runs as a [TextNode]. [boundary] is false only when an inline
+     * cloze interrupts the text: the line stays open so what follows can rejoin it.
+     */
+    fun flushText(boundary: Boolean = true) {
         // Audio marker runs are empty-text but must survive (they position an inline replay
         // glyph), so a block is emitted when it has any non-blank text OR any audio run.
         val kept = runs.filter { it.s.isNotEmpty() || it.audioTrack != null }
         if (kept.isNotEmpty() && kept.any { it.s.isNotBlank() || it.audioTrack != null }) {
-            nodes.add(TextNode(mergeRuns(kept, hierarchicalTags), align, marginTop, marginBottom, scale))
+            nodes.add(
+                TextNode(
+                    mergeRuns(kept, hierarchicalTags), align, marginTop, marginBottom, scale,
+                    joinsPrevious = lineOpen,
+                ),
+            )
+            lineOpen = !boundary
+            spaceBeforeNext = false
+        } else if (!boundary && lineOpen && kept.isNotEmpty()) {
+            spaceBeforeNext = true
         }
         runs.clear()
+        if (boundary) {
+            lineOpen = false
+            spaceBeforeNext = false
+        }
+    }
+
+    /** Emits an inline cloze, joined to the open line if there is one. */
+    fun addCloze(node: ClozeNode) {
+        nodes.add(node.copy(joinsPrevious = lineOpen, spaceBefore = lineOpen && spaceBeforeNext))
+        lineOpen = true
+        spaceBeforeNext = false
     }
 
     fun addRun(text: String, styles: Set<String>) {
@@ -345,7 +378,7 @@ private fun walk(
     }
 
     if (tag == "span" && "cloze" in classes) {
-        ctx.flushText()
+        ctx.flushText(boundary = false)
         val node: ClozeNode = if (ctx.side == "front") {
             val hint = el.text ?: ""
             if (hint != "[...]" && hint != "[…]" && hint.isNotEmpty() &&
@@ -358,7 +391,7 @@ private fun walk(
         } else {
             ClozeNode(state = "revealed", text = cleanWs(el.textContent()))
         }
-        ctx.nodes.add(node)
+        ctx.addCloze(node)
         el.tail?.let { ctx.addRun(cleanWs(it), styles) }
         return
     }

@@ -58,6 +58,10 @@ data class TextNode(
     // size — 1 means no scaling. A phone-side layout enrichment (like [align]/margins),
     // NOT parity-governed.
     val scale: Float = 1f,
+    // True when this text continues the line of the node before it — the text after
+    // an inline cloze. [com.dvdutch.recall.compiler.InlineFlow] joins such nodes into
+    // one line. A phone-side layout enrichment, NOT parity-governed.
+    val joinsPrevious: Boolean = false,
 ) : RenderNode
 
 @Serializable
@@ -119,6 +123,11 @@ data class ClozeNode(
     val state: String,
     val hint: String? = null,
     val text: String? = null,
+    // True when the cloze sits inline after text (or another cloze) in the same block;
+    // [spaceBefore] records a whitespace-only gap before it (e.g. between two clozes),
+    // which would otherwise be lost. Phone-side layout enrichments, NOT parity-governed.
+    val joinsPrevious: Boolean = false,
+    val spaceBefore: Boolean = false,
 ) : RenderNode
 
 @Serializable

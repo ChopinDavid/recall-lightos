@@ -21,6 +21,7 @@ import com.dvdutch.recall.api.StudyStartResponse
 import com.dvdutch.recall.api.SyncInfo
 import com.dvdutch.recall.api.UndoResult
 import com.dvdutch.recall.api.UnsupportedNode
+import com.dvdutch.recall.compiler.InlineFlow
 import com.dvdutch.recall.compiler.compileHtml
 import com.google.protobuf.InvalidProtocolBufferException
 import kotlinx.coroutines.withContext
@@ -377,7 +378,9 @@ class LocalEngineApi(
         // Compile the MARKER-BEARING text (positions each [anki:play] inline), not the
         // stripped text — so the speaker glyphs land at their template spots.
         val markerText = backend.extractAvTags(markerFree, isQuestion).text
-        val nodes = compileHtml(markerText, side, css, tags).toMutableList()
+        // InlineFlow lays the parity-governed nodes out as lines: inline clozes rejoin
+        // their sentence, and whitespace is trimmed the way a browser would.
+        val nodes = InlineFlow.apply(compileHtml(markerText, side, css, tags)).toMutableList()
         // Which track indices actually got an inline home — recursively, since an audio run
         // can live inside a RowNode cell (the RC5000 header flex-row places the word audio
         // there). Scanning only the top level would miss those and wrongly flag them positionless.
