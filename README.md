@@ -38,6 +38,8 @@ Everything scheduling- and sync-related is **upstream Anki code, never reimpleme
 
 Syncs with **self-hosted sync servers**. The companion **[recall-server](https://github.com/ChopinDavid/recall-server)** sets one up on your computer with a single command (prebuilt binaries of Anki's official sync server, auto-start, printed credentials); **[Syncing Recall with your own server](docs/sync-server.md)** covers that path and the manual one, then pointing the app at it. Syncing with **AnkiWeb is not yet available**: it requires permission from Ankitects, which we have requested and are currently awaiting. Until then, a self-hosted server is the sync path.
 
+Your phone syncs with the server over your home network, so it needs to be on the same Wi-Fi as the computer running it. Away from home, Recall keeps working offline and syncs your reviews the next time you're back on that network. (Syncing from anywhere is possible by putting the server behind a VPN or a TLS reverse proxy; see [the guide](docs/sync-server.md#notes).)
+
 Scheduling configuration — including FSRS parameters, desired retention, and optimization — is managed in Anki desktop; Recall applies whatever the synced collection specifies (FSRS and SM-2 both supported, via Anki's own backend).
 
 ## Status
