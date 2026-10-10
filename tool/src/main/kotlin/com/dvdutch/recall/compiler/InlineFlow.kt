@@ -2,6 +2,7 @@ package com.dvdutch.recall.compiler
 
 import com.dvdutch.recall.api.BlockAlign
 import com.dvdutch.recall.api.ClozeNode
+import com.dvdutch.recall.api.ImageNode
 import com.dvdutch.recall.api.RenderNode
 import com.dvdutch.recall.api.RowNode
 import com.dvdutch.recall.api.TextNode
@@ -34,7 +35,10 @@ object InlineFlow {
             when (node) {
                 is TextNode, is ClozeNode -> {
                     if (line.isNotEmpty() && !node.joins()) flushLine()
-                    line.add(node)
+                    // `<img><br>text` is how Anki's editor writes an image followed by text.
+                    // In a browser the <br> only ends the image's line; since the image is
+                    // already its own block here, the break would add a blank line.
+                    line.add(if (out.lastOrNull() is ImageNode && line.isEmpty()) node.withoutLeadingBreak() else node)
                 }
                 is RowNode -> {
                     flushLine()
@@ -48,6 +52,15 @@ object InlineFlow {
         }
         flushLine()
         return out
+    }
+
+    private fun RenderNode.withoutLeadingBreak(): RenderNode {
+        val text = this as? TextNode ?: return this
+        val first = text.runs.firstOrNull() ?: return this
+        if (first.audioTrack != null || !first.s.startsWith("\n")) return this
+        val rest = first.s.removePrefix("\n")
+        val runs = if (rest.isEmpty()) text.runs.drop(1) else listOf(first.copy(s = rest)) + text.runs.drop(1)
+        return text.copy(runs = runs)
     }
 
     private fun RenderNode.joins(): Boolean = when (this) {

@@ -195,7 +195,7 @@ sealed interface ImageDisplayMode {
      * (width / height). A small image scales UP to the width and a large one scales
      * DOWN — matching Anki/AnkiDroid, where `<img>` is fit to the column width.
      */
-    data class FitToWidth(val aspectRatio: Float) : ImageDisplayMode
+    data class FitToWidth(val aspectRatio: Float, val stretches: Boolean = false) : ImageDisplayMode
 
     /** Draw the image at its intrinsic size (last-resort fallback for unmeasurable input). */
     data object Wrap : ImageDisplayMode
@@ -225,7 +225,7 @@ fun imageDisplayMode(
     explicitH: Int?,
 ): ImageDisplayMode {
     if (explicitW != null && explicitH != null && explicitW > 0 && explicitH > 0) {
-        return ImageDisplayMode.FitToWidth(aspectRatio = explicitW.toFloat() / explicitH.toFloat())
+        return ImageDisplayMode.FitToWidth(aspectRatio = explicitW.toFloat() / explicitH.toFloat(), stretches = true)
     }
     if (naturalW <= 0 || naturalH <= 0) return ImageDisplayMode.Wrap
     return ImageDisplayMode.FitToWidth(aspectRatio = naturalW.toFloat() / naturalH.toFloat())
@@ -254,14 +254,13 @@ fun MediaImage(node: ImageNode, loader: MediaLoader) {
         return
     }
 
-    val modifier = when (
-        val mode = imageDisplayMode(
-            naturalW = image.width,
-            naturalH = image.height,
-            explicitW = node.w,
-            explicitH = node.h,
-        )
-    ) {
+    val mode = imageDisplayMode(
+        naturalW = image.width,
+        naturalH = image.height,
+        explicitW = node.w,
+        explicitH = node.h,
+    )
+    val modifier = when (mode) {
         is ImageDisplayMode.FitToWidth -> Modifier.fillMaxWidth().aspectRatio(mode.aspectRatio)
         ImageDisplayMode.Wrap -> Modifier.wrapContentSize()
     }
@@ -269,6 +268,8 @@ fun MediaImage(node: ImageNode, loader: MediaLoader) {
         bitmap = image,
         contentDescription = null,
         modifier = modifier,
-        contentScale = ContentScale.Fit,
+        // An explicit <img width height> aspect STRETCHES the bitmap into it, as a browser
+        // does; letterboxing (Fit) would leave dead space either side of a 4:1 box.
+        contentScale = if ((mode as? ImageDisplayMode.FitToWidth)?.stretches == true) ContentScale.FillBounds else ContentScale.Fit,
     )
 }

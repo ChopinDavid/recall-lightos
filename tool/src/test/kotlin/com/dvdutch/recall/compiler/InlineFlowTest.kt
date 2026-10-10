@@ -101,4 +101,11 @@ class InlineFlowTest {
             runs,
         )
     }
+
+    @Test
+    fun `a line break right after an image doesn't add a blank line`() {
+        val nodes = layout("""<img src="map.png"><br>Largest lake in Africa?<br>Second line""", "front")
+        assertEquals(2, nodes.size)
+        assertEquals("Largest lake in Africa?\nSecond line", text(nodes[1]))
+    }
 }

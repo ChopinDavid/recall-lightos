@@ -45,14 +45,15 @@ class ImageSizingTest {
     fun explicitDims_useExplicitAspect() {
         // <img width=200 height=100> → 2:1 intended aspect, honoured (clamped into width).
         val mode = imageDisplayMode(naturalW = 32, naturalH = 32, explicitW = 200, explicitH = 100)
-        assertEquals(ImageDisplayMode.FitToWidth(aspectRatio = 2f), mode.aspectRounded())
+        // ...and the bitmap is stretched into it, as a browser does, not letterboxed.
+        assertEquals(ImageDisplayMode.FitToWidth(aspectRatio = 2f, stretches = true), mode.aspectRounded())
     }
 
     @Test
     fun explicitDims_ignoreNaturalAspect() {
         // Explicit dims override the bitmap's own aspect entirely.
         val mode = imageDisplayMode(naturalW = 1000, naturalH = 250, explicitW = 100, explicitH = 100)
-        assertEquals(ImageDisplayMode.FitToWidth(aspectRatio = 1f), mode.aspectRounded())
+        assertEquals(ImageDisplayMode.FitToWidth(aspectRatio = 1f, stretches = true), mode.aspectRounded())
     }
 
     // --- degenerate inputs: fall back safely --------------------------------
@@ -76,7 +77,7 @@ class ImageSizingTest {
 
     private fun ImageDisplayMode.aspectRounded(): ImageDisplayMode = when (this) {
         is ImageDisplayMode.FitToWidth ->
-            ImageDisplayMode.FitToWidth(aspectRatio = Math.round(aspectRatio * 1000f) / 1000f)
+            ImageDisplayMode.FitToWidth(aspectRatio = Math.round(aspectRatio * 1000f) / 1000f, stretches = stretches)
         ImageDisplayMode.Wrap -> this
     }
 }
