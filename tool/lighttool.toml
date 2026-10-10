@@ -1,8 +1,8 @@
 [tool]
 id = "com.dvdutch.recall"
 label = "Recall"
-versionCode = 1
-versionName = "0.1.0"
+versionCode = 2
+versionName = "0.2.0"
 permissions = ["android.permission.INTERNET"]
 
 # cleartext-http: self-hosted Anki sync servers speak plain HTTP by default (a LAN
@@ -17,17 +17,9 @@ capabilities = ["cleartext-http"]
 # meta-data at runtime to UnifiedPush.saveDistributor(...) and LightServiceConnection
 # .bind(...). It does NOT affect this tool's own applicationId (that stays tool.id).
 #
-# On the emulator the Light server is the emulator system app, package
-# `com.thelightphone.sdk.emulator` (installed per docs/system_app). On a real LP3 /
-# Light's production build service it is `com.lightos`.
-#
-# The SDK plugin rejects any value other than `com.lightos` unless the build passes
-# -DlightSdk.allowAltServerPackage=true. CI passes it; locally, set it once with
-# `systemProp.lightSdk.allowAltServerPackage=true` in ~/.gradle/gradle.properties.
-#
-# SUBMISSION-DAY: flip this to "com.lightos" ONLY when building for Light's build
-# service / real LP3 hardware. Light's builder never passes the flag, so a submission
-# left on the emulator package fails the build. Do NOT flip for local dev — the
-# emulator has no `com.lightos` package, so the SDK bind would fail and the tool
-# would not receive Light-server data on the emulator.
-serverPackage = "com.thelightphone.sdk.emulator"
+# `com.lightos` is LightOS on a real LP3, and the only value Light's build service
+# accepts. To run against the LightOS emulator system app (docs/system_app), swap in
+# `com.thelightphone.sdk.emulator` locally, don't commit it, and build with
+# -DlightSdk.allowAltServerPackage=true (or set
+# `systemProp.lightSdk.allowAltServerPackage=true` once in ~/.gradle/gradle.properties).
+serverPackage = "com.lightos"

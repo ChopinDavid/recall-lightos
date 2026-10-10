@@ -92,7 +92,6 @@ jobs:
           :tool:recallCoverageReport
           :tool:assembleDebug
           -Precall.coverage=true
-          -DlightSdk.allowAltServerPackage=true
           --stacktrace
           --no-daemon
 

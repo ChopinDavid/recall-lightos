@@ -42,9 +42,15 @@ Your phone syncs with the server over your home network, so it needs to be on th
 
 Scheduling configuration — including FSRS parameters, desired retention, and optimization — is managed in Anki desktop; Recall applies whatever the synced collection specifies (FSRS and SM-2 both supported, via Anki's own backend).
 
+## Privacy
+
+- **Your collection stays yours.** It lives on the phone and syncs only with the sync server you configure — normally your own computer. Recall sends nothing anywhere else.
+- **No analytics, tracking, ads, or crash reporting.** Recall's only dependencies are Light's SDK and Anki's official backend.
+- **Your sync username and password** are stored in Recall's private storage on the phone and sent only to your sync server. Over an `http://` address they travel unencrypted on your local network; to encrypt them, use an `https://` address (see [the guide](docs/sync-server.md#notes)).
+
 ## Status
 
-**0.1.0** (tag `v0.1.0`): feature-complete for review-only studying and smoke-tested end-to-end on the minified release build. Runs as a daily driver on the Light Phone III emulator against a self-hosted sync server. Installation on physical LP3 hardware is pending Light's Tool Manager sideload rollout; distribution awaits Light's Tool Library. Not yet distributed.
+**0.2.0**: feature-complete for review-only studying, and smoke-tested end-to-end on the minified release build against a self-hosted sync server on the Light Phone III emulator. Being prepared for submission to Light's Tool Library; not yet distributed.
 
 Known limitations: content that requires a browser engine doesn't render (deck `<script>`s, full MathJax typesetting, CSS-layout-art decks); TTS-only audio is unsupported.
 
