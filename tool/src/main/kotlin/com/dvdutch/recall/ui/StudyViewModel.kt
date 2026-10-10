@@ -263,9 +263,19 @@ class StudyViewModel(
         finishSession()
     }
 
+    /**
+     * The app was paused (screen timeout or lock, switching away): stop any audio and
+     * save progress, but keep the session open so studying resumes where it left off.
+     * Leaving the study screen (hide/back) is what ends the session.
+     */
     override fun onAppPause() {
         super.onAppPause()
-        finishSession()
+        audioPlayer?.stop()
+        if (finished) return
+        val m = machine ?: return
+        scope.launch(driver + failOnCrash) {
+            runCatching { m.checkpoint() }
+        }
     }
 
     /** Final safety net: release the player if the ViewModel is cleared without a hide. */

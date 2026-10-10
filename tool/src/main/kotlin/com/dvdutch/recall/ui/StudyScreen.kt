@@ -546,7 +546,11 @@ object FinishedCopy {
     fun lines(reviewed: Int, counts: Counts?): List<String> {
         val head = "session done — $reviewed reviewed"
         val learning = counts?.learning ?: 0
-        val tail = if (learning > 0) {
+        val remaining = (counts?.new ?: 0) + (counts?.review ?: 0)
+        val tail = if (remaining > 0) {
+            val noun = if (remaining == 1) "card is" else "cards are"
+            "$remaining $noun still due"
+        } else if (learning > 0) {
             val noun = if (learning == 1) "card" else "cards"
             "$learning $noun will be due again later today"
         } else {

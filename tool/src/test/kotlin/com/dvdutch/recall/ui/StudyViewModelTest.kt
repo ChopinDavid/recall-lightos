@@ -375,9 +375,10 @@ class StudyViewModelTest {
         }
     }
 
-    // onAppPause routes to the same teardown path (studyFinish).
+    // A pause (screen timeout, switching away) saves progress but does NOT end the
+    // session: the same card is still showing afterwards, and leaving still finishes.
     @Test
-    fun `onAppPause finishes the session`() {
+    fun `onAppPause saves progress without ending the session`() {
         withVm { vm, env ->
             env.api.startScript.add(StudyStartResponse(counts(new = 1), SyncInfo(true, "ok")))
             env.api.queueScript.add(QueueResponse(listOf(card(1)), counts(new = 1)))
@@ -386,7 +387,11 @@ class StudyViewModelTest {
 
             vm.onAppPause()
 
-            waitFor(message = { "finished on pause" }) { env.api.finishCalls == 1 }
+            waitFor(message = { "synced on pause" }) { env.api.finishCalls == 1 }
+            assertTrue(vm.state.value is StudyState.ShowingFront, "pause must not end the session: ${vm.state.value}")
+
+            vm.finishSession()
+            waitFor(message = { "finished on leave" }) { env.api.finishCalls == 2 }
         }
     }
 

@@ -61,4 +61,13 @@ class FinishedCopyTest {
             FinishedCopy.lines(0, null),
         )
     }
+
+    @Test
+    fun `never says all caught up while new or review cards remain`() {
+        assertEquals(
+            listOf("session done — 4 reviewed", "12 cards are still due"),
+            FinishedCopy.lines(4, counts(new = 2, review = 10, learning = 1)),
+        )
+        assertEquals("1 card is still due", FinishedCopy.lines(1, counts(review = 1))[1])
+    }
 }

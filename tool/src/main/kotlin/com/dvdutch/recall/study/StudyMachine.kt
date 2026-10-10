@@ -337,6 +337,19 @@ class StudyMachine(
      * [StudyState.Finished]: on success it carries the returned sync info, on any
      * failure it carries `sync = null`.
      */
+    /**
+     * Saves progress mid-session — the same sync (and backup) [finish] runs — without
+     * ending it: the state, buffer, and counts are untouched, so studying resumes where
+     * it left off. Used when the app is paused (screen timeout, switching away).
+     * Best-effort: a failed sync is ignored, as it is at session start.
+     */
+    suspend fun checkpoint() {
+        try {
+            client.studyFinish()
+        } catch (_: BridgeError) {
+        }
+    }
+
     suspend fun finish() {
         val sync = try {
             client.studyFinish()
