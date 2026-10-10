@@ -11,6 +11,13 @@ A review-only, [Anki](https://apps.ankiweb.net/)-compatible spaced-repetition cl
 
 https://github.com/user-attachments/assets/dab2ba62-8b0e-4165-9af4-c1d4fbb638e8
 
+### Setting up sync
+
+Setting up a sync server with [recall-server](https://github.com/ChopinDavid/recall-server)'s
+one-line setup, then syncing Anki desktop and Recall to it:
+
+https://github.com/user-attachments/assets/506ab75a-e39a-4a2e-b835-bd8b0d09bd6f
+
 ## What it does
 
 Study your due Anki cards on the Light Phone. Deck creation, editing, and browsing stay on desktop/AnkiDroid — Recall is deliberately minimal, in line with Light's ethos. No editor, no browser, no statistics: just your reviews.
