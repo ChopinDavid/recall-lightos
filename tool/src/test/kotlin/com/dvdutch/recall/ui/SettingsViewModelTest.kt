@@ -76,6 +76,21 @@ class SettingsViewModelTest {
         }
     }
 
+    // Rejected credentials are explained in plain language, not rslib's raw message.
+    @Test
+    fun `testLogin with rejected credentials says so plainly`() {
+        val controller = FakeSyncController(configuredResult = true).apply {
+            loginError = net.ankiweb.rsdroid.exceptions.BackendSyncException.BackendSyncAuthFailedException(
+                anki.backend.BackendError.newBuilder().setMessage("Sync auth failed").build(),
+            )
+        }
+        vm(controller) { vm, _, _ ->
+            vm.testLogin()
+            waitFor(message = { "failure line" }) { vm.uiState.value.statusLine?.startsWith("login failed") == true }
+            assertEquals("login failed: username or password not accepted", vm.uiState.value.statusLine)
+        }
+    }
+
     // Saving the endpoint applies the endpoint sanitiser, returns to Main, and persists.
     @Test
     fun `submitEndpoint sanitises, returns to Main, and persists`() {

@@ -60,6 +60,10 @@ sealed class SyncFailure {
             is Other -> message
         }
 
+    /** [reason] for Settings' own "Test login" line, where "check them in settings" is moot. */
+    val loginReason: String
+        get() = if (this == AuthRejected) "username or password not accepted" else reason
+
     /** The one-line sync status: Home's error line and the session summary's small print. */
     val syncDetail: String
         get() = "sync failed — $reason" +

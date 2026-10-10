@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.viewModelScope
 import com.dvdutch.recall.engine.RecallEngine
+import com.dvdutch.recall.engine.SyncFailure
 import com.dvdutch.recall.prefs.RecallPreferences
 import com.dvdutch.recall.prefs.TextSanitizer
 import com.thelightphone.sdk.LightViewModel
@@ -145,7 +146,9 @@ class SettingsViewModel(
                     controller.login()
                     SettingsMessages.loginOkLine()
                 } catch (t: Throwable) {
-                    SettingsMessages.loginFailedLine(t.message)
+                    // The same plain-language reasons the study and home screens use
+                    // (wrong network, server not answering, rejected credentials).
+                    SettingsMessages.loginFailedLine(SyncFailure.classify(t, state.endpoint).loginReason)
                 }
             }
             updateState { it.copy(testing = false, statusLine = line) }
