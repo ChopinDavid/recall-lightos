@@ -33,4 +33,13 @@ class AnswerStartIndexTest {
         val node = TextNode(listOf(TextRun("x")))
         assertEquals(1, answerStartIndex(listOf(node), listOf(node)))
     }
+
+    @Test
+    fun `the type-answer block goes after the answer rule, else at the boundary`() {
+        val front = side("Capital of Brazil?", "front")
+        val back = side("Capital of Brazil?<hr id=answer>", "back")
+        assertEquals(2, typeAnswerBlockIndex(front, back))
+        val noRule = side("Capital of Brazil?<br>Type it:", "back")
+        assertEquals(typeAnswerBlockIndex(front, noRule), answerStartIndex(front, noRule))
+    }
 }

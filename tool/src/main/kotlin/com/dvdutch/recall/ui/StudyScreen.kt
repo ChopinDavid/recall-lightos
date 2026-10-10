@@ -28,6 +28,7 @@ import com.dvdutch.recall.api.BridgeError
 import com.dvdutch.recall.api.CardPayload
 import com.dvdutch.recall.api.Counts
 import com.dvdutch.recall.api.RenderNode
+import com.dvdutch.recall.api.RuleNode
 import com.dvdutch.recall.api.SyncInfo
 import com.dvdutch.recall.study.FailCause
 import com.dvdutch.recall.study.StudyState
@@ -408,29 +409,38 @@ private fun androidx.compose.foundation.layout.ColumnScope.CardBody(
                 viewportH = coords.size.height
             },
     ) {
-        // The type-answer result (diff or expected-answer line) sits at the very top of the
-        // revealed back, clearly set off above the card content. Only on the back.
+        // Inline per-sound replay: a tap on an audio glyph (track N) plays THAT track only,
+        // resolved through the same play seam auto-play/replay use (never a whole-side play).
+        val onPlayTrack: (Int) -> Unit = { track -> onReplay(trackFilenames(sideAudio, track)) }
         if (showBack && typeAnswerReveal != null) {
-            TypeAnswerRevealBlock(reveal = typeAnswerReveal, mediaLoader = mediaLoader)
+            // The type-answer result (diff or expected-answer line) sits where the template's
+            // {{type:Field}} would: at the answer boundary, after the <hr> if there is one. It
+            // is also the reveal's scroll anchor, so on a tall card it comes into view instead
+            // of being scrolled off the top.
+            val cut = typeAnswerBlockIndex(card.front, card.back)
+            RenderNodeColumn(nodes = card.back.take(cut), mediaLoader = mediaLoader, masksHidden = masksHidden, onPlayTrack = onPlayTrack)
+            Box(Modifier.onGloballyPositioned { coords -> dividerWindowY = coords.positionInWindow().y }) {
+                TypeAnswerRevealBlock(reveal = typeAnswerReveal, mediaLoader = mediaLoader)
+            }
+            RenderNodeColumn(nodes = card.back.drop(cut), mediaLoader = mediaLoader, masksHidden = masksHidden, onPlayTrack = onPlayTrack)
+        } else {
+            RenderNodeColumn(
+                nodes = if (showBack) card.back else card.front,
+                mediaLoader = mediaLoader,
+                masksHidden = masksHidden,
+                onPlayTrack = onPlayTrack,
+                // The answer boundary: the first back node that differs from the front. For a
+                // {{FrontSide}} back that's the <hr> rule (or first answer node); for a cloze,
+                // whose back re-renders the text with the answer filled in, it's the top, so the
+                // revealed answer stays in view. Only meaningful on the back; −1 never fires.
+                dividerIndex = if (showBack) answerStartIndex(card.front, card.back) else -1,
+                onNodePositioned = if (showBack) {
+                    { coords -> dividerWindowY = coords.positionInWindow().y }
+                } else {
+                    null
+                },
+            )
         }
-        RenderNodeColumn(
-            nodes = if (showBack) card.back else card.front,
-            mediaLoader = mediaLoader,
-            masksHidden = masksHidden,
-            // Inline per-sound replay: a tap on an audio glyph (track N) plays THAT track only,
-            // resolved through the same play seam auto-play/replay use (never a whole-side play).
-            onPlayTrack = { track -> onReplay(trackFilenames(sideAudio, track)) },
-            // The answer boundary: the first back node that differs from the front. For a
-            // {{FrontSide}} back that's the <hr> rule (or first answer node); for a cloze,
-            // whose back re-renders the text with the answer filled in, it's the top, so the
-            // revealed answer stays in view. Only meaningful on the back; −1 never fires.
-            dividerIndex = if (showBack) answerStartIndex(card.front, card.back) else -1,
-            onNodePositioned = if (showBack) {
-                { coords -> dividerWindowY = coords.positionInWindow().y }
-            } else {
-                null
-            },
-        )
     }
     // The AGGREGATE bottom "REPLAY AUDIO" row is now a DEFENSIVE fallback only: it appears
     // solely when some av tag was positionless (the engine's aggregate marker). With inline
@@ -681,4 +691,14 @@ fun answerStartIndex(front: List<RenderNode>, back: List<RenderNode>): Int {
     var i = 0
     while (i < front.size && i < back.size && front[i] == back[i]) i++
     return i
+}
+
+/**
+ * Where the type-answer comparison goes on the back: at [answerStartIndex], but after
+ * the `<hr id=answer>` rule when the boundary is one, matching the default
+ * `{{FrontSide}}<hr id=answer>{{type:Back}}` template. Pure and unit-tested.
+ */
+fun typeAnswerBlockIndex(front: List<RenderNode>, back: List<RenderNode>): Int {
+    val start = answerStartIndex(front, back)
+    return if (back.getOrNull(start) is RuleNode) start + 1 else start
 }
