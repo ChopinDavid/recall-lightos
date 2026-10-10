@@ -364,7 +364,12 @@ class StudyMachine(
         if (buffer.isNotEmpty()) buffer.removeFirst()
         if (buffer.size < PREFETCH_THRESHOLD) {
             val response = client.queue()
-            buffer.addAll(response.cards)
+            // rslib's queue still starts with the cards we've buffered but not yet
+            // answered, so append only cards we don't already hold. Appending them all
+            // showed those cards twice, and the second grade was rejected as stale and
+            // silently dropped.
+            val held = buffer.mapTo(HashSet()) { it.cardId }
+            buffer.addAll(response.cards.filter { held.add(it.cardId) })
             counts = response.counts
             engineHasUndoableOp = response.undoableAnswer
         } else {

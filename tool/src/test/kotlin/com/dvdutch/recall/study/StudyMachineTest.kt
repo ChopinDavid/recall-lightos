@@ -574,6 +574,38 @@ class StudyMachineTest {
         assertEquals(4, state.counts.new) // prefetch also refreshed counts (5 -> 4)
     }
 
+    // Real rslib: a refill returns the top of the queue, which still starts with the
+    // cards already buffered but not answered. They must not be queued twice (the
+    // duplicate's grade would be rejected as stale and silently lost).
+    @Test
+    fun refillDoesNotDuplicateBufferedCards() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 6), sync)))
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse((1L..5L).map { card(it, "s$it") }, counts(new = 6))))
+        // After card 1 is answered, rslib's queue is 2..6: cards 2..5 are still buffered.
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse((2L..6L).map { card(it, "s$it") }, counts(new = 5))))
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u1", "applied"))))
+        var t = 0L
+        val m = machine(bridge, now = { t += 100; t }, uuid = uuids("u1", "u2", "u3", "u4", "u5", "u6"))
+        m.start()
+        m.reveal()
+        m.grade("good")
+
+        // Walk the buffer's remaining cards in order: each card exactly once.
+        val served = mutableListOf<Long>()
+        for (n in 2..6) {
+            val state = m.state.value
+            assertTrue(state is StudyState.ShowingFront, "was $state")
+            served.add(state.card.cardId)
+            bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u$n", "applied"))))
+            bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(emptyList(), counts())))
+            m.reveal()
+            m.grade("good")
+        }
+        assertEquals(listOf(2L, 3L, 4L, 5L, 6L), served)
+        assertTrue(m.state.value is StudyState.Finished, "was ${m.state.value}")
+    }
+
     // 401 mid-session -> Failed(retriable=false).
     @Test
     fun unauthorizedMidSessionFailsNonRetriable() = runBlocking {
