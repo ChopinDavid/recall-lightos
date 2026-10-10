@@ -69,12 +69,19 @@ open class RecallEngine(
      */
     open suspend fun openCollection(): String {
         val path = storage.ensureCollectionDir()
-        // Journaling recovery BEFORE opening: an orphaned `.guard-backup` means the
-        // download guard's roll-back was interrupted (crash/kill/OOM mid-copy), leaving
-        // the collection half-overwritten. Recover from the backup — the last known-good
-        // pre-download state — so the backend never opens a torn file (finding #2).
-        GuardBackupRecovery.recover(storage.collectionFile)
-        withContext(holder.lane) { holder.openCollection(path) }
+        withContext(holder.lane) {
+            // Journaling recovery BEFORE the first open: an orphaned `.guard-backup` means
+            // the download guard's roll-back was interrupted (crash/kill/OOM mid-copy),
+            // leaving the collection half-overwritten. Recover from the backup — the last
+            // known-good pre-download state — so the backend never opens a torn file
+            // (finding #2). Only when the collection isn't open yet in this process: an
+            // interrupted restore is always left by an EARLIER run, while a backup seen with
+            // the collection open belongs to a guarded download in progress right now (e.g.
+            // the hourly sync opening the collection mid-download) and must not be "recovered"
+            // over the live file. Checked on the lane, so it can't race an open or close.
+            if (!holder.collectionOpen) GuardBackupRecovery.recover(storage.collectionFile)
+            holder.openCollection(path)
+        }
         return path
     }
 

@@ -92,6 +92,33 @@ class RecallEngineOpenPathTest {
         }
     }
 
+    // With the collection already open in this process, a `.guard-backup` belongs to a
+    // guarded download in progress (e.g. the hourly sync opening the collection mid-
+    // download), not an interrupted restore: opening again must leave both files alone.
+    @Test
+    fun `a backup is left alone while the collection is already open`() {
+        val dir = tmp()
+        val (engine, scope, _) = newEngine(dir)
+        try {
+            runBlocking {
+                engine.openCollection()
+                val collectionFile = engine.storage.collectionFile
+                val backup = GuardBackupRecovery.backupOf(collectionFile)
+                backup.writeBytes("IN-FLIGHT-DOWNLOAD-BACKUP".toByteArray())
+                val liveBytes = collectionFile.readBytes()
+
+                engine.openCollection()
+
+                assertTrue(backup.exists(), "an in-flight download's backup must not be consumed")
+                assertEquals(liveBytes.toList(), collectionFile.readBytes().toList(), "the live collection is untouched")
+            }
+        } finally {
+            runBlocking { EngineHolder.closeCollection() }
+            scope.cancel()
+            dir.deleteRecursively()
+        }
+    }
+
     // syncConfig reads the persisted fields; a controller built from blank fields is
     // unconfigured, and from complete fields is configured.
     @Test
