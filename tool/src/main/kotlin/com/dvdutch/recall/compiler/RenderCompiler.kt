@@ -62,7 +62,13 @@ private val UNSUPPORTED = setOf("video", "audio", "object", "embed", "iframe", "
 private val DROPPED = setOf("script", "style", "head", "title")
 
 // block-level tags that force a new text node
-private val BLOCK = setOf("div", "p", "li", "ul", "ol", "table", "tr", "blockquote", "section", "article", "center")
+private val BLOCK = setOf(
+    "div", "p", "li", "ul", "ol", "table", "tr", "blockquote", "section", "article", "center",
+    "h1", "h2", "h3", "h4", "h5", "h6", "pre",
+)
+
+// Headings: bold, and scaled like a browser's defaults unless the card CSS sizes them.
+private val HEADING_SCALE = mapOf("h1" to 1.5f, "h2" to 1.3f, "h3" to 1.15f, "h4" to 1f, "h5" to 1f, "h6" to 1f)
 
 private val STYLE_TAGS = mapOf(
     "b" to "b", "strong" to "b",
@@ -121,6 +127,10 @@ private class Ctx(val side: String, val hierarchicalTags: Set<String> = emptySet
     // Task 1: the font scale in effect for text flushed right now (nearest declared
     // ancestor size / card base, clamped); reset with [align].
     var scale: Float = 1f
+
+    // Cells seen so far in the current table row, so cells after the first get a
+    // " | " separator instead of running together ("7 // 2" + "3" read as "7 // 23").
+    var cellsInRow: Int = 0
 
     // Whether the next node continues the current line: true after a node emitted
     // inside a block with no block boundary since. Lets [InlineFlow] join a cloze with
@@ -223,6 +233,7 @@ private fun mergeRuns(runs: List<Run>, tags: Set<String> = emptySet()): List<Tex
             small = "small" in run.styles,
             mono = "mono" in run.styles,
             strike = "strike" in run.styles,
+            pre = "pre" in run.styles,
         )
     }
 }
@@ -254,6 +265,13 @@ private fun cleanWs(rawText: String?): String {
     if (text[text.length - 1].isPyWhitespace()) sb.append(' ')
     return sb.toString()
 }
+
+/**
+ * Text inside `<pre>`: whitespace and line breaks are kept verbatim (tabs become four
+ * spaces, which Compose renders predictably). No math rewriting: code isn't MathJax.
+ */
+private fun preWs(rawText: String?): String =
+    rawText.orEmpty().replace("\r\n", "\n").replace("\t", "    ")
 
 /**
  * Python's `str.isspace()` whitespace set, matched exactly. Java's
@@ -308,21 +326,28 @@ private fun walk(
     // been entered — so this element's own classes are prepended before resolving the
     // nearest-ancestor font size.
     ancestorClasses: List<String>,
+    // Inside a <pre>: whitespace is verbatim (see [preWs]).
+    pre: Boolean = false,
 ) {
     val tag = el.tag
+    // This element's own text is preformatted inside (or as) a <pre>; its tail belongs
+    // to the parent, so it follows the parent's mode.
+    val inPre = pre || tag == "pre"
+    val tailWs: (String) -> String = if (pre) ::preWs else ::cleanWs
+    val textWs: (String) -> String = if (inPre) ::preWs else ::cleanWs
 
     if (tag in DROPPED) return
 
     if (tag == null) {
         // comment / PI: drop body, keep tail.
-        el.tail?.let { ctx.addRun(cleanWs(it), styles) }
+        el.tail?.let { ctx.addRun(tailWs(it), styles) }
         return
     }
 
     val classes = pySplit(el.attr("class") ?: "")
     val elId = el.attr("id") ?: ""
     if (hidden.matches(tag, classes, elId) || isInlineHidden(el)) {
-        el.tail?.let { ctx.addRun(cleanWs(it), styles) }
+        el.tail?.let { ctx.addRun(tailWs(it), styles) }
         return
     }
 
@@ -350,7 +375,7 @@ private fun walk(
     if (tag in UNSUPPORTED) {
         ctx.flushText()
         ctx.nodes.add(UnsupportedNode(tag))
-        el.tail?.let { ctx.addRun(cleanWs(it), styles) }
+        el.tail?.let { ctx.addRun(tailWs(it), styles) }
         return
     }
 
@@ -360,20 +385,21 @@ private fun walk(
         val h = el.attr("height")?.takeIf { it.isAsciiDigits() }?.toInt()
         // Bare, percent-decoded filename: the src attribute value as authored.
         ctx.nodes.add(ImageNode(src = el.attr("src") ?: "", w = w, h = h))
-        el.tail?.let { ctx.addRun(cleanWs(it), styles) }
+        el.tail?.let { ctx.addRun(tailWs(it), styles) }
         return
     }
 
     if (tag == "hr") {
         ctx.flushText()
         ctx.nodes.add(RuleNode(marginTop = marginTop, marginBottom = marginBottom))
-        el.tail?.let { ctx.addRun(cleanWs(it), styles) }
+        el.tail?.let { ctx.addRun(tailWs(it), styles) }
         return
     }
 
     if (tag == "br") {
-        ctx.addRun("\n", emptySet())
-        el.tail?.let { ctx.addRun(cleanWs(it), styles) }
+        // Inside <pre> the break keeps the preformatted styles so it stays verbatim.
+        ctx.addRun("\n", if (pre) styles else emptySet())
+        el.tail?.let { ctx.addRun(tailWs(it), styles) }
         return
     }
 
@@ -392,7 +418,7 @@ private fun walk(
             ClozeNode(state = "revealed", text = cleanWs(el.textContent()))
         }
         ctx.addCloze(node)
-        el.tail?.let { ctx.addRun(cleanWs(it), styles) }
+        el.tail?.let { ctx.addRun(tailWs(it), styles) }
         return
     }
 
@@ -404,11 +430,13 @@ private fun walk(
             elAlign, marginTop, marginBottom, chainClasses,
         )
     ) {
-        el.tail?.let { ctx.addRun(cleanWs(it), styles) }
+        el.tail?.let { ctx.addRun(tailWs(it), styles) }
         return
     }
 
-    val childStyles = STYLE_TAGS[tag]?.let { styles + it } ?: styles
+    var childStyles = STYLE_TAGS[tag]?.let { styles + it } ?: styles
+    if (tag == "pre") childStyles = childStyles + "pre"
+    if (tag in HEADING_SCALE || tag == "th") childStyles = childStyles + "b"
     val isBlock = tag in BLOCK
     if (isBlock) {
         ctx.flushText()
@@ -416,12 +444,21 @@ private fun walk(
         ctx.marginTop = marginTop
         ctx.marginBottom = marginBottom
         ctx.scale = scale
+        // A heading's default size applies only when the card CSS doesn't size it.
+        if (scale == 1f) HEADING_SCALE[tag]?.let { ctx.scale = it }
         if (tag == "li") ctx.addRun("• ", emptySet())
+        if (tag == "tr" || tag == "table") ctx.cellsInRow = 0
+    }
+    if (tag == "td" || tag == "th") {
+        if (ctx.cellsInRow > 0) ctx.addRun(" | ", styles)
+        ctx.cellsInRow++
     }
 
-    el.text?.let { ctx.addRun(cleanWs(it), childStyles) }
+    // A browser drops the single newline right after <pre>.
+    val ownText = el.text?.let { if (tag == "pre") it.removePrefix("\n") else it }
+    ownText?.let { ctx.addRun(textWs(it), childStyles) }
     for (child in el.children) {
-        walk(child, ctx, childStyles, hidden, layout, margins, fontSize, cardBasePx, elAlign, chainClasses)
+        walk(child, ctx, childStyles, hidden, layout, margins, fontSize, cardBasePx, elAlign, chainClasses, inPre)
     }
 
     if (isBlock) {
@@ -431,7 +468,7 @@ private fun walk(
         ctx.marginBottom = 0f
         ctx.scale = 1f
     }
-    el.tail?.let { ctx.addRun(cleanWs(it), styles) }
+    el.tail?.let { ctx.addRun(tailWs(it), styles) }
 }
 
 /**

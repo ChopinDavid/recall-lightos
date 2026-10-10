@@ -57,7 +57,7 @@ object InlineFlow {
     private fun RenderNode.withoutLeadingBreak(): RenderNode {
         val text = this as? TextNode ?: return this
         val first = text.runs.firstOrNull() ?: return this
-        if (first.audioTrack != null || !first.s.startsWith("\n")) return this
+        if (first.audioTrack != null || first.pre || !first.s.startsWith("\n")) return this
         val rest = first.s.removePrefix("\n")
         val runs = if (rest.isEmpty()) text.runs.drop(1) else listOf(first.copy(s = rest)) + text.runs.drop(1)
         return text.copy(runs = runs)
@@ -131,6 +131,14 @@ object InlineFlow {
             if (run.audioTrack != null) {
                 out.add(run)
                 atLineStart = false
+                lastWasSpace = false
+                continue
+            }
+            if (run.pre) {
+                // Preformatted: verbatim, and the line state follows how it ends.
+                if (run.s.isEmpty()) continue
+                out.add(run)
+                atLineStart = run.s.endsWith('\n')
                 lastWasSpace = false
                 continue
             }

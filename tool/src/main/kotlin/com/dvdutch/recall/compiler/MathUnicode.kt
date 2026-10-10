@@ -12,8 +12,11 @@ package com.dvdutch.recall.compiler
  * DROPPING the delimiters, and degrades — never crashes — on structures Unicode
  * cannot represent (`\frac{a}{b}`->`(a)/(b)`, matrices, deep nesting).
  *
- * The mapping tables and the scanner MUST stay char-for-char identical to the
- * Python reference; the parity corpus guards this.
+ * The mapping tables and the scanner follow the Python reference, extended where the
+ * reference degraded to gibberish: simple fractions read `1/3`, a multi-token root is
+ * grouped `√(b²-4ac)`, matrix/cases environments become `(1 2; 3 4)`, mhchem `\ce{}`
+ * formulas get subscript digits and arrows, and an unknown `\cmd{arg}` keeps its
+ * argument instead of its name.
  */
 internal object MathUnicode {
 
@@ -178,6 +181,70 @@ internal object MathUnicode {
         return s[i].toString() to (i + 1)
     }
 
+    /** A single token: no spaces, operators, or brackets, so it needs no parentheses. */
+    private fun isAtom(s: String): Boolean =
+        s.isNotEmpty() && s.none { it.isWhitespace() || it in "+-−±/=()[]{}|,;" }
+
+    /** A number or a single letter: `/3`, `/x` read unambiguously without parentheses. */
+    private fun isSimpleDenominator(s: String): Boolean =
+        s.isNotEmpty() && (s.all { it.isDigit() } || (s.length == 1 && s[0].isLetter()))
+
+    private val MATRIX_ENVS = setOf("matrix", "pmatrix", "bmatrix", "Bmatrix", "vmatrix", "Vmatrix", "smallmatrix", "array", "cases")
+
+    /**
+     * A `\begin{env}…\end{env}` block on one line: rows split at `\\` and joined by
+     * `; `, matrix cells split at `&` and joined by spaces, wrapped in the environment's
+     * brackets: `(1 2; 3 4)` for pmatrix, `[…]` for bmatrix, `{ …` for cases. Alignment
+     * environments (align, gather…) just drop their `&` alignment marks.
+     */
+    private fun renderEnvironment(env: String, body: String): String {
+        val kind = env.trimEnd('*')
+        var content = body
+        if (kind == "array" && content.trimStart().startsWith("{")) {
+            content = content.trimStart().let { it.substring(readGroup(it, 0).second) } // column spec
+        }
+        val rows = content.split("\\\\").map { it.trim() }.filter { it.isNotEmpty() }
+        val isMatrix = kind in MATRIX_ENVS
+        val inner = rows.joinToString("; ") { row ->
+            if (isMatrix) row.split("&").joinToString(" ") { renderMath(it.trim()) }
+            else renderMath(row.replace("&", "")).trim()
+        }
+        return when (kind) {
+            "pmatrix" -> "($inner)"
+            "matrix", "bmatrix", "smallmatrix", "array" -> "[$inner]"
+            "Bmatrix" -> "{$inner}"
+            "vmatrix" -> "|$inner|"
+            "Vmatrix" -> "‖$inner‖"
+            "cases" -> "{ $inner"
+            else -> inner
+        }
+    }
+
+    /**
+     * mhchem `\ce{…}`: digits after an element symbol (or `)`) become subscripts,
+     * `->`/`<-`/`<=>` become arrows, and the rest (charges via `^`) renders as math.
+     */
+    private fun renderChem(arg: String): String {
+        val text = arg.replace("<=>", " ⇌ ").replace("->", " → ").replace("<-", " ← ")
+            // A charge is the whole superscript: SO4^2- is SO₄²⁻, not SO₄² followed by a minus.
+            .replace(Regex("""\^(\d*[+-])""")) { "^{${it.groupValues[1]}}" }
+        val out = StringBuilder()
+        for (ch in text) {
+            val prev = out.lastOrNull()
+            val sub = SUBSCRIPTS[ch]
+            if (ch.isDigit() && sub != null && prev != null &&
+                (prev.isLetter() || prev == ')' || prev in SUBSCRIPT_DIGITS)
+            ) {
+                out.append(sub)
+            } else {
+                out.append(ch)
+            }
+        }
+        return renderMath(out.toString()).replace(Regex(" {2,}"), " ").trim()
+    }
+
+    private const val SUBSCRIPT_DIGITS = "₀₁₂₃₄₅₆₇₈₉"
+
     /** ASCII-letter check, matching Python `ch.isascii() and ch.isalpha()`. */
     private fun Char.isAsciiAlpha(): Boolean = this in 'a'..'z' || this in 'A'..'Z'
 
@@ -214,14 +281,34 @@ internal object MathUnicode {
                             val (a, i1) = readGroup(s, i)
                             val (b, i2) = readGroup(s, i1)
                             i = i2
-                            out.append("(").append(renderMath(a)).append(")/(")
-                                .append(renderMath(b)).append(")")
+                            val num = renderMath(a)
+                            val den = renderMath(b)
+                            // `1/3`, `2a/3`, `(a+b)/c`: parenthesise a numerator with
+                            // operators, and any denominator beyond a number or a letter.
+                            out.append(if (isAtom(num)) num else "($num)").append('/')
+                                .append(if (isSimpleDenominator(den)) den else "($den)")
                         }
                         name == "sqrt" -> {
                             val (arg, i1) = readGroup(s, i)
                             i = i1
-                            out.append("√").append(renderMath(arg))
+                            val body = renderMath(arg)
+                            out.append("√").append(if (isAtom(body)) body else "($body)")
                         }
+                        name == "begin" -> {
+                            val (env, i1) = readGroup(s, i)
+                            val endTag = "\\end{$env}"
+                            val endIdx = s.indexOf(endTag, i1)
+                            val body = if (endIdx >= 0) s.substring(i1, endIdx) else s.substring(i1)
+                            i = if (endIdx >= 0) endIdx + endTag.length else n
+                            out.append(renderEnvironment(env, body))
+                        }
+                        name == "end" -> { i = readGroup(s, i).second } // stray \end{…}: drop
+                        name == "ce" -> {
+                            val (arg, i1) = readGroup(s, i)
+                            i = i1
+                            out.append(renderChem(arg))
+                        }
+                        name == "\\" -> out.append('\n') // line break
                         name == "text" || name == "mathrm" || name == "mathbf" ||
                             name == "mathit" || name == "operatorname" ||
                             name == "mathcal" || name == "mathbb" -> {
@@ -231,7 +318,14 @@ internal object MathUnicode {
                         }
                         name in DROP -> { /* spacing / sizing: emit nothing */ }
                         SYMBOLS.containsKey(name) -> out.append(SYMBOLS.getValue(name))
-                        else -> out.append(name) // unknown command: degrade to its letters
+                        // An unknown command with a brace argument (\vec{v}, \mathfrak{A}) keeps
+                        // the argument; a bare one degrades to its letters.
+                        i < n && s[i] == '{' -> {
+                            val (arg, i1) = readGroup(s, i)
+                            i = i1
+                            out.append(renderMath(arg))
+                        }
+                        else -> out.append(name)
                     }
                 }
                 ch == '^' || ch == '_' -> {

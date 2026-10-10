@@ -45,8 +45,8 @@ class MathUnicodeTest {
             "\\(x \\rightarrow \\infty\\)" to "x → ∞",
             "\\(\\sqrt{x}\\)" to "√x",
             // fraction degrades to readable literal
-            "\\(\\frac{1}{2}\\)" to "(1)/(2)",
-            "\\(\\frac{a+b}{c}\\)" to "(a+b)/(c)",
+            "\\(\\frac{1}{2}\\)" to "1/2",
+            "\\(\\frac{a+b}{c}\\)" to "(a+b)/c",
             // unknown command degrades to its letters (no raw backslash)
             "\\(\\foobar x\\)" to "foobar x",
             // subscript letters WITH a unicode form map (i,j -> ᵢⱼ)
@@ -82,5 +82,27 @@ class MathUnicodeTest {
     fun wiredIntoCompile() {
         val nodes = compileHtml("Solve \\(x^2+3x=0\\)", side = "front")
         assertEquals("Solve x²+3x=0", text(nodes))
+    }
+
+    @Test
+    fun readableFallbacksForStructuresUnicodeLacks() {
+        val cases = listOf(
+            // a multi-token root is grouped; a single token isn't
+            "\\(\\sqrt{b^2-4ac}\\)" to "√(b²-4ac)",
+            "\\(\\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}\\)" to "(-b ± √(b²-4ac))/(2a)",
+            // matrices and cases on one line
+            "\\(\\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix}\\)" to "(1 2; 3 4)",
+            "\\(\\begin{bmatrix} a \\\\ b \\end{bmatrix}\\)" to "[a; b]",
+            "\\(f(x) = \\begin{cases} 1 & x > 0 \\\\ 0 & x \\le 0 \\end{cases}\\)" to "f(x) = { 1 x > 0; 0 x ≤ 0",
+            "\\[\\begin{align} a &= b \\\\ c &= d \\end{align}\\]" to "a = b; c = d",
+            // mhchem
+            "\\(\\ce{H2O}\\)" to "H₂O",
+            "\\(\\ce{2H2 + O2 -> 2H2O}\\)" to "2H₂ + O₂ → 2H₂O",
+            "\\(\\ce{SO4^2-}\\)" to "SO₄²⁻",
+            // unknown commands keep a brace argument, else their letters
+            "\\(\\vec{v} \\cdot \\mathfrak{A}\\)" to "v · A",
+            "\\(a \\\\ b\\)" to "a \n b",
+        )
+        for ((src, want) in cases) assertEquals(want, m(src), "for input: $src")
     }
 }

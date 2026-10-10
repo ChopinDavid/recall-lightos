@@ -84,6 +84,9 @@ data class TextRun(
     // `[anki:play:q|a:N]` markers (see compileHtml); [s] is empty for an audio run. Additive
     // with a null default, so the parity corpus and every non-audio card are unaffected.
     val audioTrack: Int? = null,
+    // Preformatted (<pre>) text: whitespace and line breaks are verbatim, so the
+    // layout pass leaves them alone. Phone-side only; not parity-governed.
+    val pre: Boolean = false,
 )
 
 /**
