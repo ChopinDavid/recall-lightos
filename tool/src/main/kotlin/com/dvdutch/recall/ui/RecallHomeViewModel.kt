@@ -189,7 +189,8 @@ class RecallHomeViewModel(
                     setMode(HomeMode.Loaded(visibleDeckRows(decks, readExpandedIds())))
                     setSyncState(SyncState.Idle)
                 } else {
-                    setSyncState(SyncState.Failed("sync failed — check settings"))
+                    // The controller's detail names the cause and what to do (see SyncFailure).
+                    setSyncState(SyncState.Failed(info.detail.ifBlank { "sync failed — check settings" }))
                 }
             } catch (t: Throwable) {
                 setSyncState(SyncState.Failed("sync failed — check settings"))

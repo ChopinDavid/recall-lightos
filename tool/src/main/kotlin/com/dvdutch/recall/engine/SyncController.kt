@@ -29,7 +29,8 @@ data class SyncConfig(
  * identically whether it runs on the phone or via the bridge.
  *
  * ## Semantic reference: `anki_bridge.sync.SyncManager`
- *   - `sync()` is **non-fatal**: any login/sync exception → `SyncInfo(false, "sync failed: …")`
+ *   - `sync()` is **non-fatal**: any login/sync exception → `SyncInfo(false, "sync failed — …")`,
+ *     the detail explaining the cause and what to do (see [SyncFailure])
  *     and studying proceeds on the local collection (spec: sync failures never block study).
  *   - A FULL_* requirement is the ONE exception: it latches [needsAttention] and is resolved
  *     only out-of-band (a full sync via [fullSync], or the operator on the bridge). While
@@ -62,6 +63,11 @@ open class SyncController(
      * case [fullDownload] falls back to a bare, unguarded [fullSync] download.
      */
     private val collectionFile: (() -> File)? = null,
+    /**
+     * The phone's current IPv4 networks, used to explain a network failure (see
+     * [SyncFailure]). Defaults to the device's interfaces; tests pass a fixed list.
+     */
+    private val networks: () -> List<LocalNetwork> = LocalNetwork::ofDevice,
 ) {
 
     private companion object {
@@ -124,7 +130,8 @@ open class SyncController(
      *   - not configured           → `SyncInfo(false, "sync not configured")`;
      *   - already needs attention  → `SyncInfo(false, "needs attention: full sync required")`
      *     (short-circuit, no server round-trip);
-     *   - any exception            → drop cached auth, `SyncInfo(false, "sync failed: …")`;
+     *   - any exception            → drop cached auth, `SyncInfo(false, "sync failed — …")`
+     *                                  with a [SyncFailure.syncDetail] explanation;
      *   - FULL_* required          → latch [needsAttention], return the needs-attention detail;
      *   - otherwise                → stamp [lastSync], `SyncInfo(true, "ok")`.
      *
@@ -140,7 +147,8 @@ open class SyncController(
                 holder.backend().syncCollection(loginOnLane(), media)
             } catch (t: Throwable) {
                 auth = null // force a fresh login next attempt (v1 SyncManager semantics)
-                return@withContext SyncInfo(synced = false, detail = "sync failed: ${t.message ?: t}")
+                val failure = SyncFailure.classify(t, config.endpoint, networks)
+                return@withContext SyncInfo(synced = false, detail = failure.syncDetail)
             }
             if (out.required in FULL_REQUIRED) {
                 _needsAttention.value = true

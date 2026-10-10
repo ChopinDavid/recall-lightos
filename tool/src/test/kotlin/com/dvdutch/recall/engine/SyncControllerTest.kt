@@ -176,10 +176,15 @@ class SyncControllerTest {
         val controller = SyncController(badConfig, EngineHolder)
         val info = runBlocking { controller.sync(media = false) }
         assertFalse(info.synced, "a bad-password sync must fail non-fatally")
-        assertTrue(info.detail.startsWith("sync failed"), "detail must be a sync-failed message: ${info.detail}")
+        assertEquals(
+            SyncFailure.AuthRejected.syncDetail,
+            info.detail,
+            "a rejected password must say so, not show the raw engine error",
+        )
         // Auth was dropped, not cached: the controller has no cached auth to reuse.
         assertNull(controller.cachedAuthForTest(), "failed login must drop the cached auth")
     }
+
 
     @Test
     fun `fullDownload guards a populated phone against an EMPTY server and does not wipe it`() {

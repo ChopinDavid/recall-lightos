@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.viewModelScope
 import com.dvdutch.recall.engine.RecallEngine
+import com.dvdutch.recall.engine.SyncFailure
 import com.dvdutch.recall.prefs.RecallPreferences
 import com.dvdutch.recall.prefs.TextSanitizer
 import com.thelightphone.sdk.LightViewModel
@@ -98,7 +99,8 @@ class FirstRunViewModel(
                 controller.fullSync(upload = false) // pull the whole collection down
                 setState { it.succeeded() }
             } catch (t: Throwable) {
-                setState { it.failed(t.message ?: "download failed") }
+                // Shown as "download failed: <reason>"; the reason says what to do.
+                setState { it.failed(SyncFailure.classify(t, config.endpoint).reason) }
             }
         }
     }
