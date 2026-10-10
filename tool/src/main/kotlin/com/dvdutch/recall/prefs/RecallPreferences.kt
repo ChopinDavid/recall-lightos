@@ -46,9 +46,10 @@ object RecallPreferences {
 
     /**
      * Default sync endpoint when nothing has been persisted yet. BUILD-TYPE scoped:
-     * DEBUG prefills the host-local dev hub (`http://10.0.2.2:18080/`) so the emulator
-     * workflow stays one-tap; RELEASE is EMPTY so the shipping build ships no dev server
-     * and first-run forces the user to enter their own endpoint. The value comes from
+     * DEBUG prefills the host-local dev hub (`http://10.0.2.2:8080/`, recall-server's
+     * port) so the emulator workflow stays one-tap; RELEASE is EMPTY so the shipping
+     * build ships no dev server and first-run forces the user to enter their own
+     * endpoint. The value comes from
      * `BuildConfig.DEV_DEFAULT_ENDPOINT`, set per build type in tool/build.gradle.kts.
      */
     val DEFAULT_SYNC_ENDPOINT: String = BuildConfig.DEV_DEFAULT_ENDPOINT

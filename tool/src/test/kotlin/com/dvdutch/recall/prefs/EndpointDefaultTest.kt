@@ -21,7 +21,7 @@ class EndpointDefaultTest {
 
     @Test
     fun `debug build default is the host-local dev hub`() {
-        assertEquals("http://10.0.2.2:18080/", RecallPreferences.DEFAULT_SYNC_ENDPOINT)
+        assertEquals("http://10.0.2.2:8080/", RecallPreferences.DEFAULT_SYNC_ENDPOINT)
     }
 
     @Test

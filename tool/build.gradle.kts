@@ -243,7 +243,7 @@ android {
     // test/test123 emulator workflow one-tap), RELEASE prefills nothing so
     // first-run forces the user to enter their own endpoint. Read through
     // BuildConfig.DEV_DEFAULT_ENDPOINT (see RecallPreferences.DEFAULT_SYNC_ENDPOINT).
-    val devDefaultEndpoint = "http://10.0.2.2:18080/"
+    val devDefaultEndpoint = "http://10.0.2.2:8080/"
 
     buildFeatures {
         buildConfig = true
