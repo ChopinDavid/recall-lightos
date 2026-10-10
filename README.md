@@ -50,7 +50,7 @@ Scheduling configuration — including FSRS parameters, desired retention, and o
 
 ## Status
 
-**0.2.0**: feature-complete for review-only studying, and smoke-tested end-to-end on the minified release build against a self-hosted sync server on the Light Phone III emulator. Being prepared for submission to Light's Tool Library; not yet distributed.
+**0.1.0**: feature-complete for review-only studying, and smoke-tested end-to-end on the minified release build against a self-hosted sync server on the Light Phone III emulator. Being prepared for submission to Light's Tool Library; not yet distributed.
 
 Known limitations: content that requires a browser engine doesn't render (deck `<script>`s, full MathJax typesetting, CSS-layout-art decks); TTS-only audio is unsupported.
 
