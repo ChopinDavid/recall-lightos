@@ -158,6 +158,13 @@ object InlineFlow {
             if (sb.isNotEmpty()) out.add(run.copy(s = sb.toString()))
         }
         if (lastWasSpace) dropTrailingSpace(null, out)
+        // A single <br> at the very end of a block is invisible in a browser (a Cloze
+        // back's `<br>{{Back Extra}}` with an empty extra); two still show a blank line.
+        val last = out.indexOfLast { it.audioTrack == null }
+        if (last >= 0 && out[last].s.endsWith("\n")) {
+            val trimmed = out[last].s.dropLast(1)
+            if (trimmed.isEmpty()) out.removeAt(last) else out[last] = out[last].copy(s = trimmed)
+        }
         return out
     }
 

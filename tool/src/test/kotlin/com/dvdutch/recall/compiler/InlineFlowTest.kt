@@ -108,4 +108,10 @@ class InlineFlowTest {
         assertEquals(2, nodes.size)
         assertEquals("Largest lake in Africa?\nSecond line", text(nodes[1]))
     }
+
+    @Test
+    fun `a single trailing line break is invisible, two keep a blank line`() {
+        assertEquals("Sodium + chlorine", text(layout("""<span class="cloze">Sodium</span> + chlorine<br>""", "back").single()))
+        assertEquals("text\n", text(layout("text<br><br>", "back").single()))
+    }
 }
