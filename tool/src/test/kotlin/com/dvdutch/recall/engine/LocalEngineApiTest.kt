@@ -6,6 +6,7 @@ import com.dvdutch.recall.api.OcclusionNode
 import com.dvdutch.recall.api.OcclusionShapeState
 import com.dvdutch.recall.api.ShapeState
 import com.dvdutch.recall.api.TextNode
+import com.dvdutch.recall.api.TextRun
 import com.dvdutch.recall.api.UnsupportedNode
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -115,7 +116,8 @@ class LocalEngineApiTest {
                     "{{c2::image-occlusion:ellipse:left=200:top=50:width=60:height=40:rx=30:ry=20$oi}}" +
                     "{{c3::image-occlusion:polygon:points=10,10 60,10 35,50$oi}}"
             backend.addImageOcclusionNote(
-                png.toString(), occlusions, "Cerebellum", "Coordinates motor", emptyList(), ioId,
+                // Header and Back Extra are card HTML, like any field.
+                png.toString(), occlusions, "<b>Cerebellum</b>", "Coordinates <i>motor</i><br>control", emptyList(), ioId,
             )
             deckId
         }
@@ -152,16 +154,17 @@ class LocalEngineApiTest {
         )
 
         // Header is a text node, present before the image on both sides.
-        val frontText = card.front.filterIsInstance<TextNode>().flatMap { it.runs }.joinToString("") { it.s }
-        assertTrue("Cerebellum" in frontText, "header text node missing on front: $frontText")
+        val frontRuns = card.front.filterIsInstance<TextNode>().flatMap { it.runs }
+        assertEquals(listOf(TextRun("Cerebellum", b = true)), frontRuns, "header must compile as HTML, not show its tags")
 
         // Back reveals the tested rect (outline) and carries Back Extra text.
         val backOcc = card.back.filterIsInstance<OcclusionNode>().single()
         assertEquals("back", backOcc.side)
         val backRect = backOcc.shapes.filterIsInstance<OcclusionShapeState.Rect>().single()
         assertEquals(ShapeState.REVEALED_OUTLINE, backRect.state)
-        val backText = card.back.filterIsInstance<TextNode>().flatMap { it.runs }.joinToString("") { it.s }
-        assertTrue("Coordinates motor" in backText, "back extra text node missing: $backText")
+        val backRuns = card.back.filterIsInstance<TextNode>().flatMap { it.runs }
+        assertEquals("Coordinates motor\ncontrol", backRuns.joinToString("") { it.s }.substringAfter("Cerebellum"), "back extra: $backRuns")
+        assertTrue(backRuns.any { it.i && it.s == "motor" }, "back extra italics must survive: $backRuns")
     }
 
     /**

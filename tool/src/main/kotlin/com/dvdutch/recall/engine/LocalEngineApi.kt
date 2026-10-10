@@ -297,17 +297,20 @@ class LocalEngineApi(
             side = if (isBack) "back" else "front",
         )
 
-        // Header (both sides) and Back Extra (back only) become ordinary text nodes.
-        val header = textNodeOrNull(occNote.header)
-        val backExtra = textNodeOrNull(occNote.backExtra)
+        // Header (both sides) and Back Extra (back only) are card HTML like any other
+        // field — bold, line breaks, lists, images — so they compile through the same
+        // path as a normal side rather than showing their tags as text.
+        val css = notetype.config.css
+        val header = compileField(occNote.header, "front", css)
+        val backExtra = compileField(occNote.backExtra, "back", css)
         val front = buildList {
-            header?.let { add(it) }
+            addAll(header)
             add(sideNode(isBack = false))
         }
         val back = buildList {
-            header?.let { add(it) }
+            addAll(header)
             add(sideNode(isBack = true))
-            backExtra?.let { add(it) }
+            addAll(backExtra)
         }
         val labels = backend.describeNextStates(entry.states)
         return CardPayload(
@@ -324,9 +327,9 @@ class LocalEngineApi(
         )
     }
 
-    /** A single-run [TextNode] for non-blank text, or null when the text is blank. */
-    private fun textNodeOrNull(text: String): RenderNode? =
-        text.trim().takeIf { it.isNotEmpty() }?.let { TextNode(listOf(TextRun(it))) }
+    /** A field's HTML laid out as nodes; empty for a blank field. */
+    private fun compileField(html: String, side: String, css: String): List<RenderNode> =
+        if (html.isBlank()) emptyList() else InlineFlow.apply(compileHtml(html, side, css))
 
     /** One compiled card side: its render nodes plus the ordered audio filenames. */
     private data class CompiledSide(val nodes: List<RenderNode>, val audio: List<String>)
