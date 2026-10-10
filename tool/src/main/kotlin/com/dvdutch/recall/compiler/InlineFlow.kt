@@ -63,7 +63,7 @@ object InlineFlow {
             is TextNode -> runs.addAll(node.runs)
             is ClozeNode -> {
                 if (node.spaceBefore) runs.add(TextRun(" "))
-                runs.add(TextRun(clozeLabel(node), b = true))
+                runs.addAll(clozeRuns(node))
             }
             else -> {}
         }
@@ -76,6 +76,27 @@ object InlineFlow {
             scale = layout?.scale ?: 1f,
         )
     }
+
+    /**
+     * A cloze as bold runs. A revealed answer can contain a sound (`[anki:play:a:N]`,
+     * flattened into the cloze text); it becomes an inline audio run — the tappable
+     * replay glyph — instead of showing the marker as text.
+     */
+    private fun clozeRuns(node: ClozeNode): List<TextRun> {
+        val label = clozeLabel(node)
+        if (!label.contains("[anki:play:")) return listOf(TextRun(label, b = true))
+        val out = mutableListOf<TextRun>()
+        var last = 0
+        for (m in AUDIO_MARKER.findAll(label)) {
+            if (m.range.first > last) out.add(TextRun(label.substring(last, m.range.first), b = true))
+            out.add(TextRun("", audioTrack = m.groupValues[1].toInt()))
+            last = m.range.last + 1
+        }
+        if (last < label.length) out.add(TextRun(label.substring(last), b = true))
+        return out
+    }
+
+    private val AUDIO_MARKER = Regex("""\[anki:play:[qa]:(\d+)]""")
 
     /** A hidden cloze shows its hint (or `...`) in brackets; a revealed one, its answer. */
     internal fun clozeLabel(node: ClozeNode): String =

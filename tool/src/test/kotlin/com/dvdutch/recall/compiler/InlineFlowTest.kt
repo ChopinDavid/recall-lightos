@@ -92,4 +92,13 @@ class InlineFlowTest {
         })
         assertTrue(nodes.none { it is ClozeNode && it.spaceBefore })
     }
+
+    @Test
+    fun `a sound inside a revealed cloze becomes a replay glyph, not text`() {
+        val runs = (layout("""Say <span class="cloze">bonjour[anki:play:a:0]</span> twice""", "back").single() as TextNode).runs
+        assertEquals(
+            listOf(TextRun("Say "), TextRun("bonjour", b = true), TextRun("", audioTrack = 0), TextRun(" twice")),
+            runs,
+        )
+    }
 }
