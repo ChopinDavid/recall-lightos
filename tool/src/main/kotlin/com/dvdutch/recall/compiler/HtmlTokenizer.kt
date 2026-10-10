@@ -303,23 +303,15 @@ object HtmlTokenizer {
         return -1
     }
 
-    // Minimal HTML entity decoding covering what card templates emit. Numeric
-    // (&#nnn; / &#xhh;) and the common named entities; unknown entities pass
-    // through verbatim (libxml2 does the same for undefined names).
+    // HTML entity decoding: numeric (&#nnn; / &#xhh;) and every HTML 4 named entity
+    // ([HTML_NAMED_ENTITIES], the set libxml2 decodes). Unknown entities pass through
+    // verbatim (libxml2 does the same for undefined names). Names are case-sensitive
+    // (`&Eacute;` is É, `&eacute;` is é).
     //
-    // `nbsp` decodes to U+00A0 NO-BREAK SPACE (as libxml2 does), NOT the
-    // ASCII U+0020 space — written as a `\u00A0` escape so the intent is
-    // unambiguous. cleanWs collapses the distinction on most paths, but it
-    // is observable on the raw cloze front-hint path (no cleanWs).
-    private val NAMED = mapOf(
-        "amp" to "&", "lt" to "<", "gt" to ">", "quot" to "\"", "apos" to "'",
-        "nbsp" to "\u00A0", "mdash" to "—", "ndash" to "–",
-        "hellip" to "…", "laquo" to "«", "raquo" to "»",
-        "copy" to "©", "reg" to "®", "trade" to "™",
-        "deg" to "°", "middot" to "·", "bull" to "•",
-        "rsquo" to "’", "lsquo" to "‘", "ldquo" to "“",
-        "rdquo" to "”", "times" to "×", "divide" to "÷",
-    )
+    // `nbsp` decodes to U+00A0 NO-BREAK SPACE (as libxml2 does), NOT the ASCII U+0020
+    // space. cleanWs collapses the distinction on most paths, but it is observable on
+    // the raw cloze front-hint path (no cleanWs).
+    private val NAMED = HTML_NAMED_ENTITIES
 
     private fun decodeEntities(s: String): String {
         if (s.indexOf('&') < 0) return s

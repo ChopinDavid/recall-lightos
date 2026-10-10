@@ -38,4 +38,17 @@ class EntityDecodingTest {
         val html = "a&nbsp;b"
         assertEquals("a b", allText(compileHtml(html, side = "front")))
     }
+
+    @Test
+    fun `named entities beyond the basics decode`() {
+        assertEquals(
+            "café über Straße → 5 € α É",
+            allText(compileHtml("caf&eacute; &uuml;ber Stra&szlig;e &rarr; 5 &euro; &alpha; &Eacute;", side = "front")),
+        )
+    }
+
+    @Test
+    fun `an unknown entity is left as written`() {
+        assertEquals("&bogus; ok", allText(compileHtml("&bogus; ok", side = "front")))
+    }
 }
