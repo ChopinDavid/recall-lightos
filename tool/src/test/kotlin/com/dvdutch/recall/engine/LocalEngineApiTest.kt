@@ -432,6 +432,26 @@ class LocalEngineApiTest {
     }
 
     @Test
+    fun `answer time is capped at the deck's maximum answer seconds`() {
+        selectDeck(seedNote("TimeCap", "q", "a"))
+        val card = runBlocking { api.queue(20) }.cards.first()
+        val ans = AnswerIn(
+            uuid = "cap-uuid-0001",
+            cardId = card.cardId,
+            rating = "good",
+            states = card.states,
+            msTaken = 10 * 60 * 1000L, // card left open for ten minutes
+            answeredAt = 1_700_000_000_000,
+        )
+        assertEquals("applied", runBlocking { api.answer(listOf(ans)) }.single().status)
+        val logged = runBlocking {
+            withContext(EngineHolder.lane) { EngineHolder.backend().getReviewLogs(card.cardId) }
+        }.single()
+        // The default deck options cap answers at 60 s, as Anki does.
+        assertEquals(60f, logged.takenSecs)
+    }
+
+    @Test
     fun `undo reverts the last answer restoring the card and counts`() {
         selectDeck(seedNote("Undoable", "q", "a"))
         val before = runBlocking { api.queue(20) }

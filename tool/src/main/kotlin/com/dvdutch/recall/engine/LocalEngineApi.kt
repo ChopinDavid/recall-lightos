@@ -550,7 +550,7 @@ class LocalEngineApi(
             .setNewState(newState)
             .setRating(rating)
             .setAnsweredAtMillis(ans.answeredAt)
-            .setMillisecondsTaken(ans.msTaken.toInt())
+            .setMillisecondsTaken(minOf(ans.msTaken, maxAnswerMs(backend, ans.cardId)).toInt())
             .build()
         return try {
             backend.answerCard(proto)
@@ -562,6 +562,22 @@ class LocalEngineApi(
             // were issued (stale states).
             "stale"
         }
+    }
+
+    /**
+     * The longest answer time the review log records for [cardId]: its deck options'
+     * "maximum answer seconds" (`cap_answer_time_to_secs`), exactly as Anki caps it, so a
+     * card left open doesn't log a huge time. A card in a filtered deck uses its home
+     * deck's options. Falls back to Anki's default of 60 s if anything can't be read.
+     */
+    private fun maxAnswerMs(backend: Backend, cardId: Long): Long = try {
+        val card = backend.getCard(cardId)
+        val deckId = if (card.originalDeckId != 0L) card.originalDeckId else card.deckId
+        val configId = backend.getDeck(deckId).normal.configId
+        val secs = backend.getDeckConfig(configId).config.capAnswerTimeToSecs
+        (if (secs > 0) secs else DEFAULT_MAX_ANSWER_SECS) * 1000L
+    } catch (_: Exception) {
+        DEFAULT_MAX_ANSWER_SECS * 1000L
     }
 
     private fun ratingOf(rating: String): CardAnswer.Rating = when (rating) {
@@ -644,3 +660,6 @@ class LocalEngineApi(
         return info
     }
 }
+
+/** Anki's default "maximum answer seconds" deck option. */
+private const val DEFAULT_MAX_ANSWER_SECS = 60

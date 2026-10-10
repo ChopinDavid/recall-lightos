@@ -609,6 +609,22 @@ class StudyMachineTest {
         assertTrue(m.state.value is StudyState.Finished, "was ${m.state.value}")
     }
 
+    // Anki times an answer from when the question appears, not from the reveal.
+    @Test
+    fun answerTimeIsMeasuredFromTheQuestion() = runBlocking {
+        val bridge = FakeBridge()
+        bridge.startScript.add(FakeBridge.Outcome.Ok(StudyStartResponse(counts(new = 1), sync)))
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(listOf(card(1, "s1")), counts(new = 1))))
+        bridge.queueScript.add(FakeBridge.Outcome.Ok(QueueResponse(emptyList(), counts())))
+        bridge.answerScript.add(FakeBridge.Outcome.Ok(listOf(AnswerResult("u1", "applied"))))
+        // Question shown at 1000, revealed at 5000, graded at 6000.
+        val m = machine(bridge, now = clock(1_000L, 5_000L, 6_000L), uuid = uuids("u1"))
+        m.start()
+        m.reveal()
+        m.grade("good")
+        assertEquals(5_000L, bridge.answerArgs.single().single().msTaken)
+    }
+
     // A non-BridgeError engine exception (e.g. rslib not-found for a deck deleted on
     // desktop) must become a retriable failure, not crash the app.
     @Test

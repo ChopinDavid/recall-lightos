@@ -121,7 +121,7 @@ sealed interface TypeAnswerReveal {
  *
  * This is the only component that constructs [AnswerIn]s, and it does so under
  * strict rules: `states` is echoed byte-for-byte from the [CardPayload] the
- * server sent, `ms_taken` is `nowMs()` at grade minus the reveal timestamp, and
+ * server sent, `ms_taken` is `nowMs()` at grade minus when the question was shown, and
  * the answer `uuid` comes from the injected [uuid] generator. It NEVER inspects
  * or reinterprets scheduling data.
  *
@@ -157,8 +157,15 @@ class StudyMachine(
     /** Answers whose result counted (`applied`/`duplicate`) toward review. */
     private var reviewed: Int = 0
 
-    /** Recorded at reveal so grading can compute a deterministic `ms_taken`. */
+    /** Recorded at reveal (the back's [StudyState.ShowingBack.shownAtMs]). */
     private var shownAtMs: Long = 0L
+
+    /**
+     * When the current card's QUESTION was shown. Anki times an answer from the question,
+     * not the reveal, so `ms_taken` is measured from here (the engine caps it at the
+     * deck's maximum answer seconds).
+     */
+    private var frontShownAtMs: Long = 0L
 
     /**
      * What the user typed for the CURRENT type-answer card, or null if nothing was typed
@@ -299,7 +306,7 @@ class StudyMachine(
             cardId = card.cardId,
             rating = rating,
             states = card.states, // echoed byte-for-byte; never reinterpreted
-            msTaken = answeredAt - back.shownAtMs,
+            msTaken = answeredAt - frontShownAtMs,
             answeredAt = answeredAt,
         )
 
@@ -541,6 +548,7 @@ class StudyMachine(
             // Seed the mark indicator from the (now current) head card's payload; a
             // subsequent toggle updates currentMarked in place without a re-query.
             currentMarked = next.marked
+            frontShownAtMs = nowMs()
             StudyState.ShowingFront(next, counts, undoAvailable(), currentMarked, next.typeAnswerExpected)
         }
     }
