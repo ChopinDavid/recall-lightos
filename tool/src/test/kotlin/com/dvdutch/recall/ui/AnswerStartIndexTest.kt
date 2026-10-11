@@ -7,6 +7,7 @@ import com.dvdutch.recall.compiler.InlineFlow
 import com.dvdutch.recall.compiler.compileHtml
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 
 /** Where reveal scrolls to: the first back node that differs from the front ([answerStartIndex]). */
 class AnswerStartIndexTest {
@@ -48,5 +49,14 @@ class AnswerStartIndexTest {
         val front = side("Which nerve innervates the diaphragm?", "front")
         val back = side("""<div style="text-align:center">Which nerve innervates the diaphragm?</div><hr id=answer>Phrenic nerve""", "back")
         assertEquals(1, answerStartIndex(front, back))
+    }
+
+    @Test
+    fun `a back that puts a heading above the repeated front starts the answer after the front`() {
+        val front = side("<ul><li>отступать</li><li>to retreat</li></ul>", "front")
+        val back = side("<h2>Etymology</h2><ul><li>отступать</li><li>to retreat</li></ul><hr>отступа́ть", "back")
+        // back = [heading, li, li, rule, answer]; the front's two nodes sit at offset 1.
+        assertEquals(3, answerStartIndex(front, back))
+        assertIs<RuleNode>(back[3])
     }
 }

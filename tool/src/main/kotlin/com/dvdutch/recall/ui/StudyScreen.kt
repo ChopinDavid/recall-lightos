@@ -683,12 +683,19 @@ private fun androidx.compose.foundation.layout.ColumnScope.CenteredMessage(text:
 }
 
 /**
- * Where the answer starts on the back: the length of the longest prefix the back shares
- * with the front. A `{{FrontSide}}<hr id=answer>{{Back}}` back repeats the question, so
- * this is the front's size; a cloze back differs from its first node, so this is 0.
- * Pure and unit-tested.
+ * Where the answer starts on the back: just after the front's content, wherever the back
+ * repeats it. A `{{FrontSide}}<hr id=answer>{{Back}}` back repeats the question first, so
+ * this is the front's size; a back that puts a heading above `{{FrontSide}}` repeats it
+ * later, so this is that offset plus the front's size. When the back doesn't repeat the
+ * front (a cloze re-renders the text with the answer filled in), it's the longest shared
+ * prefix — 0 for a cloze, keeping the revealed answer in view. Pure and unit-tested.
  */
 fun answerStartIndex(front: List<RenderNode>, back: List<RenderNode>): Int {
+    if (front.isNotEmpty()) {
+        for (k in 0..(back.size - front.size)) {
+            if (front.indices.all { sameContent(front[it], back[k + it]) }) return k + front.size
+        }
+    }
     var i = 0
     while (i < front.size && i < back.size && sameContent(front[i], back[i])) i++
     return i
