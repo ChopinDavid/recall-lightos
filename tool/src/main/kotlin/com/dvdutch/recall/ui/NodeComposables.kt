@@ -297,12 +297,10 @@ fun RenderNodeView(
     when (node) {
         is TextNode -> LightAnnotatedCopy(
             textNodeToAnnotatedString(node),
-            // A non-start text-align only bites when the Text spans the full width.
-            modifier = if (node.align == BlockAlign.START || !expandWidth) {
-                modifier
-            } else {
-                modifier.fillMaxWidth()
-            },
+            // A block of text spans the full width: text-align only bites then, and so does
+            // right-to-left direction (a lone Arabic word would otherwise hug the left edge
+            // in a box just its own width). Inside a wrap-content row cell it stays tight.
+            modifier = if (expandWidth) modifier.fillMaxWidth() else modifier,
             align = node.align,
             scale = node.scale,
             inlineContent = audioInlineContent(node, node.scale, onPlayTrack),
@@ -312,9 +310,12 @@ fun RenderNodeView(
 
         is RowNode -> RenderRow(node = node, mediaLoader = mediaLoader, modifier = modifier, onPlayTrack = onPlayTrack)
 
-        is ImageNode ->
+        // Image, occlusion and unsupported nodes take [modifier] on a wrapping Box, so a
+        // caller's onGloballyPositioned (the reveal scroll anchor) fires for them too.
+        is ImageNode -> Box(modifier) {
             if (mediaLoader != null) MediaImage(node = node, loader = mediaLoader)
             else ImageNodePlaceholder(node)
+        }
 
         is RuleNode -> Box(
             modifier = (if (expandWidth) modifier.fillMaxWidth() else modifier)
@@ -323,8 +324,9 @@ fun RenderNodeView(
                 .background(LightThemeTokens.colors.contentSecondary),
         )
 
-        is OcclusionNode ->
+        is OcclusionNode -> Box(modifier) {
             OcclusionImage(node = node, mediaLoader = mediaLoader, masksHidden = masksHidden)
+        }
 
         is UnsupportedNode ->
             // The `audio` placeholder is retired: audio is now real playback with a
@@ -336,6 +338,7 @@ fun RenderNodeView(
                     text = "▢ [${node.kind}]",
                     variant = LightTextVariant.Fine,
                     lighten = true,
+                    modifier = modifier,
                 )
             }
     }
