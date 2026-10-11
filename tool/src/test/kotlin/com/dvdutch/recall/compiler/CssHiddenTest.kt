@@ -166,4 +166,20 @@ class CssHiddenTest {
             assertTrue(nodes.size >= 0)
         }
     }
+
+    // --- display: none vs visibility: hidden (phone-side; [CssHidden.matches] is unchanged) --
+
+    @Test
+    fun displayNoneIsToldApartFromVisibilityHidden() {
+        val sheet = CssHidden.parse(".gone { display: none } .ghost { visibility: hidden } li.x, #y { display:none !important }")
+        assertTrue(sheet.matches("div", listOf("ghost"), ""))
+        assertFalse(sheet.matchesDisplayNone("div", listOf("ghost"), ""))
+        assertTrue(sheet.matchesDisplayNone("div", listOf("gone"), ""))
+        assertTrue(sheet.matchesDisplayNone("li", listOf("x"), ""))
+        assertTrue(sheet.matchesDisplayNone("p", emptyList(), "y"))
+        assertFalse(CssHidden.parse("").matchesDisplayNone("div", listOf("gone"), ""))
+        assertTrue(CssHidden.declaresDisplayNone("color: red; display: NONE"))
+        assertFalse(CssHidden.declaresDisplayNone("visibility: hidden"))
+        assertFalse(CssHidden.declaresDisplayNone("display: none-ish"))
+    }
 }

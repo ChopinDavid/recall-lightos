@@ -8,16 +8,28 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
@@ -33,12 +45,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.dvdutch.recall.api.BlockAlign
 import com.dvdutch.recall.api.ClozeNode
+import com.dvdutch.recall.api.DetailsNode
 import com.dvdutch.recall.api.ImageNode
 import com.dvdutch.recall.api.OcclusionNode
 import com.dvdutch.recall.api.RenderNode
@@ -112,7 +127,41 @@ private const val AUDIO_GLYPH_INK_OFFSET_EM = 0.20f
 internal fun audioInlineId(track: Int): String = "audio:$track"
 
 /**
- * Pure mapping from a [TextNode]'s runs to a styled [AnnotatedString].
+ * How far each list level steps its items in, in em of the card base text (a browser's
+ * 40px `<ul>` padding, scaled to the LP3's narrow column).
+ */
+private const val LIST_INDENT_EM = 1.25f
+
+/** The gap between a list marker and its item's text, in em of the card base text. */
+private const val LIST_MARKER_GAP_EM = 0.3f
+
+/** The chevron heading a closed / open [DetailsNode] summary line. */
+private const val DETAILS_CLOSED_GLYPH = "▸ "
+private const val DETAILS_OPEN_GLYPH = "▾ "
+
+/** Pure mapping from a [TextNode]'s runs to a styled [AnnotatedString] (see [runsToAnnotatedString]). */
+fun textNodeToAnnotatedString(node: TextNode): AnnotatedString = runsToAnnotatedString(node.runs)
+
+/**
+ * A list item's marker run (its first run, when it is one) and the runs of the item's
+ * text after it. Pure and unit-tested.
+ */
+fun splitListMarker(node: TextNode): Pair<TextRun?, List<TextRun>> = splitListMarker(node.runs)
+
+/** [splitListMarker] over bare runs (a [DetailsNode] summary line inside a list item). */
+fun splitListMarker(runs: List<TextRun>): Pair<TextRun?, List<TextRun>> {
+    val first = runs.firstOrNull()
+    return if (first != null && first.marker) first to runs.drop(1) else null to runs
+}
+
+/** A [DetailsNode] summary line: the open/closed chevron, then the summary's text. Pure and unit-tested. */
+fun detailsSummaryText(open: Boolean, runs: List<TextRun>): AnnotatedString = buildAnnotatedString {
+    append(if (open) DETAILS_OPEN_GLYPH else DETAILS_CLOSED_GLYPH)
+    append(runsToAnnotatedString(runs))
+}
+
+/**
+ * Pure mapping from styled runs to an [AnnotatedString].
  *
  * Each run's flags collapse into a single [SpanStyle] over that run's range;
  * unstyled runs contribute plain text with no span. An inline AUDIO run
@@ -123,8 +172,8 @@ internal fun audioInlineId(track: Int): String = "audio:$track"
  * run's string (U+2068/U+2069) are part of the text and pass through unmodified. This
  * function is Compose-runtime-free and unit-tested.
  */
-fun textNodeToAnnotatedString(node: TextNode): AnnotatedString = buildAnnotatedString {
-    for (run in node.runs) {
+fun runsToAnnotatedString(runs: List<TextRun>): AnnotatedString = buildAnnotatedString {
+    for (run in runs) {
         if (run.audioTrack != null) {
             appendInlineContent(audioInlineId(run.audioTrack), AUDIO_GLYPH)
             continue
@@ -208,11 +257,11 @@ private fun LightAnnotatedCopy(
  */
 @Composable
 private fun audioInlineContent(
-    node: TextNode,
+    runs: List<TextRun>,
     scale: Float,
     onPlayTrack: (Int) -> Unit,
 ): Map<String, InlineTextContent> {
-    val tracks = node.runs.mapNotNull { it.audioTrack }
+    val tracks = runs.mapNotNull { it.audioTrack }
     if (tracks.isEmpty()) return emptyMap()
     // Glyph box slightly wider than the line text size (headroom against clipping);
     // tracks the node scale so it matches shrunken/grown text.
@@ -295,20 +344,32 @@ fun RenderNodeView(
     onPlayTrack: (Int) -> Unit = {},
 ) {
     when (node) {
-        is TextNode -> LightAnnotatedCopy(
-            textNodeToAnnotatedString(node),
-            // A block of text spans the full width: text-align only bites then, and so does
-            // right-to-left direction (a lone Arabic word would otherwise hug the left edge
-            // in a box just its own width). Inside a wrap-content row cell it stays tight.
-            modifier = if (expandWidth) modifier.fillMaxWidth() else modifier,
-            align = node.align,
-            scale = node.scale,
-            inlineContent = audioInlineContent(node, node.scale, onPlayTrack),
-        )
+        is TextNode -> if (node.indent > 0) {
+            ListItemBlock(node, modifier = modifier, expandWidth = expandWidth, onPlayTrack = onPlayTrack)
+        } else {
+            LightAnnotatedCopy(
+                textNodeToAnnotatedString(node),
+                // A block of text spans the full width: text-align only bites then, and so does
+                // right-to-left direction (a lone Arabic word would otherwise hug the left edge
+                // in a box just its own width). Inside a wrap-content row cell it stays tight.
+                modifier = if (expandWidth) modifier.fillMaxWidth() else modifier,
+                align = node.align,
+                scale = node.scale,
+                inlineContent = audioInlineContent(node.runs, node.scale, onPlayTrack),
+            )
+        }
 
         is ClozeNode -> LightAnnotatedCopy(clozeToAnnotatedString(node), modifier = modifier)
 
         is RowNode -> RenderRow(node = node, mediaLoader = mediaLoader, modifier = modifier, onPlayTrack = onPlayTrack)
+
+        is DetailsNode -> DetailsBlock(
+            node = node,
+            mediaLoader = mediaLoader,
+            modifier = modifier,
+            expandWidth = expandWidth,
+            onPlayTrack = onPlayTrack,
+        )
 
         // Image, occlusion and unsupported nodes take [modifier] on a wrapping Box, so a
         // caller's onGloballyPositioned (the reveal scroll anchor) fires for them too.
@@ -342,6 +403,195 @@ fun RenderNodeView(
                 )
             }
     }
+}
+
+/**
+ * True when the text's first letter with a direction reads right-to-left (Arabic,
+ * Hebrew…): the paragraph will lay out right-to-left ([cardCopyStyle]'s content
+ * direction), so a list marker belongs on its right. Pure and unit-tested.
+ */
+fun startsRtl(runs: List<TextRun>): Boolean {
+    for (run in runs) {
+        if (run.audioTrack != null) continue
+        for (c in run.s) {
+            when (Character.getDirectionality(c)) {
+                Character.DIRECTIONALITY_RIGHT_TO_LEFT,
+                Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC,
+                -> return true
+                Character.DIRECTIONALITY_LEFT_TO_RIGHT -> return false
+                else -> {}
+            }
+        }
+    }
+    return false
+}
+
+/** The side of the column a list level's step-in is measured from, for [indent] (list depth). */
+@Composable
+private fun listIndent(indent: Int): Dp = emToDp(((indent - 1).coerceAtLeast(0)) * LIST_INDENT_EM)
+
+/**
+ * The marker column of a line in a list: the marker set right against the item's text in
+ * a column one list step wide, as a browser hangs an outside marker. A line of the item
+ * that has no marker (`list-style-type: none`, or text after a block inside the item)
+ * leaves the column empty, so every line of an item, and every item, starts its text at
+ * the same place. The marker's trailing space becomes padding on its text side, which
+ * keeps the gap between marker and text in right-to-left lines too (the column follows
+ * the layout direction, whatever the marker's own characters).
+ */
+@Composable
+private fun ListMarkerColumn(marker: TextRun?, scale: Float) {
+    val gutter = emToDp(LIST_INDENT_EM)
+    if (marker == null) {
+        Spacer(Modifier.width(gutter))
+        return
+    }
+    // Exactly one gutter wide, so every item's text starts at the same place; a marker
+    // wider than that ("10.", "viii.") spills out on the start side, as a browser's does.
+    LightAnnotatedCopy(
+        runsToAnnotatedString(listOf(marker.copy(s = marker.s.trimEnd()))),
+        modifier = Modifier
+            .width(gutter)
+            .wrapContentWidth(align = Alignment.End, unbounded = true)
+            .padding(end = emToDp(LIST_MARKER_GAP_EM)),
+        scale = scale,
+    )
+}
+
+/**
+ * A list item, laid out as a browser lays out `<li>`: the marker in its own column
+ * ([ListMarkerColumn]) with the item's text beside it, so a wrapped line continues under
+ * the text, not the marker; and the whole item stepped in once per nesting level beyond
+ * the first. Right-to-left text puts the marker on the right, where its paragraph starts.
+ */
+@Composable
+private fun ListItemBlock(
+    node: TextNode,
+    modifier: Modifier,
+    expandWidth: Boolean,
+    onPlayTrack: (Int) -> Unit,
+) {
+    val (marker, body) = splitListMarker(node)
+    val direction = if (startsRtl(body)) LayoutDirection.Rtl else LocalLayoutDirection.current
+    CompositionLocalProvider(LocalLayoutDirection provides direction) {
+        Row(
+            modifier = (if (expandWidth) modifier.fillMaxWidth() else modifier).padding(start = listIndent(node.indent)),
+            verticalAlignment = Alignment.Top,
+        ) {
+            ListMarkerColumn(marker, node.scale)
+            LightAnnotatedCopy(
+                runsToAnnotatedString(body),
+                modifier = if (expandWidth) Modifier.weight(1f) else Modifier,
+                align = node.align,
+                scale = node.scale,
+                inlineContent = audioInlineContent(body, node.scale, onPlayTrack),
+            )
+        }
+    }
+}
+
+/**
+ * Keys state on a node's identity rather than its value: each card compiles its own
+ * node objects, so the state follows the card even when two cards' sections are equal
+ * (a fixed "How to answer" block on every front).
+ */
+private class NodeIdentity(val node: Any) {
+    override fun equals(other: Any?): Boolean = other is NodeIdentity && other.node === node
+    override fun hashCode(): Int = System.identityHashCode(node)
+}
+
+/**
+ * Which `<details>` sections the studier has opened or closed on the card in view. It
+ * lives above the card body (StudyScreen keys it on the card), so a trip to the MORE menu
+ * and back leaves them as they were. Keyed by node object ([NodeIdentity]): the front and
+ * the back are compiled separately, so revealing starts the back's sections fresh, as
+ * AnkiDroid's new page does.
+ */
+class DisclosureState {
+    private val toggled = mutableStateMapOf<NodeIdentity, Boolean>()
+
+    fun isOpen(node: DetailsNode): Boolean = toggled[NodeIdentity(node)] ?: node.open
+
+    fun toggle(node: DetailsNode) {
+        toggled[NodeIdentity(node)] = !isOpen(node)
+    }
+}
+
+/** The [DisclosureState] of the card in view; null outside study (each section then keeps its own). */
+val LocalDisclosureState = compositionLocalOf<DisclosureState?> { null }
+
+/**
+ * A [DetailsNode]: its summary line, headed by a chevron, shows or hides the body on
+ * tap — closed until tapped unless the element was `open`, as in AnkiWeb and
+ * AnkiDroid. A node with no summary line (hidden by the template) can only be an open
+ * one, so its body simply shows; an empty summary line is just its chevron. Inside a
+ * list item the summary line is laid out like the item's own line, its marker first.
+ */
+@Composable
+private fun DetailsBlock(
+    node: DetailsNode,
+    mediaLoader: MediaLoader?,
+    modifier: Modifier,
+    expandWidth: Boolean,
+    onPlayTrack: (Int) -> Unit,
+) {
+    val shared = LocalDisclosureState.current
+    var ownOpen by remember(NodeIdentity(node)) { mutableStateOf(node.open) }
+    val open = shared?.isOpen(node) ?: ownOpen
+    val toggle = { if (shared != null) shared.toggle(node) else ownOpen = !ownOpen }
+
+    val summary = node.summary
+    val (marker, summaryText) = splitListMarker(summary.orEmpty())
+    // In a list item, the item's marker column (an empty one on later lines of the item).
+    val inItem = node.indent > 0 || marker != null
+    val width = if (expandWidth) Modifier.fillMaxWidth() else Modifier
+    // A right-to-left summary lays the whole section out from the right — its list step,
+    // marker column and body offset — while the body's own nodes keep the card's direction.
+    val ambient = LocalLayoutDirection.current
+    val direction = if (startsRtl(summaryText)) LayoutDirection.Rtl else ambient
+    CompositionLocalProvider(LocalLayoutDirection provides direction) {
+        Column(modifier.then(width).padding(start = listIndent(node.indent))) {
+            if (summary != null) {
+                Row(
+                    modifier = width
+                        .clickable(onClick = toggle)
+                        .padding(vertical = 0.25f.gridUnitsAsDp()),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    if (inItem) ListMarkerColumn(marker, node.scale)
+                    LightAnnotatedCopy(
+                        detailsSummaryText(open, summaryText),
+                        modifier = if (expandWidth) Modifier.weight(1f) else Modifier,
+                        align = node.align,
+                        scale = node.scale,
+                        inlineContent = audioInlineContent(summaryText, node.scale, onPlayTrack),
+                    )
+                }
+            }
+            if (open) {
+                // The body lines up under the summary's text, past the marker column and the
+                // chevron; with no summary line it simply takes the section's place.
+                val bodyStart = (if (inItem) LIST_INDENT_EM else 0f) + (if (summary != null) LIST_INDENT_EM else 0f)
+                Column(width.padding(start = emToDp(bodyStart))) {
+                    CompositionLocalProvider(LocalLayoutDirection provides ambient) {
+                        RenderNodeColumn(
+                            nodes = node.body,
+                            mediaLoader = mediaLoader,
+                            expandWidth = expandWidth,
+                            onPlayTrack = onPlayTrack,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** [em] multiples of the card base text size (the copy style's font size), as dp. */
+@Composable
+private fun emToDp(em: Float): Dp {
+    val baseSp = LightThemeTokens.typography.copy.fontSize
+    return with(LocalDensity.current) { (em * baseSp.value).sp.toDp() }
 }
 
 /**
@@ -387,6 +637,9 @@ fun RenderNodeColumn(
     masksHidden: Boolean = false,
     // Inline replay seam threaded to each node's audio glyphs (see [RenderNodeView]).
     onPlayTrack: (Int) -> Unit = {},
+    // Whether each node may claim the full width (see [RenderNodeView]); false for a
+    // column nested in a wrap-content row cell, like an open section's body there.
+    expandWidth: Boolean = true,
 ) {
     // Fix D: the collapsed vertical gap (em) to insert before each block, converted
     // to dp against the card base text size (the copy style's font size) so it scales
@@ -405,6 +658,7 @@ fun RenderNodeColumn(
             mediaLoader = mediaLoader,
             modifier = dividerModifier,
             masksHidden = masksHidden,
+            expandWidth = expandWidth,
             onPlayTrack = onPlayTrack,
         )
     }
@@ -418,10 +672,7 @@ fun RenderNodeColumn(
 @Composable
 private fun MarginGap(gapEm: Float) {
     if (gapEm <= 0f) return
-    val baseSp = LightThemeTokens.typography.copy.fontSize
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val gapDp = with(density) { (gapEm * baseSp.value).sp.toDp() }
-    androidx.compose.foundation.layout.Spacer(Modifier.height(gapDp))
+    androidx.compose.foundation.layout.Spacer(Modifier.height(emToDp(gapEm)))
 }
 
 /**

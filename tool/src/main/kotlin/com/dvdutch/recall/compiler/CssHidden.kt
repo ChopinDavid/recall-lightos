@@ -19,6 +19,10 @@ class CssHidden private constructor(
     private val classes: Set<String>,
     private val ids: Set<String>,
     private val tagClasses: Set<Pair<String, String>>,
+    // The subset of the above hidden by `display: none` specifically (no box at all, as
+    // opposed to `visibility: hidden`'s invisible box). Phone-side only: [matches], the
+    // parity-governed test, is unchanged.
+    private val displayNone: CssHidden? = null,
 ) {
     fun matches(tag: String?, classes: List<String>, elId: String): Boolean {
         if (tag != null) {
@@ -28,6 +32,14 @@ class CssHidden private constructor(
         if (elId.isNotEmpty() && elId in ids) return true
         return classes.any { it in this.classes }
     }
+
+    /**
+     * True iff a `display: none` rule hides the element: it then takes no space, where a
+     * `visibility: hidden` one keeps its (invisible) box — which is what decides, say,
+     * whether a hidden `<li>` still takes its number in the list.
+     */
+    fun matchesDisplayNone(tag: String?, classes: List<String>, elId: String): Boolean =
+        displayNone?.matches(tag, classes, elId) ?: false
 
     companion object {
         private val CSS_COMMENT = Regex("""/\*.*?\*/""", RegexOption.DOT_MATCHES_ALL)
@@ -67,33 +79,58 @@ class CssHidden private constructor(
             var text = CSS_COMMENT.replace(css, "")
             text = stripAtRules(text)
 
-            val tags = mutableSetOf<String>()
-            val classes = mutableSetOf<String>()
-            val ids = mutableSetOf<String>()
-            val tagClasses = mutableSetOf<Pair<String, String>>()
+            val all = Selectors()
+            val noneOnly = Selectors()
 
             for (m in RULE.findAll(text)) {
                 val selectors = m.groupValues[1]
                 val decls = m.groupValues[2]
                 if (!declaresHidden(decls)) continue
+                val displayNone = declaresDisplayNone(decls)
                 for (rawSel in selectors.split(",")) {
                     val sm = SIMPLE_SELECTOR.matchEntire(rawSel.trim()) ?: continue
-                    val cls = sm.groups["cls"]?.value
-                    val id = sm.groups["id"]?.value
-                    val tag = sm.groups["tag"]?.value
-                    val tcls = sm.groups["tcls"]?.value
-                    when {
-                        cls != null -> classes.add(cls.substring(1))
-                        id != null -> ids.add(id.substring(1))
-                        tag != null -> {
-                            val t = tag.lowercase()
-                            if (tcls != null) tagClasses.add(Pair(t, tcls.substring(1)))
-                            else tags.add(t)
-                        }
+                    all.add(sm)
+                    if (displayNone) noneOnly.add(sm)
+                }
+            }
+            return all.build(displayNone = noneOnly.build(displayNone = null))
+        }
+
+        /** The simple selectors collected from hiding rules, by kind. */
+        private class Selectors {
+            val tags = mutableSetOf<String>()
+            val classes = mutableSetOf<String>()
+            val ids = mutableSetOf<String>()
+            val tagClasses = mutableSetOf<Pair<String, String>>()
+
+            fun add(sm: MatchResult) {
+                val cls = sm.groups["cls"]?.value
+                val id = sm.groups["id"]?.value
+                val tag = sm.groups["tag"]?.value
+                val tcls = sm.groups["tcls"]?.value
+                when {
+                    cls != null -> classes.add(cls.substring(1))
+                    id != null -> ids.add(id.substring(1))
+                    tag != null -> {
+                        val t = tag.lowercase()
+                        if (tcls != null) tagClasses.add(Pair(t, tcls.substring(1)))
+                        else tags.add(t)
                     }
                 }
             }
-            return CssHidden(tags, classes, ids, tagClasses)
+
+            fun build(displayNone: CssHidden?) = CssHidden(tags, classes, ids, tagClasses, displayNone)
+        }
+
+        /** True iff the declaration block sets `display: none` (see [declaresHidden]). */
+        fun declaresDisplayNone(decls: String): Boolean {
+            for (decl in decls.split(";")) {
+                val idx = decl.indexOf(':')
+                if (idx < 0) continue
+                if (decl.substring(0, idx).trim().lowercase() != "display") continue
+                if (DISPLAY_NONE_DECL.matches(decl.substring(idx + 1).trim())) return true
+            }
+            return false
         }
 
         /**

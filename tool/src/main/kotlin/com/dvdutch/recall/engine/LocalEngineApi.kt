@@ -11,6 +11,7 @@ import com.dvdutch.recall.api.BridgeError
 import com.dvdutch.recall.api.CardPayload
 import com.dvdutch.recall.api.Counts
 import com.dvdutch.recall.api.Deck
+import com.dvdutch.recall.api.DetailsNode
 import com.dvdutch.recall.api.OcclusionNode
 import com.dvdutch.recall.api.QueueResponse
 import com.dvdutch.recall.api.RenderNode
@@ -407,6 +408,10 @@ class LocalEngineApi(
             for (n in list) when (n) {
                 is TextNode -> n.runs.forEach { it.audioTrack?.let(out::add) }
                 is RowNode -> n.cells.forEach { visit(it.nodes) }
+                is DetailsNode -> {
+                    n.summary?.forEach { it.audioTrack?.let(out::add) }
+                    visit(n.body)
+                }
                 else -> {}
             }
         }

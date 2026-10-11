@@ -2,6 +2,7 @@ package com.dvdutch.recall.compiler
 
 import com.dvdutch.recall.api.BlockAlign
 import com.dvdutch.recall.api.ClozeNode
+import com.dvdutch.recall.api.DetailsNode
 import com.dvdutch.recall.api.ImageNode
 import com.dvdutch.recall.api.RenderNode
 import com.dvdutch.recall.api.RowNode
@@ -44,6 +45,10 @@ object InlineFlow {
                     flushLine()
                     out.add(node.copy(cells = node.cells.map { it.copy(nodes = apply(it.nodes)) }))
                 }
+                is DetailsNode -> {
+                    flushLine()
+                    out.add(node.copy(summary = node.summary?.let(::trimWhitespace), body = apply(node.body)))
+                }
                 else -> {
                     flushLine()
                     out.add(node)
@@ -69,7 +74,7 @@ object InlineFlow {
         else -> false
     }
 
-    /** One line: the first text node's layout (align, margins, scale) with every piece's runs. */
+    /** One line: the first text node's layout (align, margins, scale, indent) with every piece's runs. */
     private fun joinLine(line: List<RenderNode>): TextNode {
         val runs = mutableListOf<TextRun>()
         for (node in line) when (node) {
@@ -87,6 +92,7 @@ object InlineFlow {
             marginTop = layout?.marginTop ?: 0f,
             marginBottom = layout?.marginBottom ?: 0f,
             scale = layout?.scale ?: 1f,
+            indent = layout?.indent ?: 0,
         )
     }
 

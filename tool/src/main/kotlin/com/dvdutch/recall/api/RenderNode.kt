@@ -62,6 +62,11 @@ data class TextNode(
     // an inline cloze. [com.dvdutch.recall.compiler.InlineFlow] joins such nodes into
     // one line. A phone-side layout enrichment, NOT parity-governed.
     val joinsPrevious: Boolean = false,
+    // List nesting depth of this block: 0 outside any list, 1 for an item of a top-level
+    // `<ul>`/`<ol>`, 2 for an item of a list inside that, … The renderer indents the block
+    // by the depth and hangs wrapped lines under the marker run (see [TextRun.marker]).
+    // Phone-side only, NOT parity-governed.
+    val indent: Int = 0,
 ) : RenderNode
 
 @Serializable
@@ -87,6 +92,10 @@ data class TextRun(
     // Preformatted (<pre>) text: whitespace and line breaks are verbatim, so the
     // layout pass leaves them alone. Phone-side only; not parity-governed.
     val pre: Boolean = false,
+    // A list item's marker ("• ", "1. ", …), always the block's first run and never
+    // merged with the text after it, so the renderer can set it beside the item's text
+    // and wrap that text under itself. Phone-side only; not parity-governed.
+    val marker: Boolean = false,
 )
 
 /**
@@ -151,6 +160,31 @@ data class RuleNode(
 
 @Serializable
 data class UnsupportedNode(val kind: String) : RenderNode
+
+/**
+ * A `<details>` disclosure block: a tappable [summary] line that shows or hides [body],
+ * closed unless the element carries the `open` attribute — exactly how a browser (and
+ * so AnkiWeb/AnkiDroid) renders it. The Russian Core 5000 deck wraps its Etymology
+ * section this way. The compiler only emits one for a visible summary line: a section
+ * whose template hides that line could never be toggled, so it compiles to its plain
+ * content when open and to nothing when closed. A null [summary] (no line, the body
+ * simply shown) is still rendered for robustness; an empty list is a visible, empty line.
+ */
+@Serializable
+@SerialName("details")
+data class DetailsNode(
+    val summary: List<TextRun>?,
+    val body: List<RenderNode>,
+    val open: Boolean = false,
+    // The summary line's font scale from its class CSS, like [TextNode.scale].
+    val scale: Float = 1f,
+    // List nesting depth, like [TextNode.indent]: a `<details>` inside an `<li>` sits at
+    // the item's level, its marker leading the summary line.
+    val indent: Int = 0,
+    // The summary line's text-align (the summary's own, else the enclosing block's), like
+    // [TextNode.align]: a browser sets the disclosure triangle inline with the text.
+    val align: BlockAlign = BlockAlign.START,
+) : RenderNode
 
 /**
  * A natively-rendered Image Occlusion card side. Emitted directly by the engine
@@ -260,6 +294,7 @@ object RenderNodeSerializer : JsonContentPolymorphicSerializer<RenderNode>(Rende
             "rule" -> RuleNode.serializer()
             "row" -> RowNode.serializer()
             "occlusion" -> OcclusionNode.serializer()
+            "details" -> DetailsNode.serializer()
             else -> UnsupportedNodeSerializer(tag ?: "")
         }
     }

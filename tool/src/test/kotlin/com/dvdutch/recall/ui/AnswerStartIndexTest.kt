@@ -1,5 +1,6 @@
 package com.dvdutch.recall.ui
 
+import com.dvdutch.recall.api.DetailsNode
 import com.dvdutch.recall.api.RuleNode
 import com.dvdutch.recall.api.TextNode
 import com.dvdutch.recall.api.TextRun
@@ -70,5 +71,22 @@ class AnswerStartIndexTest {
         assertEquals(rule + 1, typeAnswerBlockIndex(front, back))
         // A plain <hr> is not the marker.
         assertEquals(0, answerStartIndex(front, side("x<hr>y", "back")))
+    }
+
+    @Test
+    fun `a collapsed details section above the repeated front does not move the answer`() {
+        val front = side("<div>э́тот</div>", "front")
+        // The Russian Core 5000 back: Etymology <details> first, then {{FrontSide}}, then the answer.
+        val back = side("<details><summary>Etymology</summary><ul><li>этот</li></ul></details><div>э́тот</div><hr>this", "back")
+        assertIs<DetailsNode>(back[0])
+        assertEquals(2, answerStartIndex(front, back))
+        assertIs<RuleNode>(back[2])
+    }
+
+    @Test
+    fun `a styled wrapper around a front that holds a details block still repeats it`() {
+        val front = side("<details><summary>s</summary>x</details>Q", "front")
+        val back = side("<div style='text-align: center'><details><summary>s</summary>x</details>Q</div><hr>A", "back")
+        assertEquals(2, answerStartIndex(front, back))
     }
 }

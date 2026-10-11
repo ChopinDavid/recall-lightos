@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -27,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import com.dvdutch.recall.api.BridgeError
 import com.dvdutch.recall.api.CardPayload
 import com.dvdutch.recall.api.Counts
+import com.dvdutch.recall.api.DetailsNode
 import com.dvdutch.recall.api.RenderNode
 import com.dvdutch.recall.api.RuleNode
 import com.dvdutch.recall.api.TextNode
@@ -94,8 +96,14 @@ class StudyScreen(
         val currentCardId = state.currentCardId()
         var masksHidden by remember(currentCardId) { mutableStateOf(false) }
 
+        // The card's opened/closed <details> sections, held here rather than in the card body
+        // so the MORE menu (which takes the body's place) doesn't fold them back up. A new
+        // card starts fresh.
+        val disclosures = remember(currentCardId) { DisclosureState() }
+
         LaunchedEffect(Unit) { viewModel.begin() }
 
+        CompositionLocalProvider(LocalDisclosureState provides disclosures) {
         LightTheme(colors = themeColors) {
             // The full-screen type-answer editor takes over when open — the same SDK editor
             // FirstRun/Settings use. It starts empty each open (bumped session key) and is
@@ -225,6 +233,7 @@ class StudyScreen(
                     )
                 }
             }
+        }
         }
     }
 }
@@ -713,6 +722,9 @@ fun answerStartIndex(front: List<RenderNode>, back: List<RenderNode>): Int {
 private fun sameContent(a: RenderNode, b: RenderNode): Boolean = when {
     a is TextNode && b is TextNode -> a.runs == b.runs
     a is RuleNode && b is RuleNode -> true
+    a is DetailsNode && b is DetailsNode ->
+        a.summary == b.summary && a.body.size == b.body.size &&
+            a.body.indices.all { sameContent(a.body[it], b.body[it]) }
     else -> a == b
 }
 

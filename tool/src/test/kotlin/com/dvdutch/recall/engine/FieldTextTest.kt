@@ -40,6 +40,19 @@ class FieldTextTest {
     }
 
     @Test
+    fun `list markers are not field text`() {
+        assertEquals("Paris", fieldTextForCompare("<ul><li>Paris</li></ul>"))
+        assertEquals("a b", fieldTextForCompare("<ol><li>a</li><li>b</li></ol>"))
+    }
+
+    @Test
+    fun `a details section's summary and body are field text`() {
+        assertEquals("Hint Paris", fieldTextForCompare("<details><summary>Hint</summary>Paris</details>"))
+        // Inside a list item, the item's marker rides on the summary line; it is still not field text.
+        assertEquals("Hint Paris", fieldTextForCompare("<ul><li><details><summary>Hint</summary>Paris</details></li></ul>"))
+    }
+
+    @Test
     fun `surrounding whitespace is trimmed and interior collapsed`() {
         assertEquals("New York", fieldTextForCompare("  New   York  "))
     }

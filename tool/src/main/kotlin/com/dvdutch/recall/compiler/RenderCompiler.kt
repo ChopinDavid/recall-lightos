@@ -2,6 +2,7 @@ package com.dvdutch.recall.compiler
 
 import com.dvdutch.recall.api.BlockAlign
 import com.dvdutch.recall.api.ClozeNode
+import com.dvdutch.recall.api.DetailsNode
 import com.dvdutch.recall.api.ImageNode
 import com.dvdutch.recall.api.RenderNode
 import com.dvdutch.recall.api.RowCell
@@ -35,6 +36,7 @@ fun compileHtml(
     val layout = CssTextAlign.parse(css)
     val margins = CssMargins.parse(css)
     val fontSize = CssFontSize.parse(css)
+    val listStyle = CssListStyle.parse(css)
     // The card base px: the font-size on the card root class (e.g. prettify-flashcard's
     // 28px), else the default. Every per-node scale is measured against this one base.
     val cardBasePx = fontSize.cardBasePx(CARD_ROOT_CLASSES)
@@ -46,10 +48,21 @@ fun compileHtml(
     // Only tags that actually carry a `::` can produce a leaf, so pre-filter to
     // the hierarchical ones. Empty (the common case) disables the mapping wholly.
     val ctx = Ctx(side, tags.filter { it.contains("::") }.toSet())
-    walk(root, ctx, emptySet(), hidden, layout, margins, fontSize, cardBasePx, BlockAlign.START, emptyList())
+    val sheets = Sheets(hidden, layout, margins, fontSize, listStyle, cardBasePx)
+    walk(root, ctx, emptySet(), sheets, BlockAlign.START, emptyList())
     ctx.flushText()
     return ctx.nodes
 }
+
+/** The notetype CSS, parsed once per side into the bounded forms the walk consults. */
+private class Sheets(
+    val hidden: CssHidden,
+    val layout: CssTextAlign,
+    val margins: CssMargins,
+    val fontSize: CssFontSize,
+    val listStyle: CssListStyle,
+    val cardBasePx: Float,
+)
 
 // The card root class whose declared font-size (if any) sets the base every scale is
 // measured against. Matches the anki-prettify wrapper; absent → CssFontSize default.
@@ -61,11 +74,15 @@ private val UNSUPPORTED = setOf("video", "audio", "object", "embed", "iframe", "
 // tags dropped entirely, including content
 private val DROPPED = setOf("script", "style", "head", "title")
 
-// block-level tags that force a new text node
+// block-level tags that force a new text node (`details` is compiled whole before this
+// applies, unless its summary line is hidden; a stray `summary` outside one is just a block)
 private val BLOCK = setOf(
     "div", "p", "li", "ul", "ol", "table", "tr", "blockquote", "section", "article", "center",
-    "h1", "h2", "h3", "h4", "h5", "h6", "pre",
+    "h1", "h2", "h3", "h4", "h5", "h6", "pre", "summary", "details",
 )
+
+// A browser's label for a <details> that has no <summary>.
+private const val DEFAULT_SUMMARY = "Details"
 
 // Headings: bold, and scaled like a browser's defaults unless the card CSS sizes them.
 private val HEADING_SCALE = mapOf("h1" to 1.5f, "h2" to 1.3f, "h3" to 1.15f, "h4" to 1f, "h5" to 1f, "h6" to 1f)
@@ -81,7 +98,11 @@ private val STYLE_TAGS = mapOf(
 // A styled text run, OR (when [audioTrack] != null) an inline audio marker run: empty
 // visible text, carrying the 0-based index into the side's audio list. Audio runs never
 // merge with text runs (they carry a non-null token), so they keep their exact position.
-private class Run(val s: String, val styles: Set<String>, val audioTrack: Int? = null)
+// A list [marker] run ("• ", "1. ") likewise stays its own run ahead of the item's text.
+private class Run(val s: String, val styles: Set<String>, val audioTrack: Int? = null, val marker: Boolean = false)
+
+// An enclosing <ul>/<ol>: the marker style its items get, and the next item's ordinal.
+private class ListFrame(val type: ListStyleType, var next: Int)
 
 /**
  * Matches the backend's inline play markers `[anki:play:q:N]` / `[anki:play:a:N]`
@@ -132,6 +153,15 @@ private class Ctx(val side: String, val hierarchicalTags: Set<String> = emptySet
     // " | " separator instead of running together ("7 // 2" + "3" read as "7 // 23").
     var cellsInRow: Int = 0
 
+    // The <ul>/<ol> elements being walked, outermost first. Text flushed inside them is
+    // indented by their count, and an <li> takes its marker from the innermost.
+    val lists = ArrayDeque<ListFrame>()
+
+    // Lists already open around this context when it was started (a <details> body inside
+    // an <li>): not this context's to indent — the enclosing node already is — but they
+    // count toward a nested <ul>'s bullet style (disc, circle, square by depth).
+    var listDepthBase: Int = 0
+
     // Whether the next node continues the current line: true after a node emitted
     // inside a block with no block boundary since. Lets [InlineFlow] join a cloze with
     // the text around it. Phone-side layout only; the parity-governed output is unchanged.
@@ -144,8 +174,10 @@ private class Ctx(val side: String, val hierarchicalTags: Set<String> = emptySet
     /**
      * Emits the pending runs as a [TextNode]. [boundary] is false only when an inline
      * cloze interrupts the text: the line stays open so what follows can rejoin it.
+     * With [unlessOnlyMarker], a pending list marker with no text yet stays pending.
      */
-    fun flushText(boundary: Boolean = true) {
+    fun flushText(boundary: Boolean = true, unlessOnlyMarker: Boolean = false) {
+        if (unlessOnlyMarker && pendingIsOnlyMarker()) return
         // Audio marker runs are empty-text but must survive (they position an inline replay
         // glyph), so a block is emitted when it has any non-blank text OR any audio run.
         val kept = runs.filter { it.s.isNotEmpty() || it.audioTrack != null }
@@ -157,6 +189,7 @@ private class Ctx(val side: String, val hierarchicalTags: Set<String> = emptySet
                 TextNode(
                     mergeRuns(kept, hierarchicalTags), align, marginTop, marginBottom, scale,
                     joinsPrevious = lineOpen,
+                    indent = lists.size,
                 ),
             )
             lineOpen = !boundary
@@ -183,6 +216,30 @@ private class Ctx(val side: String, val hierarchicalTags: Set<String> = emptySet
         // Split out any inline `[anki:play:q|a:N]` markers into audio runs at their position;
         // marker-free text (the common case) stays one run.
         runs.addAll(splitAudioMarkers(text, styles))
+    }
+
+    /** A list item's marker, as its own run ahead of the item's text (see [TextRun.marker]). */
+    fun addMarker(text: String) {
+        if (text.isNotEmpty()) runs.add(Run(text, emptySet(), marker = true))
+    }
+
+    /**
+     * True when the only thing pending is a list item's marker (pretty-printed HTML puts
+     * whitespace between `<li>` and its first block; that counts for nothing).
+     */
+    private fun pendingIsOnlyMarker(): Boolean =
+        runs.any { it.marker } && runs.all { it.marker || (it.audioTrack == null && it.s.isBlank()) }
+
+    /**
+     * Takes a pending marker-only line (see [pendingIsOnlyMarker]) off the context, as
+     * [TextRun]s, so a block that is its own node (a `<details>` right inside an `<li>`)
+     * can carry the item's marker instead of leaving it stranded on a line of its own.
+     */
+    fun takePendingMarker(): List<TextRun> {
+        if (!pendingIsOnlyMarker()) return emptyList()
+        val marker = runs.filter { it.marker }.map { TextRun(it.s, marker = true) }
+        runs.clear()
+        return marker
     }
 }
 
@@ -220,8 +277,11 @@ private fun mergeRuns(runs: List<Run>, tags: Set<String> = emptySet()): List<Tex
     for (r in runs) {
         val last = merged.lastOrNull()
         // Never merge into/across an audio marker run — it must keep its exact position and
-        // its distinct track index. Only merge two plain text runs with identical styles.
-        if (last != null && last.audioTrack == null && r.audioTrack == null && last.styles == r.styles) {
+        // its distinct track index — nor a list marker run, which the renderer sets apart.
+        // Only merge two plain text runs with identical styles.
+        if (last != null && last.audioTrack == null && r.audioTrack == null &&
+            !last.marker && !r.marker && last.styles == r.styles
+        ) {
             merged[merged.size - 1] = Run(last.s + r.s, last.styles)
         } else {
             merged.add(r)
@@ -237,6 +297,7 @@ private fun mergeRuns(runs: List<Run>, tags: Set<String> = emptySet()): List<Tex
             mono = "mono" in run.styles,
             strike = "strike" in run.styles,
             pre = "pre" in run.styles,
+            marker = run.marker,
         )
     }
 }
@@ -319,11 +380,7 @@ private fun walk(
     el: Element,
     ctx: Ctx,
     styles: Set<String>,
-    hidden: CssHidden,
-    layout: CssTextAlign,
-    margins: CssMargins,
-    fontSize: CssFontSize,
-    cardBasePx: Float,
+    sheets: Sheets,
     inheritedAlign: BlockAlign,
     // Ancestor class list, NEAREST-first, of the enclosing blocks that have already
     // been entered — so this element's own classes are prepended before resolving the
@@ -333,6 +390,8 @@ private fun walk(
     pre: Boolean = false,
 ) {
     val tag = el.tag
+    val hidden = sheets.hidden
+    val layout = sheets.layout
     // This element's own text is preformatted inside (or as) a <pre>; its tail belongs
     // to the parent, so it follows the parent's mode.
     val inPre = pre || tag == "pre"
@@ -355,18 +414,27 @@ private fun walk(
     val classes = pySplit(el.attr("class") ?: "")
     val elId = el.attr("id") ?: ""
     if (hidden.matches(tag, classes, elId) || isInlineHidden(el)) {
+        // A `visibility: hidden` item keeps its box, so it still takes its number (and its
+        // `value=`) and the count shows the gap; a `display: none` item has no box and
+        // isn't counted at all — as in a browser.
+        val displayNone = hidden.matchesDisplayNone(tag, classes, elId) ||
+            CssHidden.declaresDisplayNone(el.attr("style") ?: "")
+        if (tag == "li" && !displayNone) ctx.lists.lastOrNull()?.let { frame ->
+            el.attr("value")?.trim()?.toIntOrNull()?.let { frame.next = it }
+            frame.next++
+        }
         el.tail?.let { ctx.addRun(tailWs(it), styles) }
         return
     }
 
     // Fix D: this element's own vertical margins (em) from its class CSS.
-    val marginTop = margins.topEmForClasses(classes)
-    val marginBottom = margins.bottomEmForClasses(classes)
+    val marginTop = sheets.margins.topEmForClasses(classes)
+    val marginBottom = sheets.margins.bottomEmForClasses(classes)
 
     // Task 1: the class chain seen from THIS element outward (nearest-first), and the
     // resulting font scale (nearest ancestor with a declared size wins).
     val chainClasses = classes + ancestorClasses
-    val scale = fontSize.scaleForClasses(chainClasses, cardBasePx)
+    val scale = sheets.fontSize.scaleForClasses(chainClasses, sheets.cardBasePx)
 
     // Feature 2 / Fix B: this element's effective PLACEMENT alignment. An
     // inline-block's own text-align governs only its internal content, NOT its
@@ -420,10 +488,10 @@ private fun walk(
     if (tag == "rt") {
         val small = styles + "small"
         // U+2060 WORD JOINER: no line break between the base and its reading.
-        ctx.addRun("\u2060(", small)
+        ctx.addRun("⁠(", small)
         el.text?.let { ctx.addRun(textWs(it), small) }
         for (child in el.children) {
-            walk(child, ctx, small, hidden, layout, margins, fontSize, cardBasePx, elAlign, chainClasses, inPre)
+            walk(child, ctx, small, sheets, elAlign, chainClasses, inPre)
         }
         ctx.addRun(")", small)
         el.tail?.let { ctx.addRun(tailWs(it), styles) }
@@ -454,7 +522,7 @@ private fun walk(
             val scratch = Ctx(ctx.side, ctx.hierarchicalTags)
             el.text?.let { scratch.addRun(textWs(it), styles) }
             for (child in el.children) {
-                walk(child, scratch, styles, hidden, layout, margins, fontSize, cardBasePx, elAlign, chainClasses, inPre)
+                walk(child, scratch, styles, sheets, elAlign, chainClasses, inPre)
             }
             scratch.flushText()
             val runs = scratch.nodes.filterIsInstance<TextNode>().flatMap { it.runs }
@@ -469,13 +537,26 @@ private fun walk(
         return
     }
 
+    if (tag == "details") {
+        if (!summaryLineHidden(el, sheets)) {
+            compileDetails(el, ctx, styles, sheets, elAlign, chainClasses, inPre, scale)
+            el.tail?.let { ctx.addRun(tailWs(it), styles) }
+            return
+        }
+        // With its summary line hidden nothing could ever toggle it. Closed, a browser
+        // paints nothing — though an <li> it sits in keeps its marker for what follows —
+        // the way the Russian Core 5000 front hides its etymology; open, it is a plain
+        // block of its content (the hidden summary skipped below like any hidden element).
+        if (el.attr("open") == null) {
+            el.tail?.let { ctx.addRun(tailWs(it), styles) }
+            return
+        }
+    }
+
     // Feature 1: a flex-row element compiles its ELEMENT children as row cells,
     // under strict guardrails, else falls through to vertical linearization.
     if (layout.isFlexRow(classes) &&
-        tryCompileFlexRow(
-            el, ctx, hidden, layout, margins, fontSize, cardBasePx,
-            elAlign, marginTop, marginBottom, chainClasses,
-        )
+        tryCompileFlexRow(el, ctx, sheets, elAlign, marginTop, marginBottom, chainClasses)
     ) {
         el.tail?.let { ctx.addRun(tailWs(it), styles) }
         return
@@ -485,8 +566,12 @@ private fun walk(
     if (tag == "pre") childStyles = childStyles + "pre"
     if (tag in HEADING_SCALE || tag == "th") childStyles = childStyles + "b"
     val isBlock = tag in BLOCK
+    val isList = tag == "ul" || tag == "ol"
     if (isBlock) {
-        ctx.flushText()
+        // A block opening right after an <li>'s marker (`<li><div>text</div></li>`) keeps
+        // the marker pending, so it heads the block's first line instead of its own — except
+        // a nested list, which always starts below its item's (then bare) marker.
+        ctx.flushText(unlessOnlyMarker = !isList)
         ctx.align = elAlign
         ctx.marginTop = marginTop
         ctx.marginBottom = marginBottom
@@ -494,7 +579,11 @@ private fun walk(
         // A heading's default size applies unless the card CSS sizes it by CLASS
         // (CssFontSize reads class selectors only; a bare `h2 { font-size }` rule is not seen).
         if (scale == 1f) HEADING_SCALE[tag]?.let { ctx.scale = it }
-        if (tag == "li") ctx.addRun("• ", emptySet())
+        if (isList) {
+            val depth = ctx.listDepthBase + ctx.lists.size + 1
+            ctx.lists.addLast(listFrame(el, tag, classes, elId, sheets.listStyle, depth))
+        }
+        if (tag == "li") ctx.addMarker(itemMarker(el, ctx, classes, elId, sheets.listStyle))
         if (tag == "tr" || tag == "table") ctx.cellsInRow = 0
     }
     if (tag == "td" || tag == "th") {
@@ -506,11 +595,12 @@ private fun walk(
     val ownText = el.text?.let { if (tag == "pre") it.removePrefix("\n") else it }
     ownText?.let { ctx.addRun(textWs(it), childStyles) }
     for (child in el.children) {
-        walk(child, ctx, childStyles, hidden, layout, margins, fontSize, cardBasePx, elAlign, chainClasses, inPre)
+        walk(child, ctx, childStyles, sheets, elAlign, chainClasses, inPre)
     }
 
     if (isBlock) {
         ctx.flushText()
+        if (isList) ctx.lists.removeLast()
         ctx.align = inheritedAlign
         ctx.marginTop = 0f
         ctx.marginBottom = 0f
@@ -518,6 +608,137 @@ private fun walk(
     }
     el.tail?.let { ctx.addRun(tailWs(it), styles) }
 }
+
+/** The marker style and first ordinal of a `<ul>`/`<ol>` opening at list [depth] (1 = top level). */
+private fun listFrame(
+    el: Element,
+    tag: String,
+    classes: List<String>,
+    elId: String,
+    listStyle: CssListStyle,
+    depth: Int,
+): ListFrame {
+    val ordered = tag == "ol"
+    // CSS (inline, then class rules) beats the presentational `type` attribute, as in a browser.
+    val type = inlineListStyle(el)
+        ?: listStyle.typeFor(tag, classes, elId)
+        ?: (if (ordered) el.attr("type")?.let(ListStyleType::fromTypeAttr) else null)
+        ?: ListStyleType.default(ordered, depth)
+    val start = if (ordered) el.attr("start")?.trim()?.toIntOrNull() ?: 1 else 1
+    return ListFrame(type, start)
+}
+
+/**
+ * An `<li>`'s marker: its own `list-style-type` (inline, then class CSS) over its list's,
+ * at its ordinal in the list. Every item counts, even one whose own style shows nothing,
+ * and `<li value=N>` restarts the count — as in a browser. A stray `<li>` outside any
+ * list gets a bullet.
+ */
+private fun itemMarker(el: Element, ctx: Ctx, classes: List<String>, elId: String, listStyle: CssListStyle): String {
+    val frame = ctx.lists.lastOrNull()
+    el.attr("value")?.trim()?.toIntOrNull()?.let { frame?.next = it }
+    val n = if (frame != null) frame.next++ else 1
+    val type = inlineListStyle(el) ?: listStyle.typeFor("li", classes, elId) ?: frame?.type ?: ListStyleType.DISC
+    return type.marker(n)
+}
+
+/** The `list-style-type` (or `list-style` keyword) from an element's inline `style="…"`, or null. */
+private fun inlineListStyle(el: Element): ListStyleType? {
+    val style = el.attr("style") ?: return null
+    if (!style.contains("list-style", ignoreCase = true)) return null
+    return CssListStyle.declaredType(style)
+}
+
+/**
+ * True when a `<details>`'s summary line is hidden by the card CSS or an inline style —
+ * the Russian Core 5000 front template's `<summary class="… hidden">`.
+ */
+private fun summaryLineHidden(el: Element, sheets: Sheets): Boolean {
+    val summaryEl = el.children.firstOrNull { it.tag == "summary" } ?: return false
+    return sheets.hidden.matches("summary", pySplit(summaryEl.attr("class") ?: ""), summaryEl.attr("id") ?: "") ||
+        isInlineHidden(summaryEl)
+}
+
+/**
+ * `<details>` with a visible summary line (see [summaryLineHidden] for the rest): its
+ * first `<summary>` becomes the [DetailsNode.summary] runs (a browser's "Details" when
+ * there is none), everything else its body, each compiled in a context of its own so the
+ * body's blocks stay inside the node. [scale] is the element's own font scale, which
+ * loose body text (not inside a block of its own) reads at.
+ */
+private fun compileDetails(
+    el: Element,
+    ctx: Ctx,
+    styles: Set<String>,
+    sheets: Sheets,
+    elAlign: BlockAlign,
+    chainClasses: List<String>,
+    inPre: Boolean,
+    scale: Float,
+) {
+    val textWs: (String) -> String = if (inPre) ::preWs else ::cleanWs
+    val summaryEl = el.children.firstOrNull { it.tag == "summary" }
+    val summaryOwnClasses = pySplit(summaryEl?.attr("class") ?: "")
+    val summaryClasses = summaryOwnClasses + chainClasses
+
+    // A <details> right inside an <li> carries the item's marker on its summary line.
+    val marker = ctx.takePendingMarker()
+    ctx.flushText()
+
+    // The summary line. A cloze in it reads inline, laid out the way the body will be.
+    val summary = Ctx(ctx.side, ctx.hierarchicalTags)
+    summary.listDepthBase = ctx.listDepthBase + ctx.lists.size
+    var summaryScale = scale
+    var summaryAlign = elAlign
+    if (summaryEl == null) {
+        summary.addRun(DEFAULT_SUMMARY, styles)
+    } else {
+        summaryScale = sheets.fontSize.scaleForClasses(summaryClasses, sheets.cardBasePx)
+        summaryAlign = inlineTextAlign(summaryEl) ?: sheets.layout.alignForClasses(summaryOwnClasses) ?: elAlign
+        summaryEl.text?.let { summary.addRun(textWs(it), styles) }
+        for (child in summaryEl.children) {
+            walk(child, summary, styles, sheets, summaryAlign, summaryClasses, inPre)
+        }
+    }
+    summary.flushText()
+    // Blocks inside the summary (`<summary><div>a</div><div>b</div>`) read as one line, a
+    // space apart.
+    val lines = summaryLines(InlineFlow.apply(summary.nodes))
+    val summaryRuns = marker + lines.reduceOrNull { acc, runs -> acc + TextRun(" ") + runs }.orEmpty()
+
+    val body = Ctx(ctx.side, ctx.hierarchicalTags)
+    body.align = elAlign
+    body.scale = scale
+    body.listDepthBase = ctx.listDepthBase + ctx.lists.size
+    el.text?.let { body.addRun(textWs(it), styles) }
+    for (child in el.children) {
+        // The summary's tail is body text: it follows the summary line.
+        if (child === summaryEl) child.tail?.let { body.addRun(textWs(it), styles) }
+        else walk(child, body, styles, sheets, elAlign, chainClasses, inPre)
+    }
+    body.flushText()
+
+    ctx.nodes.add(
+        DetailsNode(
+            summaryRuns, body.nodes.toList(), open = el.attr("open") != null,
+            scale = summaryScale, indent = ctx.lists.size, align = summaryAlign,
+        ),
+    )
+}
+
+/**
+ * The text lines of a summary's compiled content, in order. The summary is one line of
+ * text, so a nested section reads as its summary (and its body, if open) and a row as
+ * its cells; an image or unrenderable node has no text to give.
+ */
+private fun summaryLines(nodes: List<RenderNode>): List<List<TextRun>> = nodes.flatMap { node ->
+    when (node) {
+        is TextNode -> listOf(node.runs)
+        is DetailsNode -> listOfNotNull(node.summary?.filter { !it.marker }) + (if (node.open) summaryLines(node.body) else emptyList())
+        is RowNode -> node.cells.flatMap { summaryLines(it.nodes) }
+        else -> emptyList()
+    }
+}.filter { runs -> runs.any { it.s.isNotBlank() || it.audioTrack != null } }
 
 /**
  * Compile [el]'s ELEMENT children as cells of a [RowNode], appending it to
@@ -534,16 +755,13 @@ private fun walk(
 private fun tryCompileFlexRow(
     el: Element,
     ctx: Ctx,
-    hidden: CssHidden,
-    layout: CssTextAlign,
-    margins: CssMargins,
-    fontSize: CssFontSize,
-    cardBasePx: Float,
+    sheets: Sheets,
     rowAlign: BlockAlign,
     rowMarginTop: Float,
     rowMarginBottom: Float,
     rowChainClasses: List<String>,
 ): Boolean {
+    val layout = sheets.layout
     val kids = el.children.filter { it.tag != null }
     if (kids.size < 2 || kids.size > 4) return false
     // Reject any non-whitespace loose text: the element's own text, or the tail
@@ -571,7 +789,7 @@ private fun tryCompileFlexRow(
         val weight = if (allExplicit) childFlex[i] else if (i == 0 || i == last) null else 1f
         val cellCtx = Ctx(ctx.side, ctx.hierarchicalTags)
         cellCtx.align = align
-        walk(child, cellCtx, emptySet(), hidden, layout, margins, fontSize, cardBasePx, align, rowChainClasses)
+        walk(child, cellCtx, emptySet(), sheets, align, rowChainClasses)
         cellCtx.flushText()
         RowCell(nodes = cellCtx.nodes.toList(), weight = weight, align = align)
     }

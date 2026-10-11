@@ -1,5 +1,7 @@
 package com.dvdutch.recall.engine
 
+import com.dvdutch.recall.api.DetailsNode
+import com.dvdutch.recall.api.RenderNode
 import com.dvdutch.recall.api.TextNode
 import com.dvdutch.recall.compiler.compileHtml
 
@@ -25,11 +27,22 @@ fun fieldTextForCompare(fieldHtml: String): String {
     // single space, so `<div>New</div><div>York</div>` and `New<br>York` both expect
     // "New York" (joining blocks with nothing gave "NewYork").
     return compileHtml(noMedia, side = "front")
-        .filterIsInstance<TextNode>()
-        .joinToString(" ") { node -> node.runs.joinToString("") { it.s } }
+        .flatMap { it.blockTexts() }
+        .joinToString(" ")
         .split(WHITESPACE)
         .filter { it.isNotEmpty() }
         .joinToString(" ")
+}
+
+/**
+ * The plain text of each text block in a node, in order. A list item's marker is the
+ * renderer's, not the field's (Anki strips `<li>` to bare text), and a `<details>`
+ * section's summary and body are field text like any other.
+ */
+private fun RenderNode.blockTexts(): List<String> = when (this) {
+    is TextNode -> listOf(runs.filter { !it.marker }.joinToString("") { it.s })
+    is DetailsNode -> listOf(summary.orEmpty().filter { !it.marker }.joinToString("") { it.s }) + body.flatMap { it.blockTexts() }
+    else -> emptyList()
 }
 
 private val WHITESPACE = Regex("""\s+""")

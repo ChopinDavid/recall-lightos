@@ -1,12 +1,14 @@
 package com.dvdutch.recall.compiler
 
 import com.dvdutch.recall.api.ClozeNode
+import com.dvdutch.recall.api.DetailsNode
 import com.dvdutch.recall.api.ImageNode
 import com.dvdutch.recall.api.OcclusionNode
 import com.dvdutch.recall.api.RenderNode
 import com.dvdutch.recall.api.RowNode
 import com.dvdutch.recall.api.RuleNode
 import com.dvdutch.recall.api.TextNode
+import com.dvdutch.recall.api.TextRun
 import com.dvdutch.recall.api.UnsupportedNode
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -23,7 +25,10 @@ import kotlinx.serialization.json.jsonPrimitive
  * Python reference emits, so parity can be asserted structurally. This mirrors
  * the Python dict layout exactly: text runs carry only the style keys that are
  * `true` (bfalse/absent are indistinguishable), image nodes omit absent w/h,
- * cloze nodes omit absent hint/text.
+ * cloze nodes omit absent hint/text. A list marker run ("• ", kept apart from its
+ * item's text for the renderer) is first folded into the run after it when their
+ * styles agree: that one split is the phone's, not the reference's. Any other run
+ * boundary is compared as is.
  */
 fun nodesToJson(nodes: List<RenderNode>): JsonArray = buildJsonArray {
     for (node in nodes) {
@@ -31,18 +36,13 @@ fun nodesToJson(nodes: List<RenderNode>): JsonArray = buildJsonArray {
             when (node) {
                 is TextNode -> buildJsonObject {
                     put("t", JsonPrimitive("text"))
-                    put("runs", buildJsonArray {
-                        for (run in node.runs) {
-                            add(buildJsonObject {
-                                put("s", JsonPrimitive(run.s))
-                                if (run.b) put("b", JsonPrimitive(true))
-                                if (run.i) put("i", JsonPrimitive(true))
-                                if (run.small) put("small", JsonPrimitive(true))
-                                if (run.mono) put("mono", JsonPrimitive(true))
-                                if (run.strike) put("strike", JsonPrimitive(true))
-                            })
-                        }
-                    })
+                    put("runs", runsToJson(node.runs))
+                }
+                is DetailsNode -> buildJsonObject {
+                    put("t", JsonPrimitive("details"))
+                    put("open", JsonPrimitive(node.open))
+                    put("summary", runsToJson(node.summary.orEmpty()))
+                    put("body", nodesToJson(node.body))
                 }
                 is ClozeNode -> buildJsonObject {
                     put("t", JsonPrimitive("cloze"))
@@ -74,6 +74,31 @@ fun nodesToJson(nodes: List<RenderNode>): JsonArray = buildJsonArray {
             }
         )
     }
+}
+
+private fun runsToJson(runs: List<TextRun>): JsonArray = buildJsonArray {
+    for (run in foldMarkers(runs)) {
+        add(buildJsonObject {
+            put("s", JsonPrimitive(run.s))
+            if (run.b) put("b", JsonPrimitive(true))
+            if (run.i) put("i", JsonPrimitive(true))
+            if (run.small) put("small", JsonPrimitive(true))
+            if (run.mono) put("mono", JsonPrimitive(true))
+            if (run.strike) put("strike", JsonPrimitive(true))
+        })
+    }
+}
+
+/** Folds each list marker run into the text run after it when their parity-visible styles agree. */
+private fun foldMarkers(runs: List<TextRun>): List<TextRun> {
+    val out = mutableListOf<TextRun>()
+    for (run in runs) {
+        val last = out.lastOrNull()
+        val foldable = last != null && last.marker && run.audioTrack == null &&
+            last.b == run.b && last.i == run.i && last.small == run.small && last.mono == run.mono && last.strike == run.strike
+        if (foldable) out[out.size - 1] = run.copy(s = last!!.s + run.s) else out.add(run)
+    }
+    return out
 }
 
 /**

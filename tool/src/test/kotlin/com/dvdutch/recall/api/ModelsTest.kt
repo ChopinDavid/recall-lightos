@@ -23,6 +23,10 @@ class ModelsTest {
                 is ImageNode -> append(node.src)
                 is OcclusionNode -> append(node.image)
                 is RowNode -> node.cells.forEach { append(it.nodes.flatten()) }
+                is DetailsNode -> {
+                    node.summary?.forEach { append(it.s) }
+                    append(node.body.flatten())
+                }
                 is RuleNode -> Unit
                 is UnsupportedNode -> Unit
             }
@@ -63,6 +67,20 @@ class ModelsTest {
     fun unknownNodeParsesAsUnsupported() {
         val node = BridgeJson.decodeFromString<RenderNode>("""{"t":"video3d","foo":1}""")
         assertEquals(UnsupportedNode("video3d"), node)
+    }
+
+    @Test
+    fun detailsNodeParsesWithItsBody() {
+        val node = BridgeJson.decodeFromString<RenderNode>(
+            """{"t":"details","summary":[{"s":"Etymology"}],"body":[{"t":"text","runs":[{"s":"x"}]}]}""",
+        )
+        assertEquals(DetailsNode(listOf(TextRun("Etymology")), listOf(TextNode(listOf(TextRun("x"))))), node)
+        assertEquals("Etymologyx", listOf(node).flatten())
+        // Every field, an unknown node in the body, and a hidden (null) summary.
+        val full = BridgeJson.decodeFromString<RenderNode>(
+            """{"t":"details","summary":null,"body":[{"t":"video3d"}],"open":true,"scale":0.5,"indent":1}""",
+        )
+        assertEquals(DetailsNode(null, listOf(UnsupportedNode("video3d")), open = true, scale = 0.5f, indent = 1), full)
     }
 
     @Test
