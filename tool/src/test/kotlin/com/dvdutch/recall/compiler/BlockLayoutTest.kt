@@ -55,4 +55,13 @@ class BlockLayoutTest {
         // Only the readings (with their parentheses and the joiner) are small.
         assertEquals("\u2060(ねこ)\u2060(たか)", runs.filter { it.small }.joinToString("") { it.s })
     }
+
+    @Test
+    fun `text after a dropped script or style block survives`() {
+        assertEquals(
+            listOf("Only this sentence should show"),
+            layout("<script>alert(1)</script><style>b{color:red}</style>Only this sentence should show").map(::text),
+        )
+        assertEquals(listOf("before after"), layout("before <style>.x{}</style> after").map(::text))
+    }
 }

@@ -339,7 +339,12 @@ private fun walk(
     val tailWs: (String) -> String = if (pre) ::preWs else ::cleanWs
     val textWs: (String) -> String = if (inPre) ::preWs else ::cleanWs
 
-    if (tag in DROPPED) return
+    if (tag in DROPPED) {
+        // The element and its contents go, but the text after it stays: a field with an
+        // inline <style> block followed by its actual text would otherwise come out blank.
+        el.tail?.let { ctx.addRun(tailWs(it), styles) }
+        return
+    }
 
     if (tag == null) {
         // comment / PI: drop body, keep tail.
