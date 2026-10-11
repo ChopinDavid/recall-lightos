@@ -394,7 +394,13 @@ private fun walk(
 
     if (tag == "hr") {
         ctx.flushText()
-        ctx.nodes.add(RuleNode(marginTop = marginTop, marginBottom = marginBottom))
+        ctx.nodes.add(
+            RuleNode(
+                marginTop = marginTop,
+                marginBottom = marginBottom,
+                answerDivider = elId.equals("answer", ignoreCase = true),
+            ),
+        )
         el.tail?.let { ctx.addRun(tailWs(it), styles) }
         return
     }

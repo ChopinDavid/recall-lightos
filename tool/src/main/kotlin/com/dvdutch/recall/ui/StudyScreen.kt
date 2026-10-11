@@ -691,6 +691,10 @@ private fun androidx.compose.foundation.layout.ColumnScope.CenteredMessage(text:
  * prefix — 0 for a cloze, keeping the revealed answer in view. Pure and unit-tested.
  */
 fun answerStartIndex(front: List<RenderNode>, back: List<RenderNode>): Int {
+    // The template's own marker wins: `<hr id=answer>` is where Anki puts the answer,
+    // whatever the back's layout (an etymology section above the question, say).
+    val marked = back.indexOfFirst { it is RuleNode && it.answerDivider }
+    if (marked >= 0) return marked
     if (front.isNotEmpty()) {
         for (k in 0..(back.size - front.size)) {
             if (front.indices.all { sameContent(front[it], back[k + it]) }) return k + front.size

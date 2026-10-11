@@ -144,6 +144,9 @@ data class ImageNode(val src: String, val w: Int? = null, val h: Int? = null) : 
 data class RuleNode(
     val marginTop: Float = 0f,
     val marginBottom: Float = 0f,
+    // True for the template's `<hr id=answer>`: where Anki says the answer starts, and
+    // what the reveal scrolls to. Phone-side only, NOT parity-governed.
+    val answerDivider: Boolean = false,
 ) : RenderNode
 
 @Serializable

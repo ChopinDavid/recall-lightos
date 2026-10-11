@@ -19,7 +19,7 @@ class AnswerStartIndexTest {
         val front = side("Which nerve innervates the diaphragm?", "front")
         val back = side("Which nerve innervates the diaphragm?<hr id=answer>Phrenic nerve", "back")
         assertEquals(1, answerStartIndex(front, back))
-        assertEquals(RuleNode(), back[1])
+        assertEquals(RuleNode(answerDivider = true), back[1])
     }
 
     @Test
@@ -58,5 +58,17 @@ class AnswerStartIndexTest {
         // back = [heading, li, li, rule, answer]; the front's two nodes sit at offset 1.
         assertEquals(3, answerStartIndex(front, back))
         assertIs<RuleNode>(back[3])
+    }
+
+    @Test
+    fun `the template's hr id=answer wins over any content matching`() {
+        val front = side("<b>unfortunate</b>", "front")
+        // A back whose layout has nothing in common with the front until its answer marker.
+        val back = side("<h2>Etymology</h2><ul><li>несчастный</li></ul><div>1974</div>несча́стный<hr id=answer>unlucky", "back")
+        val rule = back.indexOfFirst { it is RuleNode }
+        assertEquals(rule, answerStartIndex(front, back))
+        assertEquals(rule + 1, typeAnswerBlockIndex(front, back))
+        // A plain <hr> is not the marker.
+        assertEquals(0, answerStartIndex(front, side("x<hr>y", "back")))
     }
 }
