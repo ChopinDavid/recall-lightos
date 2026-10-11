@@ -408,7 +408,8 @@ private fun walk(
     }
     if (tag == "rt") {
         val small = styles + "small"
-        ctx.addRun("(", small)
+        // U+2060 WORD JOINER: no line break between the base and its reading.
+        ctx.addRun("\u2060(", small)
         el.text?.let { ctx.addRun(textWs(it), small) }
         for (child in el.children) {
             walk(child, ctx, small, hidden, layout, margins, fontSize, cardBasePx, elAlign, chainClasses, inPre)
@@ -437,7 +438,20 @@ private fun walk(
                 ClozeNode(state = "hidden")
             }
         } else {
-            ClozeNode(state = "revealed", text = cleanWs(el.textContent()))
+            // The answer's inline formatting ({{c1::CO<sub>2</sub>}}) is compiled into
+            // styled runs alongside the flat parity text, so the reveal keeps it.
+            val scratch = Ctx(ctx.side, ctx.hierarchicalTags)
+            el.text?.let { scratch.addRun(textWs(it), styles) }
+            for (child in el.children) {
+                walk(child, scratch, styles, hidden, layout, margins, fontSize, cardBasePx, elAlign, chainClasses, inPre)
+            }
+            scratch.flushText()
+            val runs = scratch.nodes.filterIsInstance<TextNode>().flatMap { it.runs }
+            ClozeNode(
+                state = "revealed",
+                text = cleanWs(el.textContent()),
+                runs = runs.takeIf { r -> r.any { it.b || it.i || it.small || it.mono || it.strike || it.audioTrack != null } },
+            )
         }
         ctx.addCloze(node)
         el.tail?.let { ctx.addRun(tailWs(it), styles) }

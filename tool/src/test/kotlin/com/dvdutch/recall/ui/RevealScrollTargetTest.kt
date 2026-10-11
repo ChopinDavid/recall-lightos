@@ -25,15 +25,39 @@ class RevealScrollTargetTest {
 
     @Test
     fun dividerAlreadyOnScreenReturnsNull() {
-        // Divider at y=400 with the view scrolled to 0: it sits within [0, 1000) → visible.
+        // Divider at y=400 with the view scrolled to 0 and the whole card fitting the
+        // viewport (maxScroll = 0): visible, nothing hidden → no motion.
         assertNull(
             revealScrollTarget(
                 dividerY = 400,
                 viewportH = viewportH,
                 currentScroll = 0,
-                maxScroll = 5000,
+                maxScroll = 0,
                 topMargin = margin,
             ),
+        )
+    }
+
+    @Test
+    fun visibleDividerWithAnswerBelowTheFoldScrollsItToTheTopMargin() {
+        // Divider at y=400 is visible, but the content runs on past the viewport: bring the
+        // divider up to the margin (400 - 80) so the answer has room.
+        assertEquals(
+            320,
+            revealScrollTarget(dividerY = 400, viewportH = viewportH, currentScroll = 0, maxScroll = 5000, topMargin = margin),
+        )
+        // ...limited by how far the content can scroll.
+        assertEquals(
+            150,
+            revealScrollTarget(dividerY = 400, viewportH = viewportH, currentScroll = 0, maxScroll = 150, topMargin = margin),
+        )
+    }
+
+    @Test
+    fun visibleDividerWithTheAnswerFullyShownReturnsNull() {
+        // Already scrolled to the end (currentScroll == maxScroll): the answer is on screen.
+        assertNull(
+            revealScrollTarget(dividerY = 3400, viewportH = viewportH, currentScroll = 3000, maxScroll = 3000, topMargin = margin),
         )
     }
 

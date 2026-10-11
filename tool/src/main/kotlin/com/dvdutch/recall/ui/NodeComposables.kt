@@ -31,6 +31,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -75,6 +76,10 @@ fun cardCopyStyle(base: TextStyle): TextStyle = base.copy(
         trim = LineHeightStyle.Trim.None,
     ),
     platformStyle = PlatformTextStyle(includeFontPadding = false),
+    // A paragraph's direction follows its content: an Arabic or Hebrew card reads
+    // right-to-left (right-aligned, continuation lines on the right) instead of being
+    // laid out as a left-to-right paragraph of RTL words.
+    textDirection = TextDirection.Content,
 )
 
 /**

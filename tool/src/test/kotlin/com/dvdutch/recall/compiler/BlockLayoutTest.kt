@@ -51,10 +51,8 @@ class BlockLayoutTest {
     @Test
     fun `furigana reads as base then small reading in parentheses`() {
         val runs = layout("<ruby>猫<rt>ねこ</rt></ruby>は<ruby>高<rp>(</rp><rt>たか</rt><rp>)</rp></ruby>い。").single().runs
-        assertEquals("猫(ねこ)は高(たか)い。", runs.joinToString("") { it.s })
-        assertEquals(listOf("(ねこ)", "(たか)"), runs.filter { it.small }.map { it.s }.chunked(1).map { it[0] }.let {
-            // the small runs merge into "(", "ねこ", ")" or one run; compare the joined text per reading
-            runs.filter { it.small }.joinToString("") { it.s }.split(")").filter { it.isNotEmpty() }.map { "$it)" }
-        })
+        assertEquals("猫\u2060(ねこ)は高\u2060(たか)い。", runs.joinToString("") { it.s })
+        // Only the readings (with their parentheses and the joiner) are small.
+        assertEquals("\u2060(ねこ)\u2060(たか)", runs.filter { it.small }.joinToString("") { it.s })
     }
 }

@@ -76,7 +76,7 @@ object InlineFlow {
             is TextNode -> runs.addAll(node.runs)
             is ClozeNode -> {
                 if (node.spaceBefore) runs.add(TextRun(" "))
-                runs.addAll(clozeRuns(node))
+                runs.addAll(node.runs?.map { if (it.audioTrack != null) it else it.copy(b = true) } ?: clozeRuns(node))
             }
             else -> {}
         }

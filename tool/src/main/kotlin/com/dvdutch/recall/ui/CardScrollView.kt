@@ -58,9 +58,12 @@ private const val MAX_HANDLE_FRACTION = 0.85f
  * @param maxScroll the maximum scroll offset in px (content height − viewport height).
  * @param topMargin px to leave above the divider after scrolling, so the divider sits just
  *   below the viewport top rather than flush against it.
- * @return null when the divider is already visible at [currentScroll] (do NOT scroll — no
- *   motion for the common, fits-on-screen case); otherwise the target scroll offset placing
- *   the divider [topMargin] below the viewport top, clamped to `[0, maxScroll]`.
+ * @return null when nothing needs to move: the divider is visible AND no answer content is
+ *   hidden below the fold (the common, fits-on-screen case). Otherwise the target scroll
+ *   offset placing the divider [topMargin] below the viewport top, clamped to
+ *   `[0, maxScroll]` — so a visible divider with a long answer (or a tall image, or the
+ *   type-answer block) under it still scrolls up to give the answer room, as far as the
+ *   content allows.
  */
 fun revealScrollTarget(
     dividerY: Int,
@@ -73,11 +76,15 @@ fun revealScrollTarget(
     // falls inside it, there is nothing to do — leave the view untouched.
     val visibleTop = currentScroll
     val visibleBottom = currentScroll + viewportH
-    if (dividerY in visibleTop until visibleBottom) return null
-
-    // Otherwise scroll so the divider sits topMargin below the viewport top, clamped so we
-    // never scroll above 0 or past the content's end.
-    return (dividerY - topMargin).coerceIn(0, maxScroll.coerceAtLeast(0))
+    val target = (dividerY - topMargin).coerceIn(0, maxScroll.coerceAtLeast(0))
+    if (dividerY in visibleTop until visibleBottom) {
+        // Visible. Only move if answer content is still hidden below the fold, i.e. the
+        // divider can be brought closer to the top margin; never scroll back up.
+        return if (target > currentScroll) target else null
+    }
+    // Off-screen: scroll so the divider sits topMargin below the viewport top, clamped so
+    // we never scroll above 0 or past the content's end.
+    return target
 }
 
 /**

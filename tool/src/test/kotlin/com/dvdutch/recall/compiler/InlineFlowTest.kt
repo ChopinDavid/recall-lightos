@@ -122,4 +122,15 @@ class InlineFlowTest {
         val back = layout("""<span class="cloze">Na</span> <br> <span class="cloze">K</span>""", "back")
         assertEquals("Na\nK", text(back.single()))
     }
+
+    @Test
+    fun `a revealed cloze keeps the formatting inside the deletion`() {
+        val back = layout("""<span class="cloze">CO<sub>2</sub></span> is a greenhouse gas""", "back").single() as TextNode
+        assertEquals(
+            listOf(TextRun("CO", b = true), TextRun("2", b = true, small = true), TextRun(" is a greenhouse gas")),
+            back.runs,
+        )
+        // Plain answers still render as before.
+        assertEquals(listOf(TextRun("oxygen", b = true)), (layout("""<span class="cloze">oxygen</span>""", "back").single() as TextNode).runs)
+    }
 }

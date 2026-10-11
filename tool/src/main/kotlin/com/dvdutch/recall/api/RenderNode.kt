@@ -131,6 +131,9 @@ data class ClozeNode(
     // which would otherwise be lost. Phone-side layout enrichments, NOT parity-governed.
     val joinsPrevious: Boolean = false,
     val spaceBefore: Boolean = false,
+    // A revealed answer's styled runs (a <sub> or <b> inside the deletion), when it has
+    // any; [text] stays the flat parity text. Phone-side only, NOT parity-governed.
+    val runs: List<TextRun>? = null,
 ) : RenderNode
 
 @Serializable
