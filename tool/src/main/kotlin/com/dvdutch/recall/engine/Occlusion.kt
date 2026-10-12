@@ -1,5 +1,6 @@
 package com.dvdutch.recall.engine
 
+import com.dvdutch.recall.api.OcclusionNode
 import com.dvdutch.recall.api.OcclusionShapeState
 import com.dvdutch.recall.api.Pt
 import com.dvdutch.recall.api.ShapeState
@@ -137,7 +138,7 @@ private fun allCoords(note: ParsedOcclusion): List<Double> =
  * so the rule is safe in practice. (Theoretical corner: a 1×1-pixel base image, which no
  * occlusion deck contains.)
  */
-private fun isFractional(note: ParsedOcclusion): Boolean {
+internal fun isFractional(note: ParsedOcclusion): Boolean {
     val coords = allCoords(note)
     return coords.isNotEmpty() && coords.all { it <= 1.0 }
 }
@@ -195,6 +196,33 @@ fun resolveShapes(
         }
     }
 }
+
+/**
+ * This node with its image's natural size, for a card built before the image was on the
+ * phone (its size unknown then, see [OcclusionNode.fractional]): fractional shapes are
+ * scaled up to natural pixels like [resolveShapes] does when the size is known. A node that
+ * already has a size, or a non-positive [width]/[height], is returned unchanged.
+ */
+fun OcclusionNode.withNaturalSize(width: Int, height: Int): OcclusionNode {
+    if ((naturalW > 0 && naturalH > 0) || width <= 0 || height <= 0) return this
+    return copy(
+        naturalW = width,
+        naturalH = height,
+        shapes = if (fractional) shapes.map { scaleToPixels(it, width, height) } else shapes,
+        fractional = false,
+    )
+}
+
+/**
+ * The media filename an Image Occlusion note's image field names (`<img src="cell.png">`),
+ * or null. rslib's `getImageOcclusionNote` reports the filename only when the file is
+ * already in the media folder; while media is still downloading the field is the only
+ * place left to read it from.
+ */
+fun occlusionImageSrc(field: String): String? =
+    IMG_SRC.find(field)?.groupValues?.drop(1)?.firstOrNull { it.isNotEmpty() }
+
+private val IMG_SRC = Regex("""<img\b[^>]*?\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))""", RegexOption.IGNORE_CASE)
 
 /** Natural pixel dimensions of a raster image. */
 data class ImageDims(val width: Int, val height: Int)

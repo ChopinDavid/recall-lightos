@@ -68,4 +68,11 @@ class OcclusionImageStateTest {
             occlusionImageState(bitmap = fakeBitmap, loadCompleted = false),
         )
     }
+
+    @Test
+    fun `a missing image says it is still downloading while media comes in`() {
+        assertEquals("Loading image…", occlusionPlaceholderLabel(OcclusionImageState.Loading, "cell.png", downloading = true))
+        assertEquals("⚠ image unavailable — cell.png", occlusionPlaceholderLabel(OcclusionImageState.Failed, "cell.png", downloading = false))
+        assertEquals("↓ image still downloading — cell.png", occlusionPlaceholderLabel(OcclusionImageState.Failed, "cell.png", downloading = true))
+    }
 }

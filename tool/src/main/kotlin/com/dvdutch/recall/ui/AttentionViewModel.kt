@@ -5,7 +5,9 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.lifecycle.viewModelScope
 import com.dvdutch.recall.engine.FullDownloadResult
 import com.dvdutch.recall.engine.RecallEngine
+import com.dvdutch.recall.engine.SyncController
 import com.thelightphone.sdk.LightViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -86,10 +88,14 @@ class AttentionViewModel(
                 val controller = engine.controller()
                 if (direction == AttentionDirection.Upload) {
                     controller.fullSync(upload = true)
+                    startMediaSync(controller)
                     setState { AttentionReducer.done(it) }
                 } else {
                     when (val result = controller.fullDownload(force = false)) {
-                        is FullDownloadResult.Downloaded -> setState { AttentionReducer.done(it) }
+                        is FullDownloadResult.Downloaded -> {
+                            startMediaSync(controller)
+                            setState { AttentionReducer.done(it) }
+                        }
                         is FullDownloadResult.GuardTripped ->
                             setState { AttentionReducer.guardTripped(it, result.localCardCount) }
                         is FullDownloadResult.Failed ->
@@ -112,8 +118,12 @@ class AttentionViewModel(
         scope.launch(ioDispatcher) {
             try {
                 engine.openCollection()
-                when (val result = engine.controller().fullDownload(force = true)) {
-                    is FullDownloadResult.Downloaded -> setState { AttentionReducer.done(it) }
+                val controller = engine.controller()
+                when (val result = controller.fullDownload(force = true)) {
+                    is FullDownloadResult.Downloaded -> {
+                        startMediaSync(controller)
+                        setState { AttentionReducer.done(it) }
+                    }
                     is FullDownloadResult.Failed -> setState { AttentionReducer.failed(it, result.reason) }
                     is FullDownloadResult.GuardTripped -> // unreachable when forced; be safe
                         setState { AttentionReducer.done(it) }
@@ -121,6 +131,19 @@ class AttentionViewModel(
             } catch (t: Throwable) {
                 setState { AttentionReducer.failed(it, t.message ?: "sync failed") }
             }
+        }
+    }
+
+    /**
+     * A full sync moves only the collection; media follows in the background, as in Anki.
+     * Best-effort: the next normal sync retries it.
+     */
+    private suspend fun startMediaSync(controller: SyncController) {
+        try {
+            controller.startMediaSync()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
         }
     }
 

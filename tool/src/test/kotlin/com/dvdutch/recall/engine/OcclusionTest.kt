@@ -7,6 +7,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import com.dvdutch.recall.api.OcclusionNode
 
 /**
  * Pure-logic tests for the occlusion shape parser and per-side state resolver — the
@@ -554,5 +555,26 @@ class OcclusionTest {
     fun `imageDims returns null for empty and non-image bytes`() {
         assertNull(imageDims(ByteArray(0)))
         assertNull(imageDims("not an image at all, just prose".toByteArray()))
+    }
+
+    @Test
+    fun `an occlusion image field names its file however the src is quoted`() {
+        assertEquals("cell.png", occlusionImageSrc("""<img src="cell.png">"""))
+        assertEquals("my cell.png", occlusionImageSrc("""<IMG alt="x" SRC='my cell.png' />"""))
+        assertEquals("cell.png", occlusionImageSrc("<img src=cell.png>"))
+        assertNull(occlusionImageSrc("no image here"))
+        assertNull(occlusionImageSrc("""<img src="">"""))
+    }
+
+    @Test
+    fun `withNaturalSize leaves a sized node, or pixel masks, alone`() {
+        val rect = OcclusionShapeState.Rect(10.0, 20.0, 30.0, 40.0, ShapeState.MASKED)
+        val sized = OcclusionNode("a.png", 100, 50, listOf(rect), "front")
+        assertEquals(sized, sized.withNaturalSize(640, 480))
+        // Unsized but pixel masks: only the size is filled in.
+        val pixels = OcclusionNode("a.png", 0, 0, listOf(rect), "front")
+        assertEquals(pixels.copy(naturalW = 640, naturalH = 480), pixels.withNaturalSize(640, 480))
+        // No usable size: unchanged.
+        assertEquals(pixels, pixels.withNaturalSize(0, 480))
     }
 }

@@ -5,10 +5,12 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.viewModelScope
 import com.dvdutch.recall.engine.RecallEngine
+import com.dvdutch.recall.engine.SyncController
 import com.dvdutch.recall.engine.SyncFailure
 import com.dvdutch.recall.prefs.RecallPreferences
 import com.dvdutch.recall.prefs.TextSanitizer
 import com.thelightphone.sdk.LightViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -97,11 +99,23 @@ class FirstRunViewModel(
                 val controller = engine.controller()
                 controller.login()               // fail fast on bad credentials
                 controller.fullSync(upload = false) // pull the whole collection down
+                // Images and audio follow in the background; Home shows them coming in.
+                startMediaSync(controller)
                 setState { it.succeeded() }
             } catch (t: Throwable) {
                 // Shown as "download failed: <reason>"; the reason says what to do.
                 setState { it.failed(SyncFailure.classify(t, config.endpoint).reason) }
             }
+        }
+    }
+
+    /** Best-effort: the collection is down either way, and the next sync retries media. */
+    private suspend fun startMediaSync(controller: SyncController) {
+        try {
+            controller.startMediaSync()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
         }
     }
 

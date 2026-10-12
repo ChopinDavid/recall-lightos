@@ -73,6 +73,7 @@ class AttentionViewModelTest {
         assertEquals(1, controller.fullSyncCalls)
         assertEquals(listOf(true), controller.fullSyncUploadArgs)
         assertEquals(0, controller.fullDownloadCalls, "upload must NOT use the download guard")
+        assertEquals(1, controller.startMediaSyncCalls, "media follows the full sync")
         assertTrue(engine.openCalls >= 1, "collection opened before the destructive op")
         assertTrue(vm.uiState.value.phase is AttentionPhase.Done, "was ${vm.uiState.value.phase}")
     }
@@ -88,6 +89,7 @@ class AttentionViewModelTest {
         assertEquals(1, controller.fullDownloadCalls)
         assertEquals(listOf(false), controller.fullDownloadForceArgs, "confirm never forces past the guard")
         assertEquals(0, controller.fullSyncCalls)
+        assertEquals(1, controller.startMediaSyncCalls, "media follows the download")
         assertTrue(vm.uiState.value.phase is AttentionPhase.Done, "was ${vm.uiState.value.phase}")
     }
 
@@ -104,6 +106,7 @@ class AttentionViewModelTest {
         val phase = vm.uiState.value.phase
         assertTrue(phase is AttentionPhase.GuardConfirm, "was $phase")
         assertEquals(42, phase.localCardCount)
+        assertEquals(0, controller.startMediaSyncCalls, "nothing was downloaded, so no media either")
         // Crucially the divergence is NOT resolved — the phone kept its cards, no Done.
     }
 
@@ -120,6 +123,18 @@ class AttentionViewModelTest {
         val phase = vm.uiState.value.phase
         assertTrue(phase is AttentionPhase.Failed, "was $phase")
         assertEquals("server 500", phase.reason)
+    }
+
+    // Media is best-effort after a full sync: a start that fails still resolves the divergence.
+    @Test
+    fun `a media sync that can't start still completes the full sync`() {
+        val controller = FakeSyncController().apply { startMediaSyncError = RuntimeException("media offline") }
+        val (vm, _) = vm(controller)
+
+        vm.confirm(AttentionDirection.Upload)
+
+        assertEquals(1, controller.startMediaSyncCalls)
+        assertTrue(vm.uiState.value.phase is AttentionPhase.Done, "was ${vm.uiState.value.phase}")
     }
 
     // A THROWN exception from the op (not a Failed result) also lands on Failed.
@@ -146,6 +161,7 @@ class AttentionViewModelTest {
 
         assertEquals(1, controller.fullDownloadCalls)
         assertEquals(listOf(true), controller.fullDownloadForceArgs, "forceDownload MUST force")
+        assertEquals(1, controller.startMediaSyncCalls, "media follows the forced download")
         assertTrue(vm.uiState.value.phase is AttentionPhase.Done, "was ${vm.uiState.value.phase}")
     }
 

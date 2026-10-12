@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.viewModelScope
 import com.dvdutch.recall.api.Deck
 import com.dvdutch.recall.engine.RecallEngine
+import com.dvdutch.recall.engine.heldFor
 import com.dvdutch.recall.prefs.RecallPreferences
 import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SimpleLightScreen
@@ -13,9 +14,11 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -72,6 +75,12 @@ data class HomeUiState(
 )
 
 /**
+ * How long a media sync must have been running before Home says so: one that only checks
+ * in with the server (nothing new to download) is over well within this, so no line flashes.
+ */
+internal const val MEDIA_LINE_DELAY_MS = 1_500L
+
+/**
  * ViewModel for [RecallHomeScreen]. On show it decides between three routes off the
  * on-device engine ([RecallEngine]):
  *   - no collection file yet         → [HomeMode.NeedsFirstRun] (bounce to first-run);
@@ -96,6 +105,15 @@ class RecallHomeViewModel(
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    /**
+     * True while images and audio are still downloading in the background (after first-run,
+     * or a sync that brought new media) — long enough to be worth a line on Home. Held here,
+     * not in the screen, so coming back to Home mid-download shows it from the first frame.
+     */
+    val mediaDownloading: StateFlow<Boolean> = engine.mediaTracker.active
+        .heldFor(MEDIA_LINE_DELAY_MS)
+        .stateIn(scope, SharingStarted.Eagerly, false)
 
     /**
      * The most recent flat deck list, cached so [toggle] can re-filter locally without

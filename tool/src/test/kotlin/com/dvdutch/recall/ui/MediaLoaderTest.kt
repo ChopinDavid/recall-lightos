@@ -10,6 +10,15 @@ import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import com.dvdutch.recall.engine.MediaSyncTracker
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlinx.coroutines.launch
 
 /** Minimal [ImageBitmap] stub for cache-identity assertions (no Android runtime). */
 private val FakeBitmap: ImageBitmap = object : ImageBitmap {
@@ -38,6 +47,13 @@ private val FakeBitmap: ImageBitmap = object : ImageBitmap {
  * tests inject a pure decoder that echoes the byte count so file reads are asserted
  * without an Android runtime.
  */
+/** A PNG header for a 64×32 image (enough for the size probe; never decoded here). */
+private val PNG_64x32: ByteArray = byteArrayOf(
+    0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+    0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52,
+    0, 0, 0, 64, 0, 0, 0, 32, 8, 6, 0, 0, 0,
+)
+
 class MediaLoaderTest {
 
     // --- filename extraction -------------------------------------------------
@@ -222,6 +238,103 @@ class MediaLoaderTest {
         val loader = MediaLoader(storage) { decodeCalls++; null }
         assertNull(loader.load("dog.jpg"))
         assertEquals(1, decodeCalls)
+        storage.collectionDir.deleteRecursively()
+    }
+
+    // --- media still downloading --------------------------------------------
+
+    @Test
+    fun aMissingImageLoadsOnceItsFileArrives(): Unit = runBlocking {
+        // A miss is never cached, so the retry after media arrives reads the disk afresh.
+        val storage = tmpMediaDir()
+        val loader = MediaLoader(storage) { FakeBitmap }
+        assertNull(loader.load("cell.png"))
+        storage.mediaFile("cell.png").writeBytes(ByteArray(4))
+        assertEquals(FakeBitmap, loader.load("cell.png"))
+        storage.collectionDir.deleteRecursively()
+    }
+
+    @Test
+    fun aLoaderFollowsTheMediaTrackerItIsGiven() {
+        val idle = MediaLoader(tmpMediaDir())
+        assertFalse(idle.downloading.value, "no tracker: never downloading")
+        assertEquals(0, idle.arrivals.value)
+
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val running = AtomicBoolean(true)
+        val tracker = MediaSyncTracker(isActive = { running.get() }, scope = scope, pollMillis = 10)
+        val loader = MediaLoader(tmpMediaDir(), downloads = tracker)
+        tracker.watch()
+        assertTrue(loader.downloading.value)
+        waitFor(message = { "an arrival" }) { loader.arrivals.value > 0 }
+        running.set(false)
+        waitFor(message = { "done" }) { !loader.downloading.value }
+        scope.cancel()
+    }
+
+    @Test
+    fun aPlaceholderSaysWhenItsImageIsStillDownloading() {
+        assertEquals("cell.png", imagePlaceholderLabel("cell.png", downloading = false))
+        assertEquals("↓ still downloading — cell.png", imagePlaceholderLabel("cell.png", downloading = true))
+    }
+
+    @Test
+    fun aLoadRecordsTheImagesNaturalSize(): Unit = runBlocking {
+        val storage = tmpMediaDir()
+        storage.mediaFile("cell.png").writeBytes(PNG_64x32)
+        val loader = MediaLoader(storage) { FakeBitmap }
+        assertNull(loader.naturalSize("cell.png"), "nothing known before a load")
+        loader.load("cell.png")
+        assertEquals(com.dvdutch.recall.engine.ImageDims(64, 32), loader.naturalSize("cell.png"))
+        storage.collectionDir.deleteRecursively()
+    }
+
+    @Test
+    fun anImageReadWhileMediaDownloadsIsReadAgainOnceItsDone() {
+        val storage = tmpMediaDir()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val running = AtomicBoolean(true)
+        val tracker = MediaSyncTracker(isActive = { running.get() }, scope = scope, pollMillis = 10)
+        var decodes = 0
+        val loader = MediaLoader(storage, downloads = tracker) { decodes++; FakeBitmap }
+        tracker.watch()
+
+        val shown = java.util.Collections.synchronizedList(mutableListOf<ImageBitmap>())
+        val misses = java.util.concurrent.atomic.AtomicInteger()
+        val job = scope.launch { loader.loadImage("cell.png", onMiss = { misses.incrementAndGet() }) { shown.add(it) } }
+
+        // Not here yet: each try misses, and keeps waiting.
+        waitFor(message = { "a miss" }) { misses.get() >= 1 }
+        assertTrue(shown.isEmpty())
+
+        // It arrives mid-download: shown at once, but not cached (it may be half-written).
+        storage.mediaFile("cell.png").writeBytes(ByteArray(4))
+        waitFor(message = { "shown" }) { shown.size == 1 }
+        assertNull(loader.peek("cell.png"))
+
+        // The download ends: read once more, now cached, and the load settles.
+        running.set(false)
+        waitFor(message = { "read again" }) { shown.size == 2 }
+        waitFor(message = { "settled" }) { job.isCompleted }
+        assertEquals(FakeBitmap, loader.peek("cell.png"))
+        scope.cancel()
+        storage.collectionDir.deleteRecursively()
+    }
+
+    @Test
+    fun anImageAlreadyOnDiskIsCachedEvenDuringADownload(): Unit = runBlocking {
+        // Written well before this read: complete, so a reveal can draw it from the cache.
+        val storage = tmpMediaDir()
+        storage.mediaFile("old.png").apply { writeBytes(ByteArray(4)); setLastModified(System.currentTimeMillis() - 60_000) }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val tracker = MediaSyncTracker(isActive = { true }, scope = scope, pollMillis = 10)
+        val loader = MediaLoader(storage, downloads = tracker) { FakeBitmap }
+        tracker.watch()
+
+        val read = loader.read("old.png")!!
+        assertFalse(read.partial)
+        assertEquals(FakeBitmap, loader.peek("old.png"))
+        scope.cancel()
         storage.collectionDir.deleteRecursively()
     }
 }

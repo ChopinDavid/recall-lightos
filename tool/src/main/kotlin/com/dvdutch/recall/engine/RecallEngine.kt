@@ -27,6 +27,9 @@ open class RecallEngine(
 
     open val storage: RecallStorage = RecallStorage(filesDir)
 
+    /** The app-wide follower of background media syncs (see [MediaSyncTracker]). */
+    open val mediaTracker: MediaSyncTracker get() = MediaSyncTracker.shared
+
     /** Reads the persisted sync config; blank fields make the controller unconfigured. */
     open suspend fun syncConfig(): SyncConfig {
         val prefs = dataStore.data.first()
@@ -53,6 +56,7 @@ open class RecallEngine(
             // fullDownload backs this up before the transfer so a wipe-to-empty (or a
             // mid-transfer failure) rolls back instead of silently erasing the phone.
             collectionFile = { storage.collectionFile },
+            onMediaSyncStarted = { mediaTracker.watch() },
         )
 
     /** The durable "collections have diverged" latch (defaults false when never written). */

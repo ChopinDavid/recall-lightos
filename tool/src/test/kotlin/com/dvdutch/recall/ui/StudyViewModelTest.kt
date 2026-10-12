@@ -20,6 +20,8 @@ import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import com.dvdutch.recall.engine.MediaSyncTracker
+import kotlin.test.assertSame
 
 /**
  * The study session ViewModel ([StudyViewModel]) as a DISPATCHER: it owns one
@@ -110,12 +112,13 @@ class StudyViewModelTest {
     private fun build(
         env: Env,
         ds: androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences>,
+        engine: FakeEngine = FakeEngine(env.dir, ds, collectionPresent = false),
     ): StudyViewModel = StudyViewModel(
         deckId = 42L,
         filesDir = env.dir,
         dataStore = ds,
         driver = Dispatchers.Unconfined,
-        engine = FakeEngine(env.dir, ds, collectionPresent = false),
+        engine = engine,
         injectedScope = kotlinx.coroutines.CoroutineScope(Dispatchers.Unconfined),
         mainDispatcher = Dispatchers.Unconfined,
         machineFactory = { _ ->
@@ -433,5 +436,26 @@ class StudyViewModelTest {
             waitFor(message = { "audio stopped on grade" }) { env.recorder.stops > stopsBefore }
             assertTrue(env.recorder.stops > stopsBefore)
         }
+    }
+
+    // The study screen's images follow the app's media download: they say when they're still
+    // downloading and load as files arrive (see MediaLoader.downloading / arrivals).
+    @Test
+    fun `the study media loader follows the engine's media tracker`() = withEnv("study-vm-media") { dir, _, ds ->
+        val env = Env(dir)
+        val tracker = MediaSyncTracker(isActive = { false }, scope = kotlinx.coroutines.CoroutineScope(Dispatchers.Unconfined))
+        val engine = object : FakeEngine(dir, ds, collectionPresent = false) {
+            override val mediaTracker: MediaSyncTracker = tracker
+        }
+        val vm = build(env, ds, engine)
+        env.api.startScript.add(StudyStartResponse(counts(new = 1), SyncInfo(true, "ok")))
+        env.api.queueScript.add(QueueResponse(listOf(card(1)), counts(new = 1)))
+
+        vm.begin()
+
+        waitFor(message = { "loader" }) { vm.mediaLoader.value != null }
+        val loader = vm.mediaLoader.value!!
+        assertSame(tracker.active, loader.downloading)
+        assertSame(tracker.arrivals, loader.arrivals)
     }
 }

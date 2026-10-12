@@ -8,8 +8,12 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -29,6 +33,7 @@ import com.dvdutch.recall.api.OcclusionNode
 import com.dvdutch.recall.api.OcclusionShapeState
 import com.dvdutch.recall.api.Pt
 import com.dvdutch.recall.api.ShapeState
+import com.dvdutch.recall.engine.withNaturalSize
 import com.thelightphone.sdk.ui.LightText
 import com.thelightphone.sdk.ui.LightTextVariant
 import com.thelightphone.sdk.ui.LightThemeTokens
@@ -226,13 +231,13 @@ enum class OcclusionImageState {
 }
 
 /**
- * Resolves the [OcclusionImageState] from the two observable signals of the
- * [produceState] load: whether the producer has finished ([loadCompleted]) and the
- * resolved [bitmap] (null until/unless a bitmap decodes).
+ * Resolves the [OcclusionImageState] from the two observable signals of the image
+ * load: whether a load has finished ([loadCompleted]) and the resolved [bitmap] (null
+ * until/unless a bitmap decodes).
  *
- * `produceState` seeds `null` (Loading), then the producer resolves to a bitmap
- * (Loaded) or to `null` (Failed). The only way to tell a still-loading null from a
- * failed null is the completion flag, so we thread it through. Pure and unit-tested.
+ * The state is seeded `null` (Loading), then a load resolves to a bitmap (Loaded) or to
+ * `null` (Failed). The only way to tell a still-loading null from a failed null is the
+ * completion flag, so we thread it through. Pure and unit-tested.
  */
 fun occlusionImageState(bitmap: ImageBitmap?, loadCompleted: Boolean): OcclusionImageState = when {
     bitmap != null -> OcclusionImageState.Loaded
@@ -245,6 +250,23 @@ private const val LOADING_LABEL = "Loading image…"
 
 /** Centred text shown when the occlusion base image is missing / failed to decode. */
 private const val FAILED_LABEL = "⚠ image unavailable"
+
+/** Centred text shown when the base image is missing because media is still downloading. */
+private const val DOWNLOADING_LABEL = "↓ image still downloading"
+
+/**
+ * The text in an occlusion placeholder: loading, or — once a load has come back empty —
+ * unavailable, unless media is still downloading ([downloading]), when the file may yet
+ * arrive. The media filename follows, so content is never silently dropped. Pure and
+ * unit-tested.
+ */
+fun occlusionPlaceholderLabel(state: OcclusionImageState, imageName: String, downloading: Boolean): String =
+    when (state) {
+        OcclusionImageState.Loading -> LOADING_LABEL
+        // Loaded is drawn by OcclusionImage, never a placeholder; treated as missing defensively.
+        OcclusionImageState.Failed, OcclusionImageState.Loaded ->
+            "${if (downloading) DOWNLOADING_LABEL else FAILED_LABEL} — $imageName"
+    }
 
 // --- Pure scaling / coordinate math (Android-runtime-free, unit-tested) -------
 
@@ -385,56 +407,59 @@ fun OcclusionImage(node: OcclusionNode, mediaLoader: MediaLoader?, masksHidden: 
         return
     }
 
+    val downloading by mediaLoader.downloading.collectAsState()
+
     // Two signals distinguish Loading from Failed: `completed` flips true only after the
-    // producer returns, so a still-loading null (Loading) is never confused with a
+    // first load returns, so a still-loading null (Loading) is never confused with a
     // resolved null (Failed). See [occlusionImageState].
     //
     // Seed the initial value from the session cache: on a REVEAL the FRONT and BACK sides
-    // are distinct composable instances over the SAME image, so swapping them restarts
-    // produceState from its initial value. Seeding a cache hit (already-decoded bitmap,
-    // marked completed) makes the back side draw the image on frame 1 — no ~2-frame drop
-    // to the Loading placeholder (and the transient scrollbar it caused). A cache miss
-    // (genuinely-not-yet-loaded image) seeds null/false → unchanged Loading behaviour.
-    val loaded by produceState<Pair<ImageBitmap?, Boolean>>(
-        initialValue = mediaLoader.peek(node.image)?.let { it to true } ?: (null to false),
-        node.image,
-        mediaLoader,
-    ) {
-        value = mediaLoader.load(node.image) to true
+    // are distinct composable instances over the SAME image, so the back's state starts
+    // over. Seeding a cache hit (already-decoded bitmap, marked completed) makes the back
+    // side draw the image on frame 1 — no ~2-frame drop to the Loading placeholder (and
+    // the transient scrollbar it caused). A cache miss (genuinely-not-yet-loaded image)
+    // seeds null/false → unchanged Loading behaviour.
+    var loaded by remember(node.image, mediaLoader) {
+        mutableStateOf(mediaLoader.peek(node.image)?.let { it to true } ?: (null to false))
+    }
+    // Load once; while the image is still missing (its file not downloaded yet), again as
+    // media arrives — the placeholder stays up meanwhile, never back to Loading.
+    LaunchedEffect(node.image, mediaLoader) {
+        if (loaded.first != null) return@LaunchedEffect
+        // A try that finds nothing settles Loading into Failed (or "still downloading").
+        mediaLoader.loadImage(node.image, onMiss = { loaded = null to true }) { loaded = it to true }
     }
 
     val (bitmap, completed) = loaded
     val image = bitmap
     if (image == null) {
-        OcclusionImagePlaceholder(occlusionImageState(bitmap, completed), node.image)
+        OcclusionImagePlaceholder(occlusionImageState(bitmap, completed), node.image, downloading)
         return
     }
 
-    val naturalW = node.naturalW
-    val naturalH = node.naturalH
-    val hasDims = naturalW > 0 && naturalH > 0
-    if (!hasDims) {
-        Log.w(
-            OCCLUSION_TAG,
-            "occlusion '${node.image}' has degenerate natural size " +
-                "(${naturalW}x$naturalH); drawing image without masks",
-        )
+    // A card built before its image was downloaded has no size yet (and maybe fractional
+    // masks): settle both from the file, now that it's here.
+    val sized = mediaLoader.naturalSize(node.image)?.let { node.withNaturalSize(it.width, it.height) } ?: node
+    val naturalW = sized.naturalW
+    val naturalH = sized.naturalH
+    // Masks are placed by the image's natural size; without one they can't be, and the
+    // image is never drawn without them (that would show the answer).
+    if (naturalW <= 0 || naturalH <= 0) {
+        Log.w(OCCLUSION_TAG, "occlusion '${node.image}' has no natural size (${naturalW}x$naturalH); not drawn")
+        OcclusionImagePlaceholder(OcclusionImageState.Failed, node.image, downloading)
+        return
     }
 
     // Fill the available width at the image's natural aspect ratio; the Canvas fills
     // the same box so its size is exactly the displayed image size (no extra letterbox
     // under Fit, but fitTransform stays robust if that ever changes).
-    val aspect = if (hasDims) naturalW.toFloat() / naturalH.toFloat() else 1f
-    val modifier = Modifier.fillMaxWidth().let {
-        if (hasDims) it.aspectRatio(aspect) else it
-    }
+    val modifier = Modifier.fillMaxWidth().aspectRatio(naturalW.toFloat() / naturalH.toFloat())
 
     Canvas(modifier = modifier) {
         drawBaseImage(image)
-        if (!hasDims) return@Canvas
         val transform = fitTransform(naturalW, naturalH, size.width, size.height)
         if (transform.scale <= 0f) return@Canvas
-        for (shape in node.shapes) {
+        for (shape in sized.shapes) {
             // The Toggle Masks peek is applied here, at the single point states enter the draw
             // path: masks-off maps every shape to CONTEXT (drawn nothing); masks-on is a no-op.
             val effective = effectiveShapeState(shape.state, masksHidden)
@@ -575,13 +600,8 @@ private fun polygonPath(points: List<Pair<Float, Float>>): Path = Path().apply {
  * dropped (same contract as [MediaImage]'s placeholder).
  */
 @Composable
-private fun OcclusionImagePlaceholder(state: OcclusionImageState, imageName: String) {
-    val label = when (state) {
-        OcclusionImageState.Loading -> LOADING_LABEL
-        OcclusionImageState.Failed -> "$FAILED_LABEL — $imageName"
-        // Loaded is drawn by OcclusionImage; never routed here. Fall back defensively.
-        OcclusionImageState.Loaded -> "$FAILED_LABEL — $imageName"
-    }
+private fun OcclusionImagePlaceholder(state: OcclusionImageState, imageName: String, downloading: Boolean = false) {
+    val label = occlusionPlaceholderLabel(state, imageName, downloading)
     Box(
         modifier = Modifier
             .fillMaxWidth()

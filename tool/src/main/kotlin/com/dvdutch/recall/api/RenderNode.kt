@@ -202,6 +202,7 @@ data class DetailsNode(
  * @property naturalH natural image height in pixels.
  * @property shapes the resolved shapes for this side.
  * @property side `"front"` or `"back"`.
+ * @property fractional shapes still in fractions of the image, awaiting its natural size.
  */
 @Serializable
 @SerialName("occlusion")
@@ -211,6 +212,10 @@ data class OcclusionNode(
     val naturalH: Int,
     val shapes: List<OcclusionShapeState>,
     val side: String,
+    // The card was built before its image was on the phone (media still downloading), so
+    // [naturalW]/[naturalH] are 0 and these [shapes] are still fractions of the image: the
+    // view sizes them from the file once it arrives (see `withNaturalSize`).
+    val fractional: Boolean = false,
 ) : RenderNode
 
 /** How a single occlusion shape must be drawn on the resolved side. */

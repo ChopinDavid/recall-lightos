@@ -744,7 +744,7 @@ private fun RowScope.RenderRowCell(
  * content is never silently dropped.
  */
 @Composable
-internal fun ImageNodePlaceholder(node: ImageNode) {
+internal fun ImageNodePlaceholder(node: ImageNode, downloading: Boolean = false) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -753,7 +753,7 @@ internal fun ImageNodePlaceholder(node: ImageNode) {
             .background(LightThemeTokens.colors.contentSecondary),
     ) {
         LightText(
-            text = node.src,
+            text = imagePlaceholderLabel(node.src, downloading),
             variant = LightTextVariant.Fine,
             color = LightThemeTokens.colors.background,
             modifier = Modifier.padding(0.5f.gridUnitsAsDp()),

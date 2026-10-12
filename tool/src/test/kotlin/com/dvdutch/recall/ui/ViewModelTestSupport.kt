@@ -110,6 +110,15 @@ internal open class FakeSyncController(
         fullDownloadForceArgs.add(force)
         return fullDownloadResult
     }
+
+    // Scripted media start: counted, optionally failing; never reaches the backend.
+    var startMediaSyncCalls = 0
+    var startMediaSyncError: Throwable? = null
+
+    override suspend fun startMediaSync() {
+        startMediaSyncCalls++
+        startMediaSyncError?.let { throw it }
+    }
 }
 
 /**

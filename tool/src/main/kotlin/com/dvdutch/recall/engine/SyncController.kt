@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import net.ankiweb.rsdroid.BackendException
 import java.io.File
 
 /**
@@ -74,6 +75,12 @@ open class SyncController(
      * [SyncFailure]). Defaults to the device's interfaces; tests pass a fixed list.
      */
     private val networks: () -> List<LocalNetwork> = LocalNetwork::ofDevice,
+    /**
+     * Called once a media sync has been started ([sync] with media, [startMediaSync]). It
+     * runs in the background after the call returns; [RecallEngine.controller] wires this to
+     * [MediaSyncTracker.watch] so the app can follow it.
+     */
+    private val onMediaSyncStarted: () -> Unit = {},
 ) {
 
     private companion object {
@@ -150,7 +157,11 @@ open class SyncController(
         }
         return withContext(holder.lane) {
             val out = try {
-                holder.backend().syncCollection(loginOnLane(), media)
+                if (media) clearEndedMediaSync()
+                holder.backend().syncCollection(loginOnLane(), media).also {
+                    // The engine carries on with media in the background once the collection is done.
+                    if (media) onMediaSyncStarted()
+                }
             } catch (t: Throwable) {
                 auth = null // force a fresh login next attempt (v1 SyncManager semantics)
                 val failure = SyncFailure.classify(t, config.endpoint, networks)
@@ -168,6 +179,32 @@ open class SyncController(
             _lastSync.value = now
             persistLastSync(now)
             SyncInfo(synced = true, detail = "ok")
+        }
+    }
+
+    /**
+     * Starts downloading (and uploading) media in the background, as Anki does right after a
+     * full sync: a full transfer moves only the collection, so without this a freshly set-up
+     * phone has no images or audio until its next normal sync. Returns once it's started;
+     * throws on a login or network failure (callers treat it as best-effort).
+     */
+    open suspend fun startMediaSync() {
+        withContext(holder.lane) {
+            clearEndedMediaSync()
+            holder.backend().syncMedia(loginOnLane())
+        }
+        onMediaSyncStarted()
+    }
+
+    /**
+     * A media sync that ended (finished, failed, or was cut short by a full sync) keeps its
+     * result until someone reads it, and starting another would rethrow that instead of
+     * starting. Reading the status clears it; its outcome is old news. MUST be on the lane.
+     */
+    private fun clearEndedMediaSync() {
+        try {
+            holder.backend().mediaSyncStatus()
+        } catch (_: BackendException) {
         }
     }
 

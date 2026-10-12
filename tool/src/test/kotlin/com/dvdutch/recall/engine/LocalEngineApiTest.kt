@@ -22,6 +22,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.assertFalse
 
 /**
  * Real-backend JVM tests for [LocalEngineApi] — no mocks, a temp collection per test,
@@ -99,7 +100,7 @@ class LocalEngineApiTest {
      * returns the deck id. Creates the stock IO notetype, writes a real 640×480 PNG to a
      * temp path, and calls the backend's `addImageOcclusionNote` with the verified grammar.
      */
-    private fun seedOcclusionNote(deckName: String, occludeInactive: Boolean): Long {
+    private fun seedOcclusionNote(deckName: String, occludeInactive: Boolean, fractional: Boolean = false): Long {
         return onEngine { backend ->
             backend.addImageOcclusionNotetype()
             val ioId = backend.getNotetypeNames().first { nn ->
@@ -111,10 +112,14 @@ class LocalEngineApiTest {
             val png = tmpDir.resolve("occ.png")
             Files.write(png, MINIMAL_PNG)
             val oi = if (occludeInactive) ":oi=1" else ""
-            val occlusions =
+            val occlusions = if (fractional) {
+                // The Image Occlusion Enhanced style: coordinates as fractions of the image.
+                "{{c1::image-occlusion:rect:left=.25:top=.5:width=.5:height=.25$oi}}"
+            } else {
                 "{{c1::image-occlusion:rect:left=10:top=20:width=100:height=80$oi}}" +
                     "{{c2::image-occlusion:ellipse:left=200:top=50:width=60:height=40:rx=30:ry=20$oi}}" +
                     "{{c3::image-occlusion:polygon:points=10,10 60,10 35,50$oi}}"
+            }
             backend.addImageOcclusionNote(
                 // Header and Back Extra are card HTML, like any field.
                 png.toString(), occlusions, "<b>Cerebellum</b>", "Coordinates <i>motor</i><br>control", emptyList(), ioId,
@@ -663,5 +668,28 @@ class LocalEngineApiTest {
             backups = backupDir.toFile().listFiles()?.toList().orEmpty()
         }
         assertTrue(backups.isNotEmpty(), "createBackup must have written a backup into $backupDir")
+    }
+
+    @Test
+    fun `an occlusion card built before its image downloads still names the image and sizes it later`() {
+        // The phone has the note but not yet the file: media is still downloading.
+        selectDeck(seedOcclusionNote("Anatomy", occludeInactive = true, fractional = true))
+        Files.delete(tmpDir.resolve("collection.media").resolve("occ.png"))
+
+        val occ = runBlocking { api.queue(20) }.cards.first().front.filterIsInstance<OcclusionNode>().single()
+
+        // rslib reports no name or bytes for a missing file; the name comes from the note.
+        assertEquals("occ.png", occ.image)
+        assertEquals(0, occ.naturalW)
+        assertTrue(occ.fractional, "masks stay fractions until the image's size is known")
+        val rect = occ.shapes.filterIsInstance<OcclusionShapeState.Rect>().single()
+        assertEquals(0.25, rect.left)
+
+        // Once the file is here, its size scales the masks to pixels (640×480).
+        val sized = occ.withNaturalSize(640, 480)
+        val scaled = sized.shapes.filterIsInstance<OcclusionShapeState.Rect>().single()
+        assertEquals(640 to 480, sized.naturalW to sized.naturalH)
+        assertEquals(listOf(160.0, 240.0, 320.0, 120.0), listOf(scaled.left, scaled.top, scaled.width, scaled.height))
+        assertFalse(sized.fractional)
     }
 }

@@ -167,7 +167,7 @@ class StudyViewModel(
             val api = engine.api(controller)
             val m = machineFactory(api)
             machine = m
-            _mediaLoader.value = MediaLoader(engine.storage)
+            _mediaLoader.value = MediaLoader(engine.storage, downloads = engine.mediaTracker)
             audioPlayer = audioPlayerFactory()
             // Mirror the machine's state into our surfaced flow.
             scope.launch(mainDispatcher) {

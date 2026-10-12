@@ -70,6 +70,7 @@ class FirstRunViewModelTest {
             assertEquals(1, controller.loginCalls, "logs in to fail fast on bad creds")
             assertEquals(1, controller.fullSyncCalls)
             assertEquals(listOf(false), controller.fullSyncUploadArgs, "pulls the collection DOWN")
+            assertEquals(1, controller.startMediaSyncCalls, "images and audio start downloading right away")
             assertTrue(engine.openCalls >= 1)
 
             // The entered config was persisted before the pull.
@@ -77,6 +78,20 @@ class FirstRunViewModelTest {
             assertEquals("https://sync.example/", prefs[RecallPreferences.SYNC_ENDPOINT])
             assertEquals("alice", prefs[RecallPreferences.SYNC_USERNAME])
             assertEquals("hunter2", prefs[RecallPreferences.SYNC_PASSWORD])
+        }
+    }
+
+    // Media is best-effort: the collection is down, so a media start that fails can't fail setup.
+    @Test
+    fun `a media sync that can't start still completes the first run`() {
+        val controller = FakeSyncController().apply { startMediaSyncError = RuntimeException("media offline") }
+        vm(controller) { vm, _, _ ->
+            fillAllFields(vm)
+
+            vm.startDownload()
+
+            waitFor(message = { "phase Done" }) { vm.state.value.phase is FirstRunPhase.Done }
+            assertEquals(1, controller.startMediaSyncCalls)
         }
     }
 
@@ -93,6 +108,7 @@ class FirstRunViewModelTest {
             val phase = vm.state.value.phase as FirstRunPhase.Failed
             assertEquals("bad creds", phase.reason)
             assertEquals(0, controller.fullSyncCalls, "no pull after a failed login")
+            assertEquals(0, controller.startMediaSyncCalls, "no media without a collection")
         }
     }
 

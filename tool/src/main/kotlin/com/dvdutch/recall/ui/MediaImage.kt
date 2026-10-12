@@ -6,16 +6,26 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import com.dvdutch.recall.api.ImageNode
+import com.dvdutch.recall.engine.ImageDims
+import com.dvdutch.recall.engine.MediaSyncTracker
+import com.dvdutch.recall.engine.imageDims
 import com.dvdutch.recall.prefs.RecallStorage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.URLDecoder
@@ -25,6 +35,21 @@ private const val MEDIA_PATH_PREFIX = "/v1/media/"
 
 /** Default session capacity: a session's worth of images, not a durable cache (M2 owns that). */
 private const val DEFAULT_MAX_ENTRIES = 16
+
+/** A [MediaLoader] with no media sync to follow: never downloading, nothing arriving. */
+private val NOT_DOWNLOADING: StateFlow<Boolean> = MutableStateFlow(false)
+private val NO_ARRIVALS: StateFlow<Int> = MutableStateFlow(0)
+
+/** Leads the label of an image whose file is still downloading. */
+private const val DOWNLOADING_LABEL = "↓ still downloading"
+
+/**
+ * The text on a missing image's placeholder: its filename, so nothing is silently dropped,
+ * and while media is still downloading ([downloading]), that it's on its way. Pure and
+ * unit-tested.
+ */
+fun imagePlaceholderLabel(src: String, downloading: Boolean): String =
+    if (downloading) "$DOWNLOADING_LABEL — $src" else src
 
 /**
  * Extracts the media filename from an [ImageNode] `src`.
@@ -91,12 +116,18 @@ class SessionLru<K, V>(private val maxEntries: Int) {
  *
  * @param mediaFileOf resolves a bare media name to its on-disk [File] (production
  *   uses [RecallStorage.mediaFile]); injectable so tests point it at a temp dir.
+ * @param downloads the app's [MediaSyncTracker], when there is one: while media is still
+ *   downloading a missing image may yet arrive, so it says so and tries again.
+ * @param measure an image's natural size from its bytes; production reads the header
+ *   ([imageDims]), else asks [BitmapFactory] — tests substitute a pure function.
  * @param decode injectable byte→bitmap step; production uses [BitmapFactory],
  *   tests substitute a pure function (the real decoder needs the Android runtime).
  */
 class MediaLoader(
     private val mediaFileOf: (String) -> File,
     maxEntries: Int = DEFAULT_MAX_ENTRIES,
+    downloads: MediaSyncTracker? = null,
+    private val measure: (ByteArray) -> ImageDims? = ::measureImage,
     private val decode: (ByteArray) -> ImageBitmap? = ::decodeImageBitmap,
 ) {
 
@@ -104,10 +135,25 @@ class MediaLoader(
     constructor(
         storage: RecallStorage,
         maxEntries: Int = DEFAULT_MAX_ENTRIES,
+        downloads: MediaSyncTracker? = null,
+        measure: (ByteArray) -> ImageDims? = ::measureImage,
         decode: (ByteArray) -> ImageBitmap? = ::decodeImageBitmap,
-    ) : this(storage::mediaFile, maxEntries, decode)
+    ) : this(storage::mediaFile, maxEntries, downloads, measure, decode)
 
     private val cache = SessionLru<String, ImageBitmap>(maxEntries)
+
+    // Natural pixel size of each image read so far (the decoded bitmap may be downsampled).
+    private val sizes = java.util.concurrent.ConcurrentHashMap<String, ImageDims>()
+
+    /** True while media is still downloading ([MediaSyncTracker.active]). */
+    val downloading: StateFlow<Boolean> = downloads?.active ?: NOT_DOWNLOADING
+
+    /**
+     * Goes up whenever media may have arrived ([MediaSyncTracker.arrivals]): an image that
+     * couldn't be loaded is worth loading again. Only successes are cached, so a retry
+     * reads the disk afresh.
+     */
+    val arrivals: StateFlow<Int> = downloads?.arrivals ?: NO_ARRIVALS
 
     /**
      * Synchronous, disk-free probe of the session cache. Returns the already-decoded
@@ -115,8 +161,8 @@ class MediaLoader(
      * decodes. This lets a composable seed its initial state with a cache hit so an
      * image already in memory renders on the first frame instead of flashing the
      * Loading placeholder (the front→back occlusion reveal swaps composable instances,
-     * restarting [produceState] from its initial value; without this seed that initial
-     * value is a null bitmap even for a just-loaded image). A miss returns null and the
+     * so the new one's state starts over; without this seed it starts as a null bitmap
+     * even for a just-loaded image). A miss returns null and the
      * caller falls back to the normal load path. Mirrors [load]'s filename extraction so
      * a `/v1/media/...` src probes the same key the bare name populated.
      */
@@ -125,18 +171,35 @@ class MediaLoader(
         return cache.get(name)
     }
 
-    suspend fun load(src: String): ImageBitmap? {
+    /**
+     * The natural pixel size of [src] as measured from its file by a [load] that succeeded,
+     * or null if it hasn't loaded (or couldn't be measured). Unlike the decoded bitmap,
+     * never downsampled — what an occlusion's masks are measured in.
+     */
+    fun naturalSize(src: String): ImageDims? = mediaFilenameFromSrc(src)?.let { sizes[it] }
+
+    suspend fun load(src: String): ImageBitmap? = read(src)?.bitmap
+
+    /**
+     * One read of [src] (from the cache unless [fresh]): its bitmap, and whether that may
+     * come from a half-written file — one read while media was downloading that was
+     * written only moments before. Such a read is never cached, so the next one goes back
+     * to the disk; any other is.
+     */
+    internal suspend fun read(src: String, fresh: Boolean = false): Read? {
         val name = mediaFilenameFromSrc(src) ?: return null
         // Move the file read + decode off the caller's dispatcher: MediaImage's
-        // produceState producer runs on the composition's Main context, and a full-res
+        // load effect runs on the composition's Main context, and a full-res
         // WebP decode (BitmapFactory) inline there janks frames. Dispatchers.Default
         // makes the loader off-main-safe at the source rather than at each call site.
         return withContext(Dispatchers.Default) {
-            cache.get(name)?.let { return@withContext it }
-            val bytes = try {
-                val file = mediaFileOf(name)
+            if (!fresh) cache.get(name)?.let { return@withContext Read(it, partial = false) }
+            val downloadingBefore = downloading.value
+            val file = mediaFileOf(name)
+            val (bytes, writtenAt) = try {
                 if (!file.isFile) return@withContext null // missing media → placeholder
-                file.readBytes()
+                // The write time after the read: a write still going on shows up as "just now".
+                file.readBytes() to file.lastModified()
             } catch (e: Exception) {
                 // Cancellation must propagate — swallowing it into a null would mask a
                 // cancelled load as a genuine failure (and fight structured concurrency).
@@ -145,9 +208,62 @@ class MediaLoader(
                 return@withContext null
             }
             val bitmap = decode(bytes) ?: return@withContext null
-            cache.put(name, bitmap)
-            bitmap
+            measure(bytes)?.let { sizes[name] = it }
+            val downloadingNow = downloadingBefore || downloading.value
+            val partial = downloadingNow && System.currentTimeMillis() - writtenAt < SETTLED_MILLIS
+            if (!partial) cache.put(name, bitmap)
+            Read(bitmap, partial)
         }
+    }
+
+    /** A [read]'s bitmap, and whether it may be of a file still being written. */
+    internal data class Read(val bitmap: ImageBitmap, val partial: Boolean)
+}
+
+/**
+ * How long ago a media file must have been written to count as complete while media is
+ * still downloading: the engine writes each file in one go, so anything older is whole.
+ */
+private const val SETTLED_MILLIS = 3_000L
+
+/**
+ * Loads [src] for a view, handing each bitmap to [show]: at once if its file is there,
+ * else again each time media arrives (one load at a time; arrivals during a load are
+ * folded into the next try), calling [onMiss] after each try that finds nothing. A bitmap
+ * read while media was still downloading may come from a half-written file, so it is read
+ * once more when the download ends. Returns when the image is settled; a file that never
+ * arrives keeps it waiting, cancelled with the view.
+ */
+internal suspend fun MediaLoader.loadImage(src: String, onMiss: () -> Unit = {}, show: (ImageBitmap) -> Unit) {
+    var partial = false
+    arrivals.first {
+        val read = read(src) ?: run {
+            onMiss()
+            return@first false
+        }
+        show(read.bitmap)
+        partial = read.partial
+        true
+    }
+    if (partial) {
+        downloading.first { !it }
+        read(src, fresh = true)?.let { show(it.bitmap) }
+    }
+}
+
+/**
+ * Production natural-size probe: the header sniffer ([imageDims]) for the formats it
+ * knows, else [BitmapFactory]'s bounds (BMP, HEIF, AVIF…) — never the decoded bitmap's
+ * size, which may be downsampled. Android-runtime only.
+ */
+private fun measureImage(bytes: ByteArray): ImageDims? {
+    imageDims(bytes)?.let { return it }
+    return try {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth > 0 && bounds.outHeight > 0) ImageDims(bounds.outWidth, bounds.outHeight) else null
+    } catch (_: RuntimeException) {
+        null // no Android runtime (JVM unit tests): only the header sniffer applies
     }
 }
 
@@ -236,21 +352,24 @@ fun imageDisplayMode(
  * the shared labelled placeholder (both while loading and on any failure). The image
  * is fit to the available content width (scaling small images up and large images
  * down, like Anki), preserving the explicit-HTML aspect when the node carries `w`/`h`
- * and otherwise the bitmap's natural aspect. See [imageDisplayMode].
+ * and otherwise the bitmap's natural aspect. See [imageDisplayMode]. An image whose file
+ * hasn't been downloaded yet says so, and shows up as soon as it arrives.
  */
 @Composable
 fun MediaImage(node: ImageNode, loader: MediaLoader) {
+    val downloading by loader.downloading.collectAsState()
     // Seed from the session cache so an already-decoded image renders on the first frame
     // instead of flashing the placeholder when a reveal (or any recomposition that swaps
-    // this composable instance) restarts produceState. Cache miss → null, unchanged
-    // loading behaviour. See [MediaLoader.peek].
-    val bitmap by produceState<ImageBitmap?>(initialValue = loader.peek(node.src), node.src, loader) {
-        value = loader.load(node.src)
+    // this composable instance) starts over. Cache miss → null, unchanged loading
+    // behaviour. See [MediaLoader.peek].
+    var bitmap by remember(node.src, loader) { mutableStateOf(loader.peek(node.src)) }
+    LaunchedEffect(node.src, loader) {
+        if (bitmap == null) loader.loadImage(node.src) { bitmap = it }
     }
 
     val image = bitmap
     if (image == null) {
-        ImageNodePlaceholder(node)
+        ImageNodePlaceholder(node, downloading)
         return
     }
 

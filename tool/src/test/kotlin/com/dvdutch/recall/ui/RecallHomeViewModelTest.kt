@@ -9,6 +9,13 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import com.dvdutch.recall.engine.MediaSyncTracker
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import java.util.Collections
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * The deck-list Home screen routing ([RecallHomeViewModel]). Pins the three [load] routes
@@ -229,5 +236,26 @@ class RecallHomeViewModelTest {
             val after = runBlocking { ds.data.first() }[RecallPreferences.EXPANDED_DECK_IDS]
             assertTrue(after.isNullOrEmpty(), "collapse removes the id, was $after")
         }
+    }
+
+    // Home's "downloading images and audio" line follows the app's media tracker, once a
+    // media sync has run long enough to be worth a line (see MEDIA_LINE_DELAY_MS).
+    @Test
+    fun `Home says media is downloading while a media sync runs`() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val running = AtomicBoolean(true)
+        val tracker = MediaSyncTracker(isActive = { running.get() }, scope = scope, pollMillis = 20)
+        vm({ dir, ds -> object : FakeEngine(dir, ds) { override val mediaTracker: MediaSyncTracker = tracker } }) { vm, _, _ ->
+            val seen = Collections.synchronizedList(mutableListOf<Boolean>())
+            val job = scope.launch { vm.mediaDownloading.collect { seen.add(it) } }
+            waitFor(message = { "starts false" }) { seen.toList() == listOf(false) }
+
+            tracker.watch()
+            waitFor(timeoutMs = MEDIA_LINE_DELAY_MS + 3_000, message = { "line shown" }) { seen.lastOrNull() == true }
+            running.set(false)
+            waitFor(message = { "line cleared" }) { seen.lastOrNull() == false }
+            job.cancel()
+        }
+        scope.cancel()
     }
 }

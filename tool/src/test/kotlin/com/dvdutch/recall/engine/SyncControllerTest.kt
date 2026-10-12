@@ -14,6 +14,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Live-server tests for [SyncController]. These drive the REAL rslib sync stack
@@ -286,5 +287,59 @@ class SyncControllerTest {
         val info = runBlocking { controller.sync(media = false) }
         assertFalse(info.synced)
         assertTrue("needs attention" in info.detail, "detail must mention needs attention: ${info.detail}")
+    }
+
+    /** Waits (bounded) for the engine's background media sync to finish. */
+    private fun awaitMediaIdle() {
+        val deadline = System.currentTimeMillis() + 20_000
+        while (runBlocking { withContext(EngineHolder.lane) { EngineHolder.backend().mediaSyncStatus().active } }) {
+            check(System.currentTimeMillis() < deadline) { "media sync never finished" }
+            Thread.sleep(50)
+        }
+    }
+
+    @Test
+    fun `a sync with media, or a media start, tells the app a media sync is under way`() {
+        val started = AtomicInteger()
+        val controller = SyncController(config(), EngineHolder, onMediaSyncStarted = { started.incrementAndGet() })
+        runBlocking { controller.fullSync(upload = true) }
+
+        runBlocking { controller.sync(media = false) }
+        assertEquals(0, started.get(), "a collection-only sync starts no media")
+        val info = runBlocking { controller.sync(media = true) }
+        assertTrue(info.synced, info.detail)
+        assertEquals(1, started.get())
+        awaitMediaIdle()
+        runBlocking { controller.startMediaSync() }
+        assertEquals(2, started.get())
+        awaitMediaIdle()
+    }
+
+    @Test
+    fun `startMediaSync brings the server's images to a freshly set-up phone`() {
+        // Phone A (the collection from setUp) has an image: push the collection, then media.
+        val probe = byteArrayOf(1, 2, 3, 4, 5)
+        val mediaA = tmpDir.resolve("collection.media")
+        Files.createDirectories(mediaA)
+        Files.write(mediaA.resolve("recall-probe.png"), probe)
+        val a = SyncController(config(), EngineHolder)
+        runBlocking { a.fullSync(upload = true) }
+        assertTrue(runBlocking { a.sync(media = true) }.synced)
+        awaitMediaIdle()
+
+        // Phone B is set up from scratch: the full download brings the collection only.
+        val phoneB = tmpDir.resolve("phone-b")
+        Files.createDirectories(phoneB)
+        runBlocking { withContext(EngineHolder.lane) { EngineHolder.openCollection(phoneB.resolve("collection.anki2").toString()) } }
+        val b = SyncController(config(), EngineHolder)
+        runBlocking { b.fullSync(upload = false) }
+        val probeOnB = phoneB.resolve("collection.media").resolve("recall-probe.png")
+        assertFalse(Files.exists(probeOnB), "a full download moves no media")
+
+        // Starting media fetches it in the background.
+        runBlocking { b.startMediaSync() }
+        awaitMediaIdle()
+        assertTrue(Files.exists(probeOnB), "the image arrived")
+        assertTrue(probe.contentEquals(Files.readAllBytes(probeOnB)))
     }
 }

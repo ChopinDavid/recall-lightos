@@ -36,6 +36,9 @@ import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
 
+
+/** Home's line while media is still downloading (see [RecallHomeViewModel.mediaDownloading]). */
+internal const val MEDIA_DOWNLOADING_LINE = "downloading images and audio…"
 /**
  * The ghosted alpha for the SYNC bottom-bar action while a manual sync is in flight — the same
  * lightened, "not-actionable" treatment the study screen's idle undo glyph uses (there via
@@ -64,6 +67,7 @@ class RecallHomeScreen(sealedActivity: SealedLightActivity) :
     override fun Content() {
         val themeColors by LightThemeController.colors.collectAsState()
         val state by viewModel.uiState.collectAsState()
+        val mediaDownloading by viewModel.mediaDownloading.collectAsState()
 
         // The very first show fires onScreenShow -> load(); this covers the
         // in-Compose initial paint too (idempotent with onScreenShow).
@@ -106,6 +110,19 @@ class RecallHomeScreen(sealedActivity: SealedLightActivity) :
                 (state.syncState as? SyncState.Failed)?.let { failed ->
                     LightText(
                         text = failed.message,
+                        variant = LightTextVariant.Fine,
+                        lighten = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 1f.gridUnitsAsDp(), vertical = 0.25f.gridUnitsAsDp()),
+                    )
+                }
+
+                // Likewise while images and audio are still coming down after a sync: a card
+                // studied meanwhile may be missing one (it fills in as soon as it arrives).
+                if (mediaDownloading) {
+                    LightText(
+                        text = MEDIA_DOWNLOADING_LINE,
                         variant = LightTextVariant.Fine,
                         lighten = true,
                         modifier = Modifier

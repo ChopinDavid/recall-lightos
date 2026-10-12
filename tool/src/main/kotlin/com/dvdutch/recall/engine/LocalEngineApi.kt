@@ -81,6 +81,12 @@ class LocalEngineApi(
          * on the note IS "Mark Note"; a note carrying it renders with the star indicator.
          */
         const val MARK_TAG = "marked"
+
+        /** The Image field's position in the stock Image Occlusion notetype. */
+        const val STOCK_IMAGE_FIELD = 1
+
+        /** The field tag that marks an Image Occlusion notetype's Image field. */
+        val IMAGE_OCCLUSION_FIELD_IMAGE_VALUE = anki.notetypes.ImageOcclusionField.IMAGE_OCCLUSION_FIELD_IMAGE_VALUE
     }
 
     /**
@@ -289,13 +295,26 @@ class LocalEngineApi(
         // card.templateIdx is the 0-based card ordinal; the tested occlusion is 1-based.
         val tested = card.templateIdx + 1
         val dims = imageDims(occNote.imageData.toByteArray()) ?: ImageDims(0, 0)
+        // rslib names the image (and reads its bytes) only once the file is on the phone.
+        // While media is still downloading, take the name from the note's Image field —
+        // found by its tag, as rslib finds it, else the stock position — so the card can
+        // show the image as soon as it arrives; its size, and any fractional masks, are
+        // then settled from the file (withNaturalSize).
+        val imageField = notetype.fieldsList.indexOfFirst {
+            it.config.hasTag() && it.config.tag == IMAGE_OCCLUSION_FIELD_IMAGE_VALUE
+        }.takeIf { it >= 0 } ?: STOCK_IMAGE_FIELD
+        val image = occNote.imageFileName.ifEmpty {
+            note.fieldsList.getOrNull(imageField)?.let(::occlusionImageSrc).orEmpty()
+        }
+        val sized = dims.width > 0 && dims.height > 0
 
         fun sideNode(isBack: Boolean) = OcclusionNode(
-            image = occNote.imageFileName,
+            image = image,
             naturalW = dims.width,
             naturalH = dims.height,
             shapes = resolveShapes(parsed, tested, isBack, dims.width, dims.height),
             side = if (isBack) "back" else "front",
+            fractional = !sized && isFractional(parsed),
         )
 
         // Header (both sides) and Back Extra (back only) are card HTML like any other
