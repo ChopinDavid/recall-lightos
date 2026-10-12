@@ -121,10 +121,10 @@ private fun allCoords(note: ParsedOcclusion): List<Double> =
  * Decides whether a note's shape coordinates are FRACTIONAL ratios (0..1 of the image)
  * rather than absolute natural pixels.
  *
- * The "Image Occlusion Enhanced" / "Image Occlusion+" notetype (the format the med-student
- * majority actually uses) stores every coordinate as a fraction of the image dimension
- * (e.g. `left=.1363 width=.1882`), whereas Anki's modern built-in "Image Occlusion"
- * notetype stores absolute pixels (e.g. `left=150 width=200`).
+ * Anki's built-in "Image Occlusion" notetype stores every coordinate as a fraction of the
+ * image as shown (e.g. `left=.1363 width=.1882`) — in every stable release since 23.10
+ * (ankitects/anki#2513) — while notes from its 2023 pre-releases carry absolute pixels
+ * (e.g. `left=150 width=200`).
  *
  * Detection is per-note (a note is uniformly one or the other) and evidence-based: across
  * real IO+ decks the maximum coordinate observed was 0.9439 — i.e. every fractional coord
@@ -172,10 +172,10 @@ private fun scaleToPixels(shape: OcclusionShapeState, nW: Int, nH: Int): Occlusi
  * the note's occlusion order (which is NOT guaranteed sorted by ordinal from rslib), but
  * ordering is irrelevant to correctness since each shape carries its own state.
  *
- * If the note's coordinates are FRACTIONAL ratios (see [isFractional] — the Image
- * Occlusion Enhanced format) and the natural image dimensions ([naturalW]/[naturalH]) are
+ * If the note's coordinates are FRACTIONAL ratios (see [isFractional] — what Anki writes)
+ * and the natural image dimensions ([naturalW]/[naturalH], as shown: see [imageDims]) are
  * known (`> 0`), each coordinate is multiplied up to pixels here so the UI layer can stay
- * pixel-only. Pixel-format notes (the modern built-in notetype) pass through unchanged.
+ * pixel-only. Pixel-format notes (Anki's 2023 pre-releases) pass through unchanged.
  * When natural dims are unknown, fractional coords are left as-is (the UI already declines
  * to draw masks without known dims).
  */
@@ -232,9 +232,151 @@ data class ImageDims(val width: Int, val height: Int)
  * works in JVM unit tests where Android's `BitmapFactory` is unavailable. Supports the
  * formats Anki media realistically carries: PNG, JPEG, GIF, and (RIFF) WebP. Returns
  * `null` when the format is unrecognised or the header is truncated.
+ *
+ * The size is the image's size as SHOWN: a photo whose EXIF Orientation turns it a quarter
+ * (a phone held upright) has its width and height swapped, as every browser — and so
+ * Anki's occlusion editor, which measures masks on the image it shows — displays it (see
+ * [imageOrientation]).
  */
-fun imageDims(bytes: ByteArray): ImageDims? =
-    pngDims(bytes) ?: gifDims(bytes) ?: webpDims(bytes) ?: jpegDims(bytes)
+fun imageDims(bytes: ByteArray): ImageDims? {
+    val stored = pngDims(bytes) ?: gifDims(bytes) ?: webpDims(bytes) ?: jpegDims(bytes) ?: return null
+    return if (exifTurn(imageOrientation(bytes)).swapsAxes) ImageDims(stored.height, stored.width) else stored
+}
+
+/**
+ * How to show a stored image upright: rotate it [degrees] clockwise, then, if [mirror],
+ * flip it left to right.
+ */
+data class ExifTurn(val degrees: Int, val mirror: Boolean) {
+    val isIdentity: Boolean get() = degrees == 0 && !mirror
+
+    /** A quarter turn: the shown image's width is the stored height, and vice versa. */
+    val swapsAxes: Boolean get() = degrees == 90 || degrees == 270
+}
+
+/**
+ * The turn an EXIF Orientation value asks for (the same as Android's `ExifInterface`): 1 is
+ * upright, 3/6/8 rotate, 2/4/5/7 also mirror. Anything else counts as upright.
+ */
+fun exifTurn(orientation: Int): ExifTurn = when (orientation) {
+    2 -> ExifTurn(0, mirror = true)
+    3 -> ExifTurn(180, mirror = false)
+    4 -> ExifTurn(180, mirror = true)
+    5 -> ExifTurn(90, mirror = true)
+    6 -> ExifTurn(90, mirror = false)
+    7 -> ExifTurn(270, mirror = true)
+    8 -> ExifTurn(270, mirror = false)
+    else -> ExifTurn(0, mirror = false)
+}
+
+/**
+ * The EXIF Orientation (1–8) an image carries, read the way Chromium (so Anki, which shows
+ * cards in it) reads it: a JPEG's first "Exif" APP1 segment, or a PNG's eXIf chunk when it
+ * comes before the image data. Anything else — no tag, a tag that can't be read, WebP
+ * (whose EXIF Chromium ignores), other formats — is upright (1).
+ */
+fun imageOrientation(b: ByteArray): Int = when {
+    isJpeg(b) -> jpegOrientation(b)
+    isPng(b) -> pngOrientation(b)
+    else -> 1
+}
+
+private fun isJpeg(b: ByteArray): Boolean = b.size >= 4 && u8(b, 0) == 0xFF && u8(b, 1) == 0xD8
+
+private fun isPng(b: ByteArray): Boolean = b.size >= 8 && (0 until 8).all { u8(b, it) == PNG_SIGNATURE[it] }
+
+private val PNG_SIGNATURE = intArrayOf(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
+
+/**
+ * A JPEG's EXIF Orientation — how a camera records that the photo was taken sideways or
+ * upside down: from the first APP1 segment that is "Exif", as Chromium takes it, else 1.
+ */
+fun jpegOrientation(b: ByteArray): Int {
+    if (!isJpeg(b)) return 1
+    var i = 2
+    while (i + 3 < b.size) {
+        if (u8(b, i) != 0xFF) { i++; continue }
+        var marker = u8(b, i + 1)
+        while (marker == 0xFF && i + 2 < b.size) { i++; marker = u8(b, i + 1) }
+        if (i + 3 >= b.size) return 1
+        // The headers end where the image data starts.
+        if (marker == 0xDA || marker == 0xD9) return 1
+        val len = (u8(b, i + 2) shl 8) or u8(b, i + 3)
+        if (len < 2) return 1
+        val start = i + 4
+        val end = minOf(b.size, i + 2 + len)
+        // "Exif\0" and a pad byte, then the TIFF structure.
+        if (marker == 0xE1 && end - start > 6 && (0 until 5).all { b[start + it] == EXIF_HEADER[it] }) {
+            return tiffOrientation(b, start + 6, end) ?: 1
+        }
+        i += 2 + len
+    }
+    return 1
+}
+
+private val EXIF_HEADER = byteArrayOf('E'.code.toByte(), 'x'.code.toByte(), 'i'.code.toByte(), 'f'.code.toByte(), 0)
+
+/**
+ * A PNG's EXIF Orientation from its eXIf chunk (bare TIFF data), honoured only before the
+ * first IDAT — metadata after the image data is ignored, as in Chromium — else 1.
+ */
+private fun pngOrientation(b: ByteArray): Int {
+    var i = 8
+    while (i + 8 <= b.size) {
+        val len = be32(b, i).toLong() and 0xFFFFFFFFL
+        val type = String(b, i + 4, 4, Charsets.ISO_8859_1)
+        if (type == "IDAT" || type == "IEND") return 1
+        val data = i + 8
+        if (data + len > b.size) return 1
+        if (type == "eXIf") return tiffOrientation(b, data, data + len.toInt()) ?: 1
+        i = data + len.toInt() + 4 // past the data and its CRC
+    }
+    return 1
+}
+
+/**
+ * The Orientation tag of the TIFF structure at [tiff] (ending at [end]): byte order ("II"
+ * little / "MM" big endian), 42, then the first directory (IFD0); like Chromium, when IFD0
+ * has no Orientation the Exif sub-directory it points to is read too. Null when absent,
+ * malformed, or not a single SHORT in 1..8.
+ */
+private fun tiffOrientation(b: ByteArray, tiff: Int, end: Int): Int? {
+    if (end - tiff < 8) return null
+    val little = when {
+        b[tiff] == 'I'.code.toByte() && b[tiff + 1] == 'I'.code.toByte() -> true
+        b[tiff] == 'M'.code.toByte() && b[tiff + 1] == 'M'.code.toByte() -> false
+        else -> return null
+    }
+    fun u16(at: Int): Int = if (little) u8(b, at) or (u8(b, at + 1) shl 8) else (u8(b, at) shl 8) or u8(b, at + 1)
+    fun u32(at: Int): Long = if (little) {
+        u16(at).toLong() or (u16(at + 2).toLong() shl 16)
+    } else {
+        (u16(at).toLong() shl 16) or u16(at + 2).toLong()
+    }
+    if (u16(tiff + 2) != 42) return null
+
+    /** The Orientation in the directory at [offset]; from IFD0, also its Exif sub-directory. */
+    fun directory(offset: Long, root: Boolean): Int? {
+        val at = tiff + offset // Long: no overflow before the bounds check
+        if (at + 2 > end) return null
+        val ifd = at.toInt()
+        var exifIfd: Long? = null
+        for (k in 0 until u16(ifd)) {
+            val entry = ifd + 2 + 12 * k
+            if (entry + 12 > end) break
+            when (u16(entry)) {
+                // Orientation: one SHORT (3), its value in the first two bytes of the value field.
+                0x0112 -> if (u16(entry + 2) == 3 && u32(entry + 4) == 1L) {
+                    u16(entry + 8).takeIf { it in 1..8 }?.let { return it }
+                }
+                // The Exif sub-directory's offset (a LONG).
+                0x8769 -> if (root && u16(entry + 2) == 4) exifIfd = u32(entry + 8)
+            }
+        }
+        return exifIfd?.let { directory(it, root = false) }
+    }
+    return directory(u32(tiff + 4), root = true)
+}
 
 private fun u8(b: ByteArray, i: Int): Int = b[i].toInt() and 0xFF
 

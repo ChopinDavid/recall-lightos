@@ -8,6 +8,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import com.dvdutch.recall.api.OcclusionNode
+import kotlin.test.assertFalse
 
 /**
  * Pure-logic tests for the occlusion shape parser and per-side state resolver — the
@@ -371,6 +372,8 @@ class OcclusionTest {
     private fun bytes(vararg v: Int): ByteArray = ByteArray(v.size) { v[it].toByte() }
 
     private fun be16(n: Int) = listOf((n shr 8) and 0xFF, n and 0xFF)
+
+    private fun be32(n: Int) = be16(n ushr 16) + be16(n and 0xFFFF)
     private fun le16(n: Int) = listOf(n and 0xFF, (n shr 8) and 0xFF)
 
     /** PNG: 8-byte signature, IHDR length+type, then big-endian width/height. */
@@ -576,5 +579,117 @@ class OcclusionTest {
         assertEquals(pixels.copy(naturalW = 640, naturalH = 480), pixels.withNaturalSize(640, 480))
         // No usable size: unchanged.
         assertEquals(pixels, pixels.withNaturalSize(0, 480))
+    }
+
+    // --- EXIF orientation: photos stored sideways, shown upright ------------------
+
+    /** TIFF data whose IFD0 holds only Orientation = [orientation] (one value of [type]). */
+    private fun tiffWithOrientation(orientation: Int, little: Boolean = false, type: Int = 3, count: Int = 1): List<Int> {
+        fun u16(v: Int) = if (little) listOf(v and 0xFF, v shr 8) else listOf(v shr 8, v and 0xFF)
+        fun u32(v: Int) = if (little) u16(v and 0xFFFF) + u16(v ushr 16) else u16(v ushr 16) + u16(v and 0xFFFF)
+        val order = if (little) listOf(0x49, 0x49) else listOf(0x4D, 0x4D)
+        // TIFF header (IFD0 at offset 8), one 12-byte entry, then "no next IFD".
+        return order + u16(42) + u32(8) + u16(1) + u16(0x0112) + u16(type) + u32(count) + u16(orientation) + listOf(0, 0) + u32(0)
+    }
+
+    /** An APP1 segment of "Exif\0" + [pad] + [tiff]. */
+    private fun exifSegment(tiff: List<Int>, pad: Int = 0): List<Int> {
+        val payload = listOf(0x45, 0x78, 0x69, 0x66, 0, pad) + tiff
+        return listOf(0xFF, 0xE1) + be16(payload.size + 2) + payload
+    }
+
+    /** An APP1 "Exif" segment whose IFD0 holds only Orientation = [orientation]. */
+    private fun exifApp1(orientation: Int, little: Boolean = false, type: Int = 3, count: Int = 1): List<Int> =
+        exifSegment(tiffWithOrientation(orientation, little, type, count))
+
+    @Test
+    fun `jpegOrientation reads the EXIF tag in either byte order`() {
+        assertEquals(6, jpegOrientation(jpeg(listOf(exifApp1(6)), 0xC0, 400, 300)))
+        assertEquals(8, jpegOrientation(jpeg(listOf(exifApp1(8, little = true)), 0xC0, 400, 300)))
+        // Behind an APP0 (JFIF) and an XMP APP1, as phone photos often have them.
+        val app0 = listOf(0xFF, 0xE0) + be16(16) + List(14) { 0 }
+        val xmp = "http://ns.adobe.com/xap/1.0/".map { it.code } + listOf(0) + List(10) { 0x20 }
+        val xmpApp1 = listOf(0xFF, 0xE1) + be16(xmp.size + 2) + xmp
+        assertEquals(3, jpegOrientation(jpeg(listOf(app0, xmpApp1, exifApp1(3)), 0xC0, 400, 300)))
+    }
+
+    @Test
+    fun `jpegOrientation is upright when there is nothing usable to read`() {
+        assertEquals(1, jpegOrientation(jpeg(emptyList(), 0xC0, 400, 300)), "no EXIF")
+        assertEquals(1, jpegOrientation(jpeg(listOf(exifApp1(9)), 0xC0, 400, 300)), "out of range")
+        assertEquals(1, jpegOrientation(jpeg(listOf(exifApp1(6, type = 4)), 0xC0, 400, 300)), "not a SHORT")
+        assertEquals(1, jpegOrientation(jpeg(listOf(exifApp1(6)), 0xC0, 400, 300).copyOf(20)), "truncated")
+        assertEquals(1, jpegOrientation("not an image".toByteArray()))
+    }
+
+    @Test
+    fun `imageDims gives a quarter-turned photo's size as shown`() {
+        // Stored 400×300, shown 300×400 for 5–8; a half turn or a mirror keeps its size.
+        for (o in 5..8) assertEquals(ImageDims(300, 400), imageDims(jpeg(listOf(exifApp1(o)), 0xC0, 400, 300)), "orientation $o")
+        for (o in 1..4) assertEquals(ImageDims(400, 300), imageDims(jpeg(listOf(exifApp1(o)), 0xC0, 400, 300)), "orientation $o")
+    }
+
+    @Test
+    fun `exifTurn maps each orientation to a rotation and mirror`() {
+        assertEquals(
+            listOf(0 to false, 0 to true, 180 to false, 180 to true, 90 to true, 90 to false, 270 to true, 270 to false),
+            (1..8).map { exifTurn(it).let { t -> t.degrees to t.mirror } },
+        )
+        assertTrue(exifTurn(1).isIdentity)
+        assertTrue(exifTurn(0).isIdentity, "unknown is upright")
+        assertTrue(exifTurn(6).swapsAxes)
+        assertFalse(exifTurn(3).swapsAxes)
+    }
+
+    @Test
+    fun `jpegOrientation reads Orientation from the Exif sub-directory when IFD0 lacks it`() {
+        // IFD0 (at 8) points to the Exif sub-directory (at 26), which holds Orientation.
+        fun sub(ifd0Orientation: Int?): List<Int> {
+            val ifd0 = if (ifd0Orientation == null) {
+                listOf(0, 1) + listOf(0x87, 0x69, 0, 4, 0, 0, 0, 1, 0, 0, 0, 26) + listOf(0, 0, 0, 0)
+            } else {
+                listOf(0, 2) + listOf(0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, ifd0Orientation, 0, 0) +
+                    listOf(0x87, 0x69, 0, 4, 0, 0, 0, 1, 0, 0, 0, 38) + listOf(0, 0, 0, 0)
+            }
+            val exifIfd = listOf(0, 1) + listOf(0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0) + listOf(0, 0, 0, 0)
+            return exifSegment(listOf(0x4D, 0x4D, 0, 42, 0, 0, 0, 8) + ifd0 + exifIfd)
+        }
+        assertEquals(6, jpegOrientation(jpeg(listOf(sub(null)), 0xC0, 400, 300)))
+        assertEquals(ImageDims(300, 400), imageDims(jpeg(listOf(sub(null)), 0xC0, 400, 300)))
+        // IFD0's own value wins over the sub-directory's.
+        assertEquals(1, jpegOrientation(jpeg(listOf(sub(1)), 0xC0, 400, 300)))
+    }
+
+    @Test
+    fun `only the first Exif segment counts, as in Chromium`() {
+        assertEquals(1, jpegOrientation(jpeg(listOf(exifApp1(0), exifApp1(6)), 0xC0, 400, 300)))
+        assertEquals(1, jpegOrientation(jpeg(listOf(exifApp1(6, count = 2)), 0xC0, 400, 300)), "not a single value")
+        // The byte after "Exif\0" is padding, whatever its value.
+        assertEquals(6, jpegOrientation(jpeg(listOf(exifSegment(tiffWithOrientation(6), pad = 0xFF)), 0xC0, 400, 300)))
+    }
+
+    /** A PNG: signature, IHDR ([w]×[h]), the [before] chunks, IDAT, the [after] chunks, IEND. */
+    private fun pngWithChunks(w: Int, h: Int, before: List<List<Int>> = emptyList(), after: List<List<Int>> = emptyList()): ByteArray {
+        fun chunk(type: String, data: List<Int>) = be32(data.size) + type.map { it.code } + data + listOf(0, 0, 0, 0)
+        val ihdr = chunk("IHDR", be32(w) + be32(h) + listOf(8, 2, 0, 0, 0))
+        val out = listOf(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A) + ihdr +
+            before.flatten() + chunk("IDAT", listOf(0)) + after.flatten() + chunk("IEND", emptyList())
+        return bytes(*out.toIntArray())
+    }
+
+    private fun exifChunk(orientation: Int): List<Int> {
+        val tiff = tiffWithOrientation(orientation)
+        return be32(tiff.size) + "eXIf".map { it.code } + tiff + listOf(0, 0, 0, 0)
+    }
+
+    @Test
+    fun `a PNG's eXIf orientation counts only before the image data`() {
+        assertEquals(6, imageOrientation(pngWithChunks(600, 400, before = listOf(exifChunk(6)))))
+        assertEquals(ImageDims(400, 600), imageDims(pngWithChunks(600, 400, before = listOf(exifChunk(6)))))
+        assertEquals(1, imageOrientation(pngWithChunks(600, 400, after = listOf(exifChunk(6)))))
+        assertEquals(ImageDims(600, 400), imageDims(pngWithChunks(600, 400, after = listOf(exifChunk(6)))))
+        // A chunk length running past the end is no orientation at all.
+        val truncated = pngWithChunks(600, 400, before = listOf(exifChunk(6))).copyOf(40)
+        assertEquals(1, imageOrientation(truncated))
     }
 }

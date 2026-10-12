@@ -100,7 +100,12 @@ class LocalEngineApiTest {
      * returns the deck id. Creates the stock IO notetype, writes a real 640×480 PNG to a
      * temp path, and calls the backend's `addImageOcclusionNote` with the verified grammar.
      */
-    private fun seedOcclusionNote(deckName: String, occludeInactive: Boolean, fractional: Boolean = false): Long {
+    private fun seedOcclusionNote(
+        deckName: String,
+        occludeInactive: Boolean,
+        fractional: Boolean = false,
+        image: Pair<String, ByteArray> = "occ.png" to MINIMAL_PNG,
+    ): Long {
         return onEngine { backend ->
             backend.addImageOcclusionNotetype()
             val ioId = backend.getNotetypeNames().first { nn ->
@@ -109,8 +114,8 @@ class LocalEngineApiTest {
             }.id
             val deckId = deckIdCreating(backend, deckName)
             backend.setCurrentDeck(deckId)
-            val png = tmpDir.resolve("occ.png")
-            Files.write(png, MINIMAL_PNG)
+            val png = tmpDir.resolve(image.first)
+            Files.write(png, image.second)
             val oi = if (occludeInactive) ":oi=1" else ""
             val occlusions = if (fractional) {
                 // The Image Occlusion Enhanced style: coordinates as fractions of the image.
@@ -691,5 +696,22 @@ class LocalEngineApiTest {
         assertEquals(640 to 480, sized.naturalW to sized.naturalH)
         assertEquals(listOf(160.0, 240.0, 320.0, 120.0), listOf(scaled.left, scaled.top, scaled.width, scaled.height))
         assertFalse(sized.fractional)
+    }
+
+    @Test
+    fun `an occlusion card from a sideways-stored photo is sized as it is shown`() {
+        // A phone photo: stored 640×480 with EXIF Orientation 6 (turn a quarter clockwise).
+        val app1 = byteArrayOf(
+            0xFF.toByte(), 0xE1.toByte(), 0, 34, 0x45, 0x78, 0x69, 0x66, 0, 0,
+            0x4D, 0x4D, 0, 42, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0, 0, 0,
+        )
+        val sof = byteArrayOf(0xFF.toByte(), 0xC0.toByte(), 0, 11, 8, 0x01, 0xE0.toByte(), 0x02, 0x80.toByte(), 1, 1, 0x11, 0)
+        val jpeg = byteArrayOf(0xFF.toByte(), 0xD8.toByte()) + app1 + sof + byteArrayOf(0xFF.toByte(), 0xD9.toByte())
+        selectDeck(seedOcclusionNote("Anatomy", occludeInactive = true, image = "photo.jpg" to jpeg))
+
+        val occ = runBlocking { api.queue(20) }.cards.first().front.filterIsInstance<OcclusionNode>().single()
+
+        assertEquals("photo.jpg", occ.image)
+        assertEquals(480 to 640, occ.naturalW to occ.naturalH, "the masks were drawn on the upright photo")
     }
 }

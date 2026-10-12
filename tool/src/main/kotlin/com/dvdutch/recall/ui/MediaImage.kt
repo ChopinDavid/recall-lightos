@@ -1,6 +1,8 @@
 package com.dvdutch.recall.ui
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,9 +19,12 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import com.dvdutch.recall.api.ImageNode
+import com.dvdutch.recall.engine.ExifTurn
 import com.dvdutch.recall.engine.ImageDims
 import com.dvdutch.recall.engine.MediaSyncTracker
+import com.dvdutch.recall.engine.exifTurn
 import com.dvdutch.recall.engine.imageDims
+import com.dvdutch.recall.engine.imageOrientation
 import com.dvdutch.recall.prefs.RecallStorage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -261,7 +266,10 @@ private fun measureImage(bytes: ByteArray): ImageDims? {
     return try {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-        if (bounds.outWidth > 0 && bounds.outHeight > 0) ImageDims(bounds.outWidth, bounds.outHeight) else null
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        // As shown, like imageDims: a quarter-turned photo's sides swap.
+        if (exifTurn(imageOrientation(bytes)).swapsAxes) ImageDims(bounds.outHeight, bounds.outWidth)
+        else ImageDims(bounds.outWidth, bounds.outHeight)
     } catch (_: RuntimeException) {
         null // no Android runtime (JVM unit tests): only the header sniffer applies
     }
@@ -273,6 +281,10 @@ private fun measureImage(bytes: ByteArray): ImageDims? {
  * [decodeSampleSize]) instead of at full size — a 12 MP photo would otherwise take
  * ~48 MB, enough to run the app out of memory with a few cached. A decode that still
  * runs out of memory falls back to the placeholder.
+ *
+ * A photo is turned upright per its EXIF Orientation, which [BitmapFactory] ignores: a
+ * phone photo taken upright is stored sideways, and every browser (so Anki, and the
+ * occlusion masks drawn in it) shows it turned.
  */
 private fun decodeImageBitmap(bytes: ByteArray): ImageBitmap? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -281,10 +293,23 @@ private fun decodeImageBitmap(bytes: ByteArray): ImageBitmap? {
         inSampleSize = decodeSampleSize(bounds.outWidth, bounds.outHeight)
     }
     return try {
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.asImageBitmap()
+        val stored = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) ?: return null
+        upright(stored, exifTurn(imageOrientation(bytes))).asImageBitmap()
     } catch (_: OutOfMemoryError) {
         null
     }
+}
+
+/** [bitmap] turned per [turn] (the same matrix Android's `ExifInterface` users apply). */
+private fun upright(bitmap: Bitmap, turn: ExifTurn): Bitmap {
+    if (turn.isIdentity) return bitmap
+    val matrix = Matrix().apply {
+        setRotate(turn.degrees.toFloat())
+        if (turn.mirror) postScale(-1f, 1f)
+    }
+    val turned = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    if (turned !== bitmap) bitmap.recycle()
+    return turned
 }
 
 /** Largest dimension a card image is decoded at; ~2× the LP3's 1080 px screen width. */
