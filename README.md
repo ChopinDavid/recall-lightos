@@ -5,7 +5,7 @@
 
 A review-only, [Anki](https://apps.ankiweb.net/)-compatible spaced-repetition client for **LightOS** (the Light Phone III), built on the [light-sdk](https://github.com/lightphone/light-sdk).
 
-*Working title. Not affiliated with Anki/Ankitects — "Anki" is used only to describe compatibility.*
+*Working title. Not affiliated with Anki/Ankitects, "Anki" is used only to describe compatibility.*
 
 ## Demo
 
@@ -22,43 +22,43 @@ https://github.com/user-attachments/assets/506ab75a-e39a-4a2e-b835-bd8b0d09bd6f
 
 Study your due Anki cards on the Light Phone. Deck creation, editing, and browsing stay on desktop/AnkiDroid — Recall is deliberately minimal, in line with Light's ethos. No editor, no browser, no statistics: just your reviews.
 
-- **Text, cloze, images, audio** — auto-play on show/reveal with a replay control
-- **Image occlusion** — native Compose mask rendering (no WebView), including Image Occlusion Enhanced decks with fractional coordinates; the tested mask is highlighted
-- **Math** — MathJax subset rendered as Unicode (x², H₂O, α, ≤, ∑); complex 2D math degrades to readable text
-- **Review integrity** — undo last grade, bury/suspend/mark, live due counts, sessions run until the deck is done
-- **Offline-first** — the collection lives on the phone; sync happens at session start/finish
+- **Text, cloze, images, audio**: auto-play on show/reveal with a replay control
+- **Image occlusion**: native Compose mask rendering (no WebView), including Image Occlusion Enhanced decks with fractional coordinates; the tested mask is highlighted
+- **Math**: MathJax subset rendered as Unicode (x², H₂O, α, ≤, ∑); complex 2D math degrades to readable text
+- **Review integrity**: undo last grade, bury/suspend/mark, live due counts, sessions run until the deck is done
+- **Offline-first**: the collection lives on the phone; sync happens at session start/finish
 
 ## How it's built
 
 Everything scheduling- and sync-related is **upstream Anki code, never reimplemented**:
 
 - Anki's official Rust backend runs on-device via the AnkiDroid project's published bindings ([`anki-android-backend`](https://github.com/david-allison/anki-android-backend)), which Light has merged to the SDK dependency allowlist ([light-sdk#44](https://github.com/lightphone/light-sdk/pull/44)).
-- Sync is rslib's own sync client — byte-for-byte the same code path AnkiDroid uses. The only write the client ever performs is `answerCard` with the scheduling states the backend itself issued.
+- Sync is rslib's own sync client, byte-for-byte the same code path AnkiDroid uses. The only write the client ever performs is `answerCard` with the scheduling states the backend itself issued.
 - Card HTML is compiled to native Compose by a small renderer, parity-tested against a Python reference over 22,000+ real card sides.
 
 Syncs with **self-hosted sync servers**. The companion **[recall-server](https://github.com/ChopinDavid/recall-server)** sets one up on your computer with a single command (prebuilt binaries of Anki's official sync server, auto-start, printed credentials); **[Syncing Recall with your own server](docs/sync-server.md)** covers that path and the manual one, then pointing the app at it. Syncing with **AnkiWeb is not yet available**: it requires permission from Ankitects, which we have requested and are currently awaiting. Until then, a self-hosted server is the sync path.
 
 Your phone syncs with the server over your home network, so it needs to be on the same Wi-Fi as the computer running it. Away from home, Recall keeps working offline and syncs your reviews the next time you're back on that network. (Syncing from anywhere is possible by putting the server behind a VPN or a TLS reverse proxy; see [the guide](docs/sync-server.md#notes).)
 
-Scheduling configuration — including FSRS parameters, desired retention, and optimization — is managed in Anki desktop; Recall applies whatever the synced collection specifies (FSRS and SM-2 both supported, via Anki's own backend).
+Scheduling configuration, including FSRS parameters, desired retention, and optimization, is managed in Anki desktop; Recall applies whatever the synced collection specifies (FSRS and SM-2 both supported, via Anki's own backend).
 
 ## Privacy
 
-- **Your collection stays yours.** It lives on the phone and syncs only with the sync server you configure — normally your own computer. Recall sends nothing anywhere else.
+- **Your collection stays yours.** It lives on the phone and syncs only with the sync server you configure, normally your own computer. Recall sends nothing anywhere else.
 - **No analytics, tracking, ads, or crash reporting.** Recall's only dependencies are Light's SDK and Anki's official backend.
 - **Your sync username and password** are stored in Recall's private storage on the phone and sent only to your sync server. Over an `http://` address they travel unencrypted on your local network; to encrypt them, use an `https://` address (see [the guide](docs/sync-server.md#notes)).
 
 ## Status
 
-**0.1.0**: feature-complete for review-only studying, and smoke-tested end-to-end on the minified release build against a self-hosted sync server on the Light Phone III emulator. Being prepared for submission to Light's Tool Library; not yet distributed.
+**0.1.0**: feature-complete for review-only studying, and smoke-tested end-to-end on the minified release build against a self-hosted sync server on the Light Phone III emulator. Submitted to Light's Tool Library; not yet distributed.
 
 Known limitations: content that requires a browser engine doesn't render (deck `<script>`s, full MathJax typesetting, CSS-layout-art decks); TTS-only audio is unsupported.
 
 ## Layout
 
-- `tool/` — the Recall app (all app code lives here)
+- `tool/`: the Recall app (all app code lives here)
 - everything else is the light-sdk fork it builds against
 
 ## License
 
-Recall — everything under `tool/` — is **AGPL-3.0** (see [`tool/LICENSE`](tool/LICENSE)), like the Anki ecosystem it builds on. The rest of the repository is the [light-sdk](https://github.com/lightphone/light-sdk) fork it builds against, under Light's own **MIT** license (see [`LICENSE`](LICENSE)).
+Recall (everything under `tool/`) is **AGPL-3.0** (see [`tool/LICENSE`](tool/LICENSE)), like the Anki ecosystem it builds on. The rest of the repository is the [light-sdk](https://github.com/lightphone/light-sdk) fork it builds against, under Light's own **MIT** license (see [`LICENSE`](LICENSE)).
